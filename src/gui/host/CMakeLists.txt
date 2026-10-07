@@ -46,6 +46,7 @@ target_link_libraries(CemuHostFrontend PRIVATE
 	CemuConfig
 	CemuInput
 	CemuUtil
+	CemuResource
 	imguiImpl
 	d3d12
 	dxgi

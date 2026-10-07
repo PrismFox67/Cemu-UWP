@@ -28,6 +28,7 @@
     "boost-ptr-container",
     "boost-property-tree",
     "boost-static-string",
+    "boost-dynamic-bitset",
     {
       "name": "boost-random",
       "platform": "!uwp"

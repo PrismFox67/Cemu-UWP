@@ -731,3 +731,8 @@ endif()
 if(WIN32 AND NOT CEMU_UWP)
 	target_link_libraries(CemuCafe PRIVATE iphlpapi)
 endif()
+
+if(ENABLE_OPENGL AND WIN32)
+	# wglGetProcAddress, provided through wxWidgets' GL component in the wx build
+	target_link_libraries(CemuCafe PRIVATE opengl32)
+endif()

@@ -54,8 +54,7 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 	// NtQuerySystemInformation isn't available to UWP apps, per core usage stays empty
 	for (auto& t : out)
 		t = {};
-	return;
-#endif
+#else
 	std::vector<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> sppi(count);
 	if (NT_SUCCESS(NtQuerySystemInformation(SystemProcessorPerformanceInformation, sppi.data(), sizeof(SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION) * count, nullptr)))
 	{
@@ -74,4 +73,5 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 			out[i] = { };
 		}
 	}
+#endif
 }

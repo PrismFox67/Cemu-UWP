@@ -15,6 +15,7 @@
 #include "config/ActiveSettings.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "util/containers/flat_hash_map.hpp"
+#include "util/containers/robin_hood.h" // also included through VulkanRenderer.h, which is absent without Vulkan
 #include "util/helpers/StateHasher.h"
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
