@@ -7,7 +7,7 @@ down where a problem is:
 | Step | Build | What it tests |
 |---|---|---|
 | 1 | `cemu-d3d12-windows-x64.zip` | The D3D12 renderer inside the normal Cemu (wxWidgets UI, all debugging tools) |
-| 2 | `cemu-host-win32-x64.zip` | The Xbox frontend (launcher, in-game menu, XInput) as a normal desktop program |
+| 2 | `cemu-host-win32-x64.zip` | The Xbox frontend (launcher, in-game menu, XInput/keyboard) as a normal desktop program |
 | 3 | `cemu-uwp-x64.zip` on Windows | The UWP packaging, sandbox and file access, still on a PC |
 | 4 | `cemu-uwp-x64.zip` on Xbox | The real target |
 
@@ -46,8 +46,9 @@ Set them in a command prompt before starting: `set CEMU_D3D12_DEBUG=1` then `Cem
 3. Controls:
    - Launcher: D-pad/left stick to move, A to select, B to go back, LB/RB to switch tabs, Y for settings.
      Mouse and keyboard work too.
-   - In game: **hold View + Menu (Back + Start) for one second** to open the menu (Resume, switch TV/GamePad
-     screen, FPS counter, Save and exit). On a keyboard, F1 opens it.
+   - In game: **hold View + Menu (Back + Start) for one second** to open the menu (Resume, show TV or GamePad
+     screen, FPS counter, Save and exit Cemu). On a keyboard, F1 opens it, arrows and Enter select, Esc closes it.
+     **Save and exit Cemu** saves the settings and closes the program; start it again to play something else.
    - The first XInput controller and the keyboard are the Wii U GamePad. Keyboard: left stick W/A/S/D, D-pad arrow
      keys, A/B/X/Y = K/J/I/U, L/R = Q/E, ZL/ZR = Z/C, Plus = Enter, Minus = Backspace, Home = H, right stick on the
      number pad (8/4/2/6). The mapping is created on first start and stored in
@@ -70,9 +71,9 @@ scripts.
 4. Start **Cemu UWP** from the Start menu.
 
 Files: the app's user data is in `%LOCALAPPDATA%\Packages\CemuUWP.Unofficial_<id>\LocalState` (put `keys.txt` there).
-A UWP app can only read folders that it's allowed to. Either keep games inside `LocalState`, or allow the app to
-read a game folder (step 3 of the Xbox section below; on Windows, alternatively enable
-**Settings → Privacy & security → File system** for Cemu UWP).
+A UWP app can only read folders that it's allowed to. Either keep games inside `LocalState`, or give the game folder
+the `ALL APPLICATION PACKAGES` permission as described in step 3 of the Xbox section below, then add its path under
+Settings → Game folders.
 
 ## 4. Xbox Series X|S (Developer Mode)
 
@@ -109,8 +110,9 @@ read a game folder (step 3 of the Xbox section below; on Windows, alternatively 
 2. Encrypted `.wud/.wux` dumps need `keys.txt` in the app's `LocalState`. Upload it with Device Portal's **File
    explorer** (`LocalAppData\CemuUWP.Unofficial_<id>\LocalState`). The same folder holds `log.txt`; download it
    after a crash.
-3. The B button in the launcher goes back; the Xbox button and the system's back gesture don't close the app. Use the
-   in-game menu → **Save and exit** to stop a game.
+3. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
+   doesn't send the app to the background). Use the in-game menu → **Save and exit Cemu** to stop; this closes the
+   app.
 
 ### If it doesn't start or crashes
 
@@ -122,7 +124,8 @@ read a game folder (step 3 of the Xbox section below; on Windows, alternatively 
 
 ## Known limitations
 
-- The D3D12 renderer is new and has not run real games before this test. See the
+- The D3D12 renderer is new. It has run homebrew under Wine with vkd3d (D3D12 on Vulkan), but no commercial games
+  and no real Windows GPU driver yet. See the
   [renderer README](src/Cafe/HW/Latte/Renderer/D3D12/README.md#known-risks) for the parts most likely to break.
 - The UWP/Xbox frontend has no graphic pack, controller mapping, online or account UI yet. Settings files from the
   normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be copied into the user folder.
