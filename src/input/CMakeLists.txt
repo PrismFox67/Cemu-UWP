@@ -33,7 +33,7 @@ add_library(CemuInput
 	emulated/ClassicController.h
 )
 
-set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "${CEMU_MSVC_RUNTIME}")
 
 cemu_use_precompiled_header(CemuInput)
 
@@ -56,12 +56,17 @@ if(WIN32)
 	)
 
 	# DirectInput
-	target_sources(CemuInput PRIVATE
-		api/DirectInput/DirectInputControllerProvider.cpp
-		api/DirectInput/DirectInputController.h
-		api/DirectInput/DirectInputControllerProvider.h
-		api/DirectInput/DirectInputController.cpp
-	)
+	if (ENABLE_DIRECTINPUT)
+		target_sources(CemuInput PRIVATE
+			api/DirectInput/DirectInputControllerProvider.cpp
+			api/DirectInput/DirectInputController.h
+			api/DirectInput/DirectInputControllerProvider.h
+			api/DirectInput/DirectInputController.cpp
+		)
+	endif()
+	if (CEMU_UWP)
+		target_link_libraries(CemuInput PRIVATE xinputuap)
+	endif()
 endif()
 
 if (SUPPORTS_WIIMOTE)

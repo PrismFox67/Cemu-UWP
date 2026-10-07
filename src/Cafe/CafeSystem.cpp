@@ -452,7 +452,7 @@ namespace CafeSystem
 
 	static void _CheckForWine()
 	{
-		#if BOOST_OS_WINDOWS
+		#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 		const HMODULE hmodule = GetModuleHandleA("ntdll.dll");
 		if (!hmodule)
 			return;
@@ -498,6 +498,11 @@ namespace CafeSystem
 	#if BOOST_OS_WINDOWS
 	std::string GetWindowsNamedVersion(uint32& buildNumber)
 	{
+#ifdef CEMU_UWP
+		// UWP apps can't read the registry
+		buildNumber = 0;
+		return "Windows (UWP)";
+#else
 		char productName[256];
 		char buildNumberStr[32];
 		char featureVersion[32];
@@ -536,6 +541,7 @@ namespace CafeSystem
 		if (featureVersion[0] != '\0')
 			result += fmt::format(" {}", featureVersion);
 		return result;
+#endif
 	}
 	#endif
 

@@ -4,7 +4,13 @@
 #include <bitset>
 #include <random>
 
+#ifdef CEMU_UWP
+#include <random> // boost-random isn't available for UWP, MSVC's std::uniform_int_distribution has no such static asserts
+namespace cemu_random = std;
+#else
 #include <boost/random/uniform_int.hpp>
+namespace cemu_random = boost::random;
+#endif
 
 static void KSA(unsigned char* key, int keyLen, unsigned char* S)
 {
@@ -75,8 +81,8 @@ uint32 prudpGetMSTimestamp()
 
 std::mt19937_64 prudpRG(GetTickCount());
 // workaround for static asserts when using uniform_int_distribution (see https://github.com/cemu-project/Cemu/issues/48)
-boost::random::uniform_int_distribution<int> prudpRandomDistribution8(0, 0xFF);
-boost::random::uniform_int_distribution<int> prudpRandomDistributionPortGen(0, 10000);
+cemu_random::uniform_int_distribution<int> prudpRandomDistribution8(0, 0xFF);
+cemu_random::uniform_int_distribution<int> prudpRandomDistributionPortGen(0, 10000);
 
 uint8 prudp_generateRandomU8()
 {

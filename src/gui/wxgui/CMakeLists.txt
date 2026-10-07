@@ -149,7 +149,7 @@ if (ENABLE_BLUEZ)
   )
 endif()
 
-set_property(TARGET CemuWxGui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuWxGui PROPERTY MSVC_RUNTIME_LIBRARY "${CEMU_MSVC_RUNTIME}")
 
 cemu_use_precompiled_header(CemuWxGui)
 

@@ -1,0 +1,465 @@
+#include "gui/host/HostUI.h"
+#include "gui/host/HostPlatform.h"
+
+#include "Cafe/TitleList/TitleList.h"
+#include "Cafe/TitleList/TitleId.h"
+#include "config/ActiveSettings.h"
+#include "config/CemuConfig.h"
+#include "Common/version.h"
+
+#include <imgui.h>
+
+#include <mutex>
+
+namespace
+{
+	struct GameEntry
+	{
+		std::string name;
+		TitleId titleId;
+		uint16 version;
+		fs::path path;
+		std::string location;
+	};
+
+	struct Message
+	{
+		std::string title;
+		std::string text;
+	};
+
+	ImGuiContext* s_context = nullptr;
+	fs::path s_fontFile;
+	float s_scale = 1.0f;
+	float s_builtScale = 0.0f;
+	ImFont* s_fontNormal = nullptr;
+	ImFont* s_fontLarge = nullptr;
+
+	std::mutex s_mutex; // protects everything below that is touched from other threads
+	std::vector<Message> s_messages;
+	double s_fps = 0.0;
+	bool s_refreshRequested = true;
+
+	std::vector<GameEntry> s_games;
+	bool s_wasScanning = false;
+	int s_selectedGame = 0;
+	int s_tab = 0; // 0 games, 1 settings, 2 about
+	char s_newPathBuffer[1024]{};
+	std::vector<std::function<void()>> s_deferred; // run after the frame (picker callbacks etc.)
+	std::optional<fs::path> s_pendingLaunch; // set by the file picker
+
+	void _RebuildFonts()
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		io.Fonts->Clear();
+		const float normalSize = std::round(26.0f * s_scale);
+		const float largeSize = std::round(40.0f * s_scale);
+		std::error_code ec;
+		if (!s_fontFile.empty() && fs::exists(s_fontFile, ec))
+		{
+			const std::string path = _pathToUtf8(s_fontFile);
+			s_fontNormal = io.Fonts->AddFontFromFileTTF(path.c_str(), normalSize);
+			s_fontLarge = io.Fonts->AddFontFromFileTTF(path.c_str(), largeSize);
+		}
+		if (!s_fontNormal || !s_fontLarge)
+		{
+			// the embedded font is a bitmap font, scale it up instead
+			ImFontConfig cfg;
+			cfg.SizePixels = 13.0f * std::max(1.0f, std::round(2.0f * s_scale));
+			s_fontNormal = io.Fonts->AddFontDefault(&cfg);
+			cfg.SizePixels = 13.0f * std::max(1.0f, std::round(3.0f * s_scale));
+			s_fontLarge = io.Fonts->AddFontDefault(&cfg);
+		}
+		s_builtScale = s_scale;
+	}
+
+	void _ApplyStyle()
+	{
+		ImGuiStyle style;
+		ImGui::StyleColorsDark(&style);
+		style.WindowRounding = 0.0f;
+		style.FrameRounding = 6.0f;
+		style.GrabRounding = 6.0f;
+		style.TabRounding = 6.0f;
+		style.FramePadding = ImVec2(14.0f, 10.0f);
+		style.ItemSpacing = ImVec2(14.0f, 12.0f);
+		style.WindowPadding = ImVec2(40.0f, 30.0f);
+		style.ScrollbarSize = 22.0f;
+		style.Colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.09f, 0.11f, 1.0f);
+		style.Colors[ImGuiCol_Header] = ImVec4(0.20f, 0.36f, 0.62f, 0.55f);
+		style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.24f, 0.44f, 0.76f, 0.80f);
+		style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.26f, 0.50f, 0.86f, 1.00f);
+		style.Colors[ImGuiCol_NavHighlight] = ImVec4(0.95f, 0.75f, 0.20f, 1.00f);
+		style.ScaleAllSizes(s_scale);
+		ImGui::GetStyle() = style;
+	}
+
+	void _RefreshGameList()
+	{
+		std::vector<GameEntry> games;
+		auto list = CafeTitleList::AcquireInternalList();
+		for (TitleInfo* info : list)
+		{
+			if (!info || !info->IsValid())
+				continue;
+			const auto type = TitleIdParser(info->GetAppTitleId()).GetType();
+			if (type != TitleIdParser::TITLE_TYPE::BASE_TITLE && type != TitleIdParser::TITLE_TYPE::BASE_TITLE_DEMO && type != TitleIdParser::TITLE_TYPE::HOMEBREW)
+				continue;
+			GameEntry e;
+			e.titleId = info->GetAppTitleId();
+			e.version = info->GetAppTitleVersion();
+			e.name = info->GetMetaTitleName();
+			if (e.name.empty())
+				e.name = fmt::format("{:016x}", e.titleId);
+			e.path = info->GetPath();
+			e.location = info->GetPrintPath();
+			// the same title can be found in several locations, keep the first
+			if (std::none_of(games.begin(), games.end(), [&](const GameEntry& g) { return g.titleId == e.titleId; }))
+				games.emplace_back(std::move(e));
+		}
+		CafeTitleList::ReleaseInternalList();
+		std::sort(games.begin(), games.end(), [](const GameEntry& a, const GameEntry& b) { return boost::algorithm::ilexicographical_compare(a.name, b.name); });
+		s_games = std::move(games);
+		s_selectedGame = std::clamp(s_selectedGame, 0, std::max(0, (int)s_games.size() - 1));
+	}
+
+	void _AddGamePath(const fs::path& path)
+	{
+		if (path.empty())
+			return;
+		auto& config = GetConfig();
+		const std::string utf8 = _pathToUtf8(path);
+		if (std::find(config.game_paths.begin(), config.game_paths.end(), utf8) != config.game_paths.end())
+			return;
+		config.game_paths.emplace_back(utf8);
+		GetConfigHandle().Save();
+		CafeTitleList::ClearScanPaths();
+		for (auto& it : config.game_paths)
+			CafeTitleList::AddScanPath(_utf8ToPath(it));
+		CafeTitleList::Refresh();
+		HostUI::RequestGameListRefresh();
+	}
+
+	void _RemoveGamePath(size_t index)
+	{
+		auto& config = GetConfig();
+		if (index >= config.game_paths.size())
+			return;
+		config.game_paths.erase(config.game_paths.begin() + index);
+		GetConfigHandle().Save();
+		CafeTitleList::ClearScanPaths();
+		for (auto& it : config.game_paths)
+			CafeTitleList::AddScanPath(_utf8ToPath(it));
+		CafeTitleList::Refresh();
+		HostUI::RequestGameListRefresh();
+	}
+
+	std::optional<fs::path> _DrawGamesTab()
+	{
+		std::optional<fs::path> launch;
+		if (CafeTitleList::IsScanning())
+			ImGui::TextDisabled("Scanning game folders...");
+		if (s_games.empty())
+		{
+			ImGui::TextWrapped("No games found.");
+			ImGui::Spacing();
+			ImGui::TextWrapped("Add a folder that contains your games (WUD, WUX, WUA, RPX or extracted folders) under Settings, or install titles into the mlc folder:");
+			ImGui::TextWrapped("%s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+		}
+		else
+		{
+			const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f;
+			if (ImGui::BeginChild("##gamelist", ImVec2(0.0f, -footer), true))
+			{
+				for (int i = 0; i < (int)s_games.size(); i++)
+				{
+					const GameEntry& game = s_games[i];
+					ImGui::PushID(i);
+					const bool selected = i == s_selectedGame;
+					const std::string label = fmt::format("{}\n{:016x}  v{}", game.name, game.titleId, game.version);
+					if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, ImGui::GetTextLineHeight() * 2.4f)))
+					{
+						s_selectedGame = i;
+						launch = game.path;
+					}
+					if (ImGui::IsItemFocused())
+						s_selectedGame = i;
+					if (ImGui::IsItemHovered() && !game.location.empty())
+						ImGui::SetTooltip("%s", game.location.c_str());
+					ImGui::PopID();
+				}
+			}
+			ImGui::EndChild();
+		}
+		if (ImGui::Button("Open file..."))
+		{
+			HostPlatform::PickFile([](const fs::path& path) {
+				if (!path.empty())
+					s_pendingLaunch = path;
+			});
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Refresh"))
+		{
+			CafeTitleList::Refresh();
+			HostUI::RequestGameListRefresh();
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("A: start   Y: settings");
+		return launch;
+	}
+
+	void _DrawSettingsTab()
+	{
+		auto& config = GetConfig();
+		bool changed = false;
+		ImGui::SeparatorText("Game folders");
+		for (size_t i = 0; i < config.game_paths.size(); i++)
+		{
+			ImGui::PushID((int)i);
+			if (ImGui::Button("Remove"))
+			{
+				const size_t index = i;
+				s_deferred.emplace_back([index]() { _RemoveGamePath(index); });
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted(config.game_paths[i].c_str());
+			ImGui::PopID();
+		}
+		if (ImGui::Button("Add folder..."))
+		{
+			HostPlatform::PickFolder([](const fs::path& path) {
+				if (!path.empty())
+					s_deferred.emplace_back([path]() { _AddGamePath(path); });
+			});
+		}
+		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+		const bool entered = ImGui::InputTextWithHint("##newpath", "or type a path, e.g. E:\\WiiU\\games", s_newPathBuffer, sizeof(s_newPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+		if (ImGui::IsItemActivated())
+			HostPlatform::ShowTextInput(true);
+		if (ImGui::IsItemDeactivated())
+			HostPlatform::ShowTextInput(false);
+		ImGui::SameLine();
+		if ((ImGui::Button("Add path") || entered) && s_newPathBuffer[0])
+		{
+			const fs::path path = _utf8ToPath(s_newPathBuffer);
+			s_newPathBuffer[0] = '\0';
+			s_deferred.emplace_back([path]() { _AddGamePath(path); });
+		}
+
+		ImGui::SeparatorText("Graphics");
+		bool vsync = config.vsync.GetValue() != 0;
+		if (ImGui::Checkbox("VSync", &vsync))
+		{
+			config.vsync = vsync ? 1 : 0;
+			changed = true;
+		}
+		bool asyncCompile = config.async_compile.GetValue();
+		if (ImGui::Checkbox("Compile shaders asynchronously (less stutter, brief glitches)", &asyncCompile))
+		{
+			config.async_compile = asyncCompile;
+			changed = true;
+		}
+		const char* filters[] = { "Bilinear", "Bicubic", "Hermite", "Nearest neighbor" };
+		int upscale = std::clamp<int>(config.upscale_filter.GetValue(), 0, 3);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo("Upscale filter", &upscale, filters, 4))
+		{
+			config.upscale_filter = upscale;
+			changed = true;
+		}
+		const char* scalings[] = { "Keep aspect ratio", "Stretch" };
+		int scaling = std::clamp<int>(config.fullscreen_scaling.GetValue(), 0, 1);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo("Scaling", &scaling, scalings, 2))
+		{
+			config.fullscreen_scaling = scaling;
+			changed = true;
+		}
+		bool showFPS = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
+		if (ImGui::Checkbox("Show FPS", &showFPS))
+		{
+			config.overlay.position = showFPS ? ScreenPosition::kTopLeft : ScreenPosition::kDisabled;
+			config.overlay.fps = showFPS;
+			changed = true;
+		}
+
+		ImGui::SeparatorText("Folders");
+		ImGui::TextWrapped("Data (settings, mlc01, shader caches, keys.txt): %s", _pathToUtf8(ActiveSettings::GetUserDataPath()).c_str());
+		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+		if (changed)
+			GetConfigHandle().Save();
+	}
+
+	void _DrawAboutTab()
+	{
+		ImGui::TextUnformatted(BUILD_VERSION_WITH_NAME_STRING);
+		ImGui::TextWrapped("Frontend: %s, renderer: Direct3D 12", HostPlatform::GetName());
+		ImGui::Spacing();
+		ImGui::TextWrapped("Controls");
+		ImGui::BulletText("D-pad / left stick: move, A: select, B: back");
+		ImGui::BulletText("In game: hold View + Menu for one second to open the menu");
+		ImGui::BulletText("The first connected controller is mapped to the Wii U GamePad");
+		ImGui::Spacing();
+		ImGui::TextWrapped("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own.");
+	}
+}
+
+void HostUI::Initialize(ImGuiContext* context, const fs::path& fontFile, float uiScale)
+{
+	s_context = context;
+	s_fontFile = fontFile;
+	s_scale = std::max(0.5f, uiScale);
+	ImGuiIO& io = ImGui::GetIO();
+	io.IniFilename = nullptr;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
+	_RebuildFonts();
+	_ApplyStyle();
+}
+
+bool HostUI::SetScale(float uiScale)
+{
+	uiScale = std::max(0.5f, uiScale);
+	if (std::abs(uiScale - s_builtScale) < 0.05f)
+		return false;
+	s_scale = uiScale;
+	_RebuildFonts();
+	_ApplyStyle();
+	return true;
+}
+
+std::optional<fs::path> HostUI::DrawLauncher()
+{
+	{
+		std::unique_lock _l(s_mutex);
+		const bool scanning = CafeTitleList::IsScanning();
+		if (s_refreshRequested || (s_wasScanning && !scanning))
+		{
+			s_refreshRequested = false;
+			_l.unlock();
+			_RefreshGameList();
+		}
+		s_wasScanning = scanning;
+	}
+
+	std::optional<fs::path> launch;
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(viewport->WorkPos);
+	ImGui::SetNextWindowSize(viewport->WorkSize);
+	const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+	if (ImGui::Begin("##launcher", nullptr, flags))
+	{
+		ImGui::PushFont(s_fontLarge);
+		ImGui::TextUnformatted("Cemu");
+		ImGui::PopFont();
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s  |  %s", BUILD_VERSION_WITH_NAME_STRING, HostPlatform::GetName());
+
+		// LB/RB switch tabs
+		if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
+			s_tab = (s_tab + 2) % 3;
+		if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
+			s_tab = (s_tab + 1) % 3;
+		if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+			s_tab = 1;
+
+		const char* tabNames[] = { "Games", "Settings", "About" };
+		for (int i = 0; i < 3; i++)
+		{
+			if (i > 0)
+				ImGui::SameLine();
+			const bool active = s_tab == i;
+			if (active)
+				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+			if (ImGui::Button(tabNames[i]))
+				s_tab = i;
+			if (active)
+				ImGui::PopStyleColor();
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("(LB / RB)");
+		ImGui::Separator();
+
+		if (s_tab == 0)
+			launch = _DrawGamesTab();
+		else if (s_tab == 1)
+			_DrawSettingsTab();
+		else
+			_DrawAboutTab();
+
+		// messages
+		{
+			std::unique_lock _l(s_mutex);
+			if (!s_messages.empty())
+			{
+				const Message msg = s_messages.front();
+				_l.unlock();
+				if (!ImGui::IsPopupOpen("##message"))
+					ImGui::OpenPopup("##message");
+				ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.6f, 0.0f));
+				if (ImGui::BeginPopupModal("##message", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::PushFont(s_fontLarge);
+					ImGui::TextUnformatted(msg.title.c_str());
+					ImGui::PopFont();
+					ImGui::TextWrapped("%s", msg.text.c_str());
+					ImGui::Spacing();
+					if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))
+					{
+						std::unique_lock _l2(s_mutex);
+						if (!s_messages.empty())
+							s_messages.erase(s_messages.begin());
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+			}
+		}
+	}
+	ImGui::End();
+
+	auto deferred = std::move(s_deferred);
+	s_deferred.clear();
+	for (auto& fn : deferred)
+		fn();
+	if (!launch && s_pendingLaunch)
+	{
+		launch = s_pendingLaunch;
+		s_pendingLaunch.reset();
+	}
+	return launch;
+}
+
+void HostUI::PushMessage(std::string title, std::string text)
+{
+	std::unique_lock _l(s_mutex);
+	s_messages.emplace_back(Message{ std::move(title), std::move(text) });
+}
+
+void HostUI::SetStatus(bool /*isIdle*/, bool /*isLoading*/, double fps)
+{
+	std::unique_lock _l(s_mutex);
+	s_fps = fps;
+}
+
+double HostUI::GetFPS()
+{
+	std::unique_lock _l(s_mutex);
+	return s_fps;
+}
+
+void HostUI::RequestGameListRefresh()
+{
+	std::unique_lock _l(s_mutex);
+	s_refreshRequested = true;
+}
+
+bool HostUI::HandleBack()
+{
+	if (s_tab != 0)
+	{
+		s_tab = 0;
+		return true;
+	}
+	return false;
+}

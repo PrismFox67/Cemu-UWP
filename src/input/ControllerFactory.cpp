@@ -11,7 +11,9 @@
 
 #if BOOST_OS_WINDOWS
 #include "input/api/XInput/XInputController.h"
+#if HAS_DIRECTINPUT
 #include "input/api/DirectInput/DirectInputController.h"
+#endif
 #endif
 
 #if HAS_WIIMOTE

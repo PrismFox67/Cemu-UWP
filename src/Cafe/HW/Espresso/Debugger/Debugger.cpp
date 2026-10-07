@@ -199,7 +199,7 @@ void debugger_updateMemoryBreakpoint(DebuggerBreakpoint* bp)
 {
 	std::vector<std::thread::native_handle_type> schedulerThreadHandles = coreinit::OSGetSchedulerThreads();
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP) // thread contexts (debug registers) are not accessible to UWP apps
 	s_debuggerState.activeMemoryBreakpoint = bp;
 	for (auto& hThreadNH : schedulerThreadHandles)
 	{

@@ -563,6 +563,21 @@ void LatteOverlay_render(bool pad_view)
 	}
 }
 
+static std::atomic<void (*)()> s_hostOverlayCallback{ nullptr };
+
+void LatteOverlay_setHostOverlayCallback(void (*callback)())
+{
+	s_hostOverlayCallback = callback;
+}
+
+void LatteOverlay_renderHostOverlay(bool pad_view)
+{
+	if (pad_view)
+		return;
+	if (auto callback = s_hostOverlayCallback.load())
+		callback();
+}
+
 void LatteOverlay_init()
 {
 	g_state.processor_count = GetProcessorCount();

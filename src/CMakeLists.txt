@@ -77,11 +77,40 @@ if(MSVC AND MSVC_VERSION EQUAL 1940)
 	set_target_properties(CemuBin PROPERTIES LINK_FLAGS "/INCREMENTAL:NO")
 endif()
 
-if(WIN32)
+if(CEMU_UWP)
+	# UWP package: manifest, logos and the read only data folders (resources/, gameProfiles/) as deployment content
+	target_sources(CemuBin PRIVATE resource/cemu.rc gui/host/uwp/Package.appxmanifest)
+	file(GLOB UWP_LOGOS "${CMAKE_CURRENT_SOURCE_DIR}/gui/host/uwp/Assets/*.png")
+	target_sources(CemuBin PRIVATE ${UWP_LOGOS})
+	set_property(SOURCE ${UWP_LOGOS} PROPERTY VS_DEPLOYMENT_CONTENT 1)
+	set_property(SOURCE ${UWP_LOGOS} PROPERTY VS_DEPLOYMENT_LOCATION "Assets")
+	foreach(dataDir resources gameProfiles)
+		file(GLOB_RECURSE UWP_DATA_FILES "${CMAKE_SOURCE_DIR}/bin/${dataDir}/*")
+		foreach(dataFile ${UWP_DATA_FILES})
+			file(RELATIVE_PATH relPath "${CMAKE_SOURCE_DIR}/bin" "${dataFile}")
+			get_filename_component(relDir "${relPath}" DIRECTORY)
+			target_sources(CemuBin PRIVATE "${dataFile}")
+			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
+			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_LOCATION "${relDir}")
+		endforeach()
+	endforeach()
+	# launcher font (Dear ImGui ships Roboto, Apache 2.0)
+	set(UWP_LAUNCHER_FONT "${CMAKE_BINARY_DIR}/uwp/launcher.ttf")
+	configure_file("${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${UWP_LAUNCHER_FONT}" COPYONLY)
+	target_sources(CemuBin PRIVATE "${UWP_LAUNCHER_FONT}")
+	set_property(SOURCE "${UWP_LAUNCHER_FONT}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
+	set_property(SOURCE "${UWP_LAUNCHER_FONT}" PROPERTY VS_DEPLOYMENT_LOCATION "resources/fonts")
+elseif(WIN32)
 	target_sources(CemuBin PRIVATE
 	resource/cemu.rc
 	../dist/windows/cemu.manifest
 	)
+	if (ENABLE_HOST_FRONTEND)
+		# launcher font next to the executable for the Win32 test build of the UWP frontend
+		add_custom_command(TARGET CemuBin POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/resources/fonts"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${CMAKE_SOURCE_DIR}/bin/resources/fonts/launcher.ttf")
+	endif()
 endif()
 
 if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
@@ -92,9 +121,14 @@ endif()
 
 string(TIMESTAMP CURRENT_YEAR "%Y" UTC)
 
-set_property(TARGET CemuBin PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuBin PROPERTY MSVC_RUNTIME_LIBRARY "${CEMU_MSVC_RUNTIME}")
 set_property(TARGET CemuBin PROPERTY WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>)
 set(OUTPUT_NAME "Cemu_$<LOWER_CASE:$<CONFIG>>")
+if (CEMU_UWP)
+	set(OUTPUT_NAME "Cemu")
+elseif (ENABLE_HOST_FRONTEND)
+	set(OUTPUT_NAME "Cemu_Host_$<LOWER_CASE:$<CONFIG>>")
+endif()
 
 if (MACOS_BUNDLE)
 	set_property(TARGET CemuBin PROPERTY MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resource/MacOSXBundleInfo.plist.in")

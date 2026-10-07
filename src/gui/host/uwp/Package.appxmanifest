@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap mp rescap">
+
+  <!-- Publisher must match the subject of the certificate the package is signed with (see .github/workflows) -->
+  <Identity
+    Name="CemuUWP.Unofficial"
+    Publisher="CN=CemuUWP"
+    Version="0.1.0.0" />
+
+  <mp:PhoneIdentity PhoneProductId="6c1c7a7e-0c51-4bd3-9a23-2f0c6c1b7e11" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+
+  <Properties>
+    <DisplayName>Cemu UWP</DisplayName>
+    <PublisherDisplayName>Cemu UWP (unofficial)</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1809: *FromApp file APIs, CoreInputView -->
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="x-generate" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="Cemu.App">
+      <uap:VisualElements
+        DisplayName="Cemu UWP"
+        Description="Unofficial UWP build of the Cemu Wii U emulator with a Direct3D 12 renderer. Not affiliated with Nintendo."
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="transparent">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#14171c" />
+      </uap:VisualElements>
+      <Extensions>
+        <!-- frontends can start a game with cemu:?path=<game path> -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="cemu">
+            <uap:DisplayName>Cemu</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- the PowerPC recompiler generates code at runtime -->
+    <Capability Name="codeGeneration" />
+    <uap:Capability Name="removableStorage" />
+    <!-- access to game folders outside the app's own storage (needs to be allowed in Windows' privacy settings) -->
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <rescap:Capability Name="expandedResources" />
+  </Capabilities>
+</Package>

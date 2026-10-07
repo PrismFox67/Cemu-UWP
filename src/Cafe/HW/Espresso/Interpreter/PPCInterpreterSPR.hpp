@@ -172,7 +172,7 @@ static void setSCR(PPCInterpreter_t* hCPU, uint32 newValue)
 		//// todo - normally IOSU sets up some stuff here (probably)
 		
 		// for debugging purposes make lowest page read-only
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(CEMU_UWP)
 		DWORD oldProtect;
 		VirtualProtect(memory_base, 0x1000, PAGE_READONLY, &oldProtect);
 #endif

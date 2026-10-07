@@ -13,7 +13,8 @@
     "rapidjson",
     {
       "name": "sdl3",
-      "default-features": false
+      "default-features": false,
+      "platform": "!uwp"
     },
     "boost-tokenizer",
     "boost-container",
@@ -27,7 +28,10 @@
     "boost-ptr-container",
     "boost-property-tree",
     "boost-static-string",
-    "boost-random",
+    {
+      "name": "boost-random",
+      "platform": "!uwp"
+    },
     {
       "name": "fmt",
       "version>=": "12.1.0"
@@ -44,7 +48,8 @@
       "default-features": false,
       "features": [
         "debug-support"
-      ]
+      ],
+      "platform": "!uwp"
     },
     "openssl",
     {
@@ -65,9 +70,13 @@
       "features": [
         "jpeg",
         "zip"
-      ]
+      ],
+      "platform": "!uwp"
     },
-    "libusb",
+    {
+      "name": "libusb",
+      "platform": "!uwp"
+    },
     {
       "name": "spirv-cross",
       "platform": "windows"

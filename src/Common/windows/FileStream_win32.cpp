@@ -1,5 +1,12 @@
 #include "Common/windows/FileStream_win32.h"
 
+#ifdef CEMU_UWP
+#include <fileapifromapp.h>
+// CreateFileFromAppW honors the broadFileSystemAccess capability, which gives access to game folders outside the
+// app's own storage (USB drives on Xbox, folders picked by the user)
+#define CreateFileW CreateFileFromAppW
+#endif
+
 FileStream* FileStream::openFile(std::string_view path)
 {
 	HANDLE hFile = CreateFileW(boost::nowide::widen(path.data(), path.size()).c_str(), FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);

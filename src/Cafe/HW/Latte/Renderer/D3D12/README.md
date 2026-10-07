@@ -3,31 +3,52 @@
 A D3D12 renderer for Cemu, written so it can run inside a UWP app (including Xbox in Dev Mode) as well as a normal
 Win32 desktop build. It plugs into the same `Renderer` interface as the OpenGL, Vulkan and Metal backends.
 
-**Status: first implementation, not yet compiled with MSVC or run on hardware.** Everything compiles cleanly
-(`-fsyntax-only -Wall -Wextra`) against the MinGW-w64 Windows/D3D12 headers, all backend classes are verified to be
-non-abstract, and the SPIR-V binding remapper has been run on real Cemu shaders with the output passing `spirv-val`.
-Expect a debugging phase before games render correctly. See [Known risks](#known-risks) for what is most likely to need
-work.
+**Status: first implementation, not yet run with real games on Windows.** What has been verified:
+
+- The whole shader path (decompiler-style GLSL -> HLSL -> Microsoft's `d3dcompiler_47`) with the backend's real
+  translation code, root signature and binding remap tables, drawing through D3D12 (Wine's vkd3d on lavapipe) and
+  checking the pixels: vertex + pixel shaders, the RECT emulation geometry shader and Latte geometry shaders, uniform
+  block layout (std140 offsets), all texture types used by the decompiler, comparison samplers, base vertex handling,
+  `gl_FragCoord`/`gl_FrontFacing`, render target sets with gaps. All internal shaders (surface copy, ImGui, output
+  shaders) compile with FXC.
+- Everything compiles against the MinGW-w64 Windows/D3D12 headers; MSVC builds run in the fork's CI.
+
+See [Known risks](#known-risks) for what is most likely to need work.
 
 ## How it works
 
 ### Shaders
 
-The backend does not have its own shader emitter. It consumes the exact same Vulkan-flavored GLSL the Vulkan backend
-uses, so graphic packs written for Vulkan also work on D3D12:
+The backend does not have its own shader emitter. It consumes the Vulkan-flavored GLSL the Vulkan backend uses, so
+graphic packs written for Vulkan also work on D3D12:
 
 ```
-Latte shader ─► Cemu decompiler (GLSL, Vulkan path) ─► glslang ─► SPIR-V
-            ─► binding remap (D3D12SpirvRemap.cpp) ─► Mesa spirv_to_dxil ─► DXIL ─► signed by dxil.dll
+Latte shader -> Cemu decompiler (GLSL, Vulkan path) -> glslang -> SPIR-V
+             -> binding remap (D3D12SpirvRemap.cpp) -> SPIRV-Cross -> HLSL 5.1 -> FXC (d3dcompiler_47) -> DXBC
 ```
 
-- `D3D12ShaderCompiler.cpp`: glslang with the same settings as `RendererShaderVk`, then `spirv_to_dxil`, then
-  signing through `IDxcValidator` from `dxil.dll` (D3D12 rejects unsigned DXIL).
+- `D3D12ShaderTranslate.cpp`: glslang with the same settings as `RendererShaderVk` (without spirv-opt, see below),
+  the binding remap and SPIRV-Cross. Platform independent, so it is tested on Linux.
+- `D3D12ShaderCompiler.cpp`: compiles the HLSL with FXC (`d3dcompiler_47.dll`, part of Windows and available to UWP
+  apps). Optional backends, selected with the environment variable `CEMU_D3D12_SHADER_COMPILER`: `dxc` (needs
+  `dxcompiler.dll` and `dxil.dll` next to the executable) and `spirv_to_dxil` (Mesa, only when built with
+  `ENABLE_D3D12_SPIRV_TO_DXIL`).
 - `D3D12SpirvRemap.cpp`: rewrites every `(set, binding)` in the SPIR-V so each resource lands in a fixed register
-  space for its stage and class (CBV/SRV/UAV). The binding → register table is stored with the shader, and the
-  renderer looks registers up per draw. Resources removed by the SPIR-V optimizer simply have no register.
-- `RendererShaderD3D12.cpp`: async compile thread pool (same pattern as Vulkan) and a per-title DXIL cache
-  (`shaderCache/precompiled/<titleId>_dxil.bin`). The transferable shader cache is shared with Vulkan.
+  space for its stage and class (CBV/SRV/UAV). The binding -> register table is stored with the shader, and the
+  renderer looks registers up per draw. Unused resources simply have no register.
+- `RendererShaderD3D12.cpp`: async compile thread pool (same pattern as Vulkan) and a per-title bytecode cache
+  (`shaderCache/precompiled/<titleId>_d3d12_<compiler>.bin`). The transferable shader cache is shared with Vulkan.
+
+**Stage linkage.** D3D12 matches the output signature of one stage against the input signature of the next by
+register, and FXC assigns registers in declaration order. Vulkan matches by location and lets the pixel shader read
+inputs the previous stage never declared. Under D3D12 the decompiler therefore makes the stage before the pixel shader
+declare exactly the pixel shader's inputs, in the same order (`LatteDecompilerOptions::declareAllPSInputs`, also for the
+RECT emulation GS and Latte geometry shaders, whose hash includes the PS input table). spirv-opt is not run because its
+dead code elimination removes unused inputs; FXC optimizes anyway.
+
+**SPIRV-Cross limitations worked around:** arrays of input blocks in geometry shaders (the VS -> GS ring parameters are
+plain variables under D3D12, `flattenV2GInterface`), `gl_in[i].gl_Position` naming, identifiers that collide with HLSL
+intrinsics (renamed), and push constant arrays with an 8 byte stride (internal shaders use vec4 arrays).
 
 ### Binding model
 
@@ -37,7 +58,7 @@ One root signature for everything (`D3D12Renderer::CreateRootSignature`):
 |---|---|
 | 0, 2, 4 | VS / PS / GS table: 17 CBVs (uniform var block + 16 uniform blocks), 18 SRVs, 1 UAV (transform feedback) |
 | 1, 3, 5 | VS / PS / GS sampler table (18 samplers) |
-| 6 | 16 root constants: spirv_to_dxil vertex runtime data (`first_vertex`, `base_instance`) |
+| 6 | 16 root constants: vertex runtime data (base vertex, base instance for `gl_VertexIndex`/`gl_InstanceIndex`) |
 | 7 | 16 root constants: push constants for internal shaders |
 
 CBV/SRV/UAV tables are written per draw into a shader-visible ring heap. Sampler tables are deduplicated and cached
@@ -63,19 +84,9 @@ it before recording any state for the next draw.
 
 ## Building
 
-1. **Build `spirv_to_dxil` from Mesa** (MIT licensed). On Windows with Meson and MSVC:
-   ```
-   meson setup build -Dgallium-drivers= -Dvulkan-drivers= -Dplatforms=windows -Dspirv-to-dxil=true -Dbuildtype=release
-   meson compile -C build
-   meson install -C build --destdir <prefix>
-   ```
-   The code was written against the Mesa 24.0 API. If your Mesa replaced
-   `dxil_spirv_runtime_conf::zero_based_vertex_instance_id` with `first_vertex_and_base_instance_mode`, define
-   `CEMU_SPIRV_TO_DXIL_SYSVAL_MODE`.
-2. **Configure Cemu** with `-DENABLE_D3D12=ON -DSPIRV_TO_DXIL_ROOT=<prefix>`.
-3. **Ship `dxil.dll`** next to the executable (it's in the Windows SDK `bin` folder and in DirectXShaderCompiler
-   releases). UWP apps must package it; it's loaded with `LoadPackagedLibrary` there.
-4. Select "Direct3D 12" under Graphics in the settings. Set `CEMU_D3D12_DEBUG=1` to enable the debug layer.
+Nothing beyond Cemu's normal Windows build is needed: SPIRV-Cross comes from vcpkg and `d3dcompiler_47.dll` is part of
+Windows. `ENABLE_D3D12` is on by default on Windows. Select "Direct3D 12" under Graphics in the settings. Set
+`CEMU_D3D12_DEBUG=1` to enable the D3D12 debug layer (needs the "Graphics Tools" optional Windows feature).
 
 ## UWP / Xbox
 
@@ -93,24 +104,20 @@ stage to 14 uniform blocks). Xbox One/Series hardware meets these.
 
 ## Known risks
 
-Ordered by how likely they are to block games from rendering:
+Ordered by how likely they are to cause problems in games:
 
-1. **VS → PS signature linkage.** Stages are translated to DXIL independently. D3D12 requires the pixel shader's input
-   signature to match the vertex/geometry shader's output signature. Cemu emits matching locations on both sides, so
-   this should usually line up, but if `CreateGraphicsPipelineState` reports linkage errors, the fix is to move to
-   Mesa's NIR-level API and link stages with `dxil_spirv_nir_link()` at pipeline creation time.
-2. **`spirv_to_dxil` details I couldn't verify without building Mesa:** vertex input semantics (`TEXCOORD<location>`),
-   sampler register placement for combined image samplers (same register as the texture), and push constant
-   mapping. All three are isolated in `D3D12ShaderCompiler.cpp` / the PSO input layout.
-3. **Feedback loops.** If a texture is sampled while bound as a render target, the render target state wins and the
+1. **FXC compile times.** Decompiled shaders can be large and FXC is much slower than glslang. The bytecode cache helps
+   from the second run on; async compilation (on by default in the UWP frontend) hides most stutter. If it is too slow,
+   try `CEMU_D3D12_SHADER_COMPILER=dxc`.
+2. **Feedback loops.** If a texture is sampled while bound as a render target, the render target state wins and the
    sample is undefined. Vulkan handles this with feedback-loop layouts or pass splits; D3D12 needs a copy.
-4. **Depth reads while depth testing.** Sampling a depth buffer that is also bound (writes off) should use
+3. **Depth reads while depth testing.** Sampling a depth buffer that is also bound (writes off) should use
    `DEPTH_READ | SHADER_RESOURCE` with a read-only DSV. Not implemented yet.
-5. **Format reinterpretation.** D3D12 can only reinterpret views within a typeless family. Views outside the family fall
+4. **Format reinterpretation.** D3D12 can only reinterpret views within a typeless family. Views outside the family fall
    back to the base format (logged). Texture copies between families go through a buffer.
-6. **Vertex attribute alignment.** D3D12 may reject 8/16-bit attributes at unaligned offsets; the robust fix is shader
+5. **Vertex attribute alignment.** D3D12 may reject 8/16-bit attributes at unaligned offsets; the robust fix is shader
    side fetching like the Metal backend.
-7. **2D views of array slices.** D3D12 `Texture2D` SRVs can't select a slice; slice views use the array SRV form, which
+6. **2D views of array slices.** D3D12 `Texture2D` SRVs can't select a slice; slice views use the array SRV form, which
    all major drivers accept but is technically a dimension mismatch.
 
 ## Not implemented yet
@@ -135,7 +142,9 @@ Ordered by how likely they are to block games from rendering:
 | `D3D12Renderer.*` | Device, queue, submission, barriers, swap chains, textures, buffers, `Renderer` interface |
 | `D3D12RendererCore.cpp` | Draw path: uniforms, descriptor tables, samplers, pipeline binding, draws |
 | `D3D12PipelineCache.*` | Latte register state → PSO, rect emulation GS |
-| `D3D12ShaderCompiler.*`, `D3D12SpirvRemap.cpp`, `D3D12BindingModel.h` | GLSL → SPIR-V → DXIL, binding model |
+| `D3D12ShaderTranslate*`, `D3D12SpirvRemap.cpp`, `D3D12BindingModel.h` | GLSL → SPIR-V → HLSL, binding model |
+| `D3D12ShaderCompiler.*` | HLSL → DXBC (FXC) or DXIL (DXC, optional), optional spirv_to_dxil path |
+| `D3D12RootSignature.h` | The shared root signature (header-only, also used by tests) |
 | `RendererShaderD3D12.*` | Shader objects, async compile, DXIL cache |
 | `LatteTextureD3D12.*`, `LatteTextureViewD3D12.*` | Textures, views, per-subresource state tracking |
 | `CachedFBOD3D12.*` | Render target sets |

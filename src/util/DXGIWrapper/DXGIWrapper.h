@@ -13,6 +13,10 @@ public:
 	
 	DXGIWrapper(uint8* deviceLUID)
 	{
+#ifdef CEMU_UWP
+		// UWP apps can't load system DLLs at runtime, dxgi is linked directly
+		const auto pCreateDXGIFactory1 = &CreateDXGIFactory1;
+#else
 		m_moduleHandle = LoadLibraryA("dxgi.dll");
 		if (!m_moduleHandle)
 			throw std::runtime_error("can't load dxgi module");
@@ -23,6 +27,7 @@ public:
 			FreeLibrary(m_moduleHandle);
 			throw std::runtime_error("can't find CreateDXGIFactory1 in dxgi module");
 		}
+#endif
 
 		Microsoft::WRL::ComPtr<IDXGIFactory1> dxgiFactory;
 		pCreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));

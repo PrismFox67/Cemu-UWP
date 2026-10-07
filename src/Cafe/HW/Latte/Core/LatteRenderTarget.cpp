@@ -970,6 +970,7 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	swkbd_render(!isPadView);
 	nn::erreula::render(!isPadView);
 	LatteOverlay_render(isPadView);
+	LatteOverlay_renderHostOverlay(isPadView);
 	g_renderer->ImguiEnd();
 }
 

@@ -31,9 +31,33 @@ namespace MemMapper
 		return p;
 	}
 
+#ifdef CEMU_UWP
+	// UWP apps allocate through the *FromApp variants, which reject executable protections. Executable memory (the PPC
+	// recompiler's code cache) is allocated read/write and then switched to read/write/execute, which requires the
+	// "codeGeneration" capability in the app manifest
+	static void* _VirtualAlloc(void* baseAddr, size_t size, DWORD allocationType, PAGE_PERMISSION permissionFlags)
+	{
+		const bool executable = HAS_FLAG(permissionFlags, PAGE_PERMISSION::P_EXECUTE);
+		const DWORD protection = executable ? PAGE_READWRITE : GetPageProtection(permissionFlags);
+		void* r = VirtualAllocFromApp(baseAddr, size, allocationType, protection);
+		if (r && executable && (allocationType & MEM_COMMIT))
+		{
+			ULONG oldProtection;
+			if (!VirtualProtectFromApp(r, size, PAGE_EXECUTE_READWRITE, &oldProtection))
+				cemuLog_log(LogType::Force, "MemMapper: Unable to make memory executable (error {}). Is the codeGeneration capability missing?", GetLastError());
+		}
+		return r;
+	}
+#else
+	static void* _VirtualAlloc(void* baseAddr, size_t size, DWORD allocationType, PAGE_PERMISSION permissionFlags)
+	{
+		return VirtualAlloc(baseAddr, size, allocationType, GetPageProtection(permissionFlags));
+	}
+#endif
+
 	void* ReserveMemory(void* baseAddr, size_t size, PAGE_PERMISSION permissionFlags)
 	{
-		void* r = VirtualAlloc(baseAddr, size, MEM_RESERVE, GetPageProtection(permissionFlags));
+		void* r = _VirtualAlloc(baseAddr, size, MEM_RESERVE, permissionFlags);
 		return r;
 	}
 
@@ -46,9 +70,9 @@ namespace MemMapper
 	{
 		void* r;
 		if(fromReservation)
-			r = VirtualAlloc(baseAddr, size, MEM_COMMIT, GetPageProtection(permissionFlags));
+			r = _VirtualAlloc(baseAddr, size, MEM_COMMIT, permissionFlags);
 		else
-			r = VirtualAlloc(baseAddr, size, MEM_RESERVE | MEM_COMMIT, GetPageProtection(permissionFlags));
+			r = _VirtualAlloc(baseAddr, size, MEM_RESERVE | MEM_COMMIT, permissionFlags);
 		return r;
 	}
 

@@ -127,7 +127,189 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release delete ci-latest --yes --cleanup-tag 2>/dev/null || true
-        gh release create ci-latest cemu-d3d12-windows-x64.zip --prerelease --target "${GITHUB_SHA}" \
-          --title "CI build (${GITHUB_REF_NAME} @ ${GITHUB_SHA:0:7})" \
-          --notes "Automatic Windows build with the Direct3D 12 backend. Not an official Cemu release."
+        # the other jobs upload their packages to the same pre-release, so it is updated instead of recreated
+        gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" \
+          --notes "Automatic builds of the D3D12 / UWP fork (Windows with wxWidgets, Win32 test build of the Xbox frontend, UWP package). Not official Cemu releases."
+        gh release upload ci-latest cemu-d3d12-windows-x64.zip --clobber
+
+  # wxWidgets-free ImGui frontend (the Xbox UI) as a Win32 executable, for testing it on a PC
+  build-windows-host:
+    runs-on: windows-2022
+    steps:
+    - name: "Checkout repo"
+      uses: actions/checkout@v6
+      with:
+        submodules: "recursive"
+
+    - name: "Setup cmake"
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.29.0'
+
+    - name: "Bootstrap vcpkg"
+      run: |
+        ./dependencies/vcpkg/bootstrap-vcpkg.bat
+
+    - name: 'Setup NuGet Credentials for vcpkg'
+      shell: 'bash'
+      run: |
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        sources add \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+        -storepasswordincleartext \
+        -name "GitHub" \
+        -username "${{ github.repository_owner }}" \
+        -password "${{ secrets.GITHUB_TOKEN }}"
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        setapikey "${{ secrets.GITHUB_TOKEN }}" \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+
+    - name: "Register problem matchers"
+      shell: bash
+      run: echo "::add-matcher::.github/problem-matchers/msvc.json"
+
+    - name: "cmake"
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=release -DENABLE_WXWIDGETS=OFF -DENABLE_HOST_FRONTEND=ON -DENABLE_D3D12=ON -DVCPKG_INSTALL_OPTIONS="--clean-after-build" 2>&1 | tee ../cmake.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Build"
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config release 2>&1 | tee ../build.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Publish build logs"
+      if: always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p ci-logs
+        for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/host-$f"; done
+        echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/host-status.txt
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
+        gh release upload ci-logs ci-logs/* --clobber
+
+    - name: "Package"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p pkg
+        cp bin/Cemu_Host_release.exe pkg/Cemu_Host.exe
+        cp -r bin/resources bin/gameProfiles pkg/
+        cd pkg && 7z a -tzip ../cemu-host-win32-x64.zip . > /dev/null && cd ..
+        gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+        gh release upload ci-latest cemu-host-win32-x64.zip --clobber
+
+    - name: "Upload artifact"
+      uses: actions/upload-artifact@v6
+      with:
+        name: cemu-host-win32-x64
+        path: ./cemu-host-win32-x64.zip
+
+  # UWP package for Xbox (Dev Mode) and Windows
+  build-uwp:
+    runs-on: windows-2022
+    steps:
+    - name: "Checkout repo"
+      uses: actions/checkout@v6
+      with:
+        submodules: "recursive"
+
+    - name: "Setup cmake"
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.29.0'
+
+    - name: "Bootstrap vcpkg"
+      run: |
+        ./dependencies/vcpkg/bootstrap-vcpkg.bat
+
+    - name: 'Setup NuGet Credentials for vcpkg'
+      shell: 'bash'
+      run: |
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        sources add \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+        -storepasswordincleartext \
+        -name "GitHub" \
+        -username "${{ github.repository_owner }}" \
+        -password "${{ secrets.GITHUB_TOKEN }}"
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        setapikey "${{ secrets.GITHUB_TOKEN }}" \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+
+    - name: "Register problem matchers"
+      shell: bash
+      run: echo "::add-matcher::.github/problem-matchers/msvc.json"
+
+    - name: "Create signing certificate"
+      shell: pwsh
+      run: |
+        # self-signed test certificate, its subject must match Publisher in Package.appxmanifest
+        $cert = New-SelfSignedCertificate -Type Custom -Subject "CN=CemuUWP" -KeyUsage DigitalSignature -FriendlyName "Cemu UWP test signing" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+        $pw = ConvertTo-SecureString -String "cemu" -Force -AsPlainText
+        Export-PfxCertificate -Cert $cert -FilePath "$env:GITHUB_WORKSPACE\CemuUWP_TemporaryKey.pfx" -Password $pw | Out-Null
+        Export-Certificate -Cert $cert -FilePath "$env:GITHUB_WORKSPACE\CemuUWP.cer" | Out-Null
+
+    - name: "cmake"
+      shell: bash
+      run: |
+        mkdir -p build-uwp
+        cd build-uwp
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION=10.0 -DVCPKG_INSTALL_OPTIONS="--clean-after-build" 2>&1 | tee ../cmake.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Build and package"
+      shell: bash
+      run: |
+        cd build-uwp
+        cmake --build . --config Release --target CemuBin -- -m -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=true -p:PackageCertificateKeyFile="$GITHUB_WORKSPACE/CemuUWP_TemporaryKey.pfx" -p:PackageCertificatePassword=cemu -p:AppxPackageDir="$GITHUB_WORKSPACE/AppPackages/" 2>&1 | tee ../build.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Report failure summary"
+      if: failure()
+      shell: bash
+      run: |
+        for f in cmake.log build.log; do
+          [ -f "$f" ] || continue
+          grep -E " error |error:|Error " "$f" | head -n 8 | while IFS= read -r line; do echo "::error title=uwp $f::${line:0:900}"; done
+        done
+
+    - name: "Publish build logs"
+      if: always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p ci-logs
+        for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/uwp-$f"; done
+        find dependencies/vcpkg/buildtrees -name "*-err.log" -size +0 2>/dev/null | head -n 20 | while read -r f; do cp "$f" "ci-logs/uwp-vcpkg-$(basename "$f")"; done
+        echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/uwp-status.txt
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
+        gh release upload ci-logs ci-logs/* --clobber
+
+    - name: "Collect package"
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p uwp-package
+        find AppPackages -type f \( -name "*.msix" -o -name "*.appx" -o -name "*.cer" -o -name "*.ps1" \) -exec cp {} uwp-package/ \;
+        cp CemuUWP.cer uwp-package/
+        ls -la uwp-package
+        cd uwp-package && 7z a -tzip ../cemu-uwp-x64.zip . > /dev/null && cd ..
+        gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+        gh release upload ci-latest cemu-uwp-x64.zip --clobber
+
+    - name: "Upload artifact"
+      uses: actions/upload-artifact@v6
+      with:
+        name: cemu-uwp-x64
+        path: ./cemu-uwp-x64.zip

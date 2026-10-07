@@ -5,7 +5,13 @@
 #include "config/ActiveSettings.h"
 #include "Cafe/IOSU/legacy/iosu_crypto.h"
 #include "Common/FileStream.h"
+#ifdef CEMU_UWP
+#include <random> // boost-random isn't available for UWP, MSVC's std::uniform_int_distribution has no such static asserts
+namespace cemu_random = std;
+#else
 #include <boost/random/uniform_int.hpp>
+namespace cemu_random = boost::random;
+#endif
 
 #include <random>
 
@@ -67,7 +73,7 @@ Account::Account(uint32 persistent_id, std::wstring_view mii_name)
 	static std::mt19937 s_mte(s_random_device());
 
         // use boost library to escape static asserts in linux builds
-        boost::random::uniform_int_distribution<uint16> dist(std::numeric_limits<uint8>::min(), std::numeric_limits<uint8>::max());
+        cemu_random::uniform_int_distribution<uint16> dist(std::numeric_limits<uint8>::min(), std::numeric_limits<uint8>::max());
         
         std::generate(m_uuid.begin(), m_uuid.end(), [&]() { return (uint8)dist(s_mte); });
 

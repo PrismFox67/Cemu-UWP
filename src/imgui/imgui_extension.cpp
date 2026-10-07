@@ -83,7 +83,11 @@ void ImGui_PrecacheFonts()
 		static const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
 
 #if BOOST_OS_WINDOWS
+#ifdef CEMU_UWP
+		const HMODULE hinstance = nullptr; // resources of the executable
+#else
 		const auto hinstance = GetModuleHandle(nullptr);
+#endif
 		const HRSRC res = FindResource(hinstance, MAKEINTRESOURCE(IDR_FONTAWESOME), RT_RCDATA);
 		if (res)
 		{

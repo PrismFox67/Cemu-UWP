@@ -1,8 +1,10 @@
 #include "util/SystemInfo/SystemInfo.h"
 
 #include <Psapi.h>
+#ifndef CEMU_UWP
 #include <winternl.h>
 #pragma comment(lib, "ntdll.lib")
+#endif
 
 uint64 QueryRamUsage()
 {
@@ -48,6 +50,12 @@ void QueryProcTime(uint64 &out_now, uint64 &out_user, uint64 &out_kernel)
 
 void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 {
+#ifdef CEMU_UWP
+	// NtQuerySystemInformation isn't available to UWP apps, per core usage stays empty
+	for (auto& t : out)
+		t = {};
+	return;
+#endif
 	std::vector<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> sppi(count);
 	if (NT_SUCCESS(NtQuerySystemInformation(SystemProcessorPerformanceInformation, sppi.data(), sizeof(SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION) * count, nullptr)))
 	{

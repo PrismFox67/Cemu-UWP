@@ -25,7 +25,7 @@
 
 #include "audio/IAudioAPI.h"
 #include "audio/IAudioInputAPI.h"
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 #pragma comment(lib,"Dbghelp.lib")
 #endif
 
@@ -106,9 +106,11 @@ void WindowsInitCwd()
 		executablePath.resize(i);
 	else
 		executablePath.clear();
+#ifndef CEMU_UWP // UWP apps can change neither the working directory nor the process priority
 	SetCurrentDirectoryW(fs::path(executablePath).parent_path().c_str());
 	// set high priority
 	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+#endif
 	#endif
 }
 
@@ -172,7 +174,7 @@ void UnitTests()
 bool isConsoleConnected = false;
 void requireConsole()
 {
-    #if BOOST_OS_WINDOWS
+    #if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
     if (isConsoleConnected)
         return;
 

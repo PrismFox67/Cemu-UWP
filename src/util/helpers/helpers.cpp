@@ -7,7 +7,13 @@
 
 #include "config/ActiveSettings.h"
 
+#ifdef CEMU_UWP
+#include <random> // boost-random isn't available for UWP, MSVC's std::uniform_int_distribution has no such static asserts
+namespace cemu_random = std;
+#else
 #include <boost/random/uniform_int.hpp>
+namespace cemu_random = boost::random;
+#endif
 
 #include <zlib.h>
 
@@ -117,9 +123,14 @@ void SetThreadName(const char* name)
 {
 #if BOOST_OS_WINDOWS
 	using SetThreadDescription_t = HRESULT (*)(HANDLE hThread, PCWSTR lpThreadDescription);
+#ifdef CEMU_UWP
+	// UWP apps can't load system DLLs dynamically, SetThreadDescription exists on every Windows 10 version UWP supports
+	static SetThreadDescription_t pSetThreadDescription = (SetThreadDescription_t)&SetThreadDescription;
+#else
 	static SetThreadDescription_t pSetThreadDescription = nullptr;
 	if (!pSetThreadDescription)
 		pSetThreadDescription = (SetThreadDescription_t)GetProcAddress(LoadLibraryW(L"Kernel32.dll"), "SetThreadDescription");
+#endif
 	if (pSetThreadDescription)
 	{
 		size_t len = strlen(name) * 2 + 1;
@@ -155,6 +166,9 @@ void SetThreadName(const char* name)
 #if BOOST_OS_WINDOWS
 std::pair<DWORD, DWORD> GetWindowsVersion()
 {
+#ifdef CEMU_UWP
+	return { 10, 0 }; // UWP only exists on Windows 10 and later
+#endif
 	using RtlGetVersion_t = LONG(*)(POSVERSIONINFOEXW);
 	static RtlGetVersion_t pRtlGetVersion = nullptr;
 	if(!pRtlGetVersion) 
@@ -183,7 +197,7 @@ fs::path GetParentProcess()
 {
 	fs::path result;
 	
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if(hSnapshot != INVALID_HANDLE_VALUE)
 	{
@@ -419,7 +433,7 @@ std::string GenerateRandomString(const size_t length, const std::string_view cha
 	std::mt19937 gen(rd());
      
         // workaround for static asserts using boost
-        boost::random::uniform_int_distribution<decltype(characters.size())> index_dist(0, characters.size() - 1);
+        cemu_random::uniform_int_distribution<decltype(characters.size())> index_dist(0, characters.size() - 1);
 	std::generate_n(
 		result.begin(),
 		length,

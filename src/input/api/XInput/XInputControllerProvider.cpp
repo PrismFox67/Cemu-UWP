@@ -5,6 +5,14 @@
 
 XInputControllerProvider::XInputControllerProvider()
 {
+#ifdef CEMU_UWP
+	// UWP apps link xinputuap directly, they can't load system DLLs at runtime
+	m_XInputGetCapabilities = &XInputGetCapabilities;
+	m_XInputGetState = &XInputGetState;
+	m_XInputSetState = &XInputSetState;
+	m_XInputGetBatteryInformation = &XInputGetBatteryInformation;
+	return;
+#else
 	// try to load newest to oldest
 	m_module = LoadLibraryA("XInput1_4.DLL");
 	if (!m_module)
@@ -33,12 +41,15 @@ XInputControllerProvider::XInputControllerProvider()
 	GET_XINPUT_PROC(XInputGetBatteryInformation);
 #undef GET_XINPUT_PROC
 
+#endif
 }
 
 XInputControllerProvider::~XInputControllerProvider()
 {
+#ifndef CEMU_UWP
 	if (m_module)
 		FreeLibrary(m_module);
+#endif
 }
 
 std::vector<std::shared_ptr<ControllerBase>> XInputControllerProvider::get_controllers()
