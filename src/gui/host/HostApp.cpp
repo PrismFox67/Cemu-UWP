@@ -8,6 +8,7 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cemu/ncrypto/ncrypto.h"
 #include "config/ActiveSettings.h"
@@ -324,8 +325,8 @@ namespace
 			s_menuOpen = false;
 			break;
 		case kMenuGamePadScreen:
-			if (auto vpad = InputManager::instance().get_vpad_controller(0))
-				vpad->set_screen_toggle(!vpad->is_screen_active_toggle());
+			// same state the screen swap hotkey (Ctrl+Tab in the wx frontend) flips
+			LatteGPUState.isDRCPrimary = !LatteGPUState.isDRCPrimary;
 			break;
 		case kMenuShowFPS:
 		{
@@ -657,8 +658,7 @@ void HostApp::DrawInGameMenu()
 	if (ImGui::Begin("##ingamemenu", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
 	{
 		const auto& config = GetConfig();
-		auto vpad = InputManager::instance().get_vpad_controller(0);
-		const bool padScreen = vpad && vpad->is_screen_active_toggle();
+		const bool padScreen = LatteGPUState.isDRCPrimary;
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
 			"Resume",
