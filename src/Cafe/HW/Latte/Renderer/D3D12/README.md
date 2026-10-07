@@ -3,7 +3,11 @@
 A D3D12 renderer for Cemu, written so it can run inside a UWP app (including Xbox in Dev Mode) as well as a normal
 Win32 desktop build. It plugs into the same `Renderer` interface as the OpenGL, Vulkan and Metal backends.
 
-**Status: first implementation, not yet run with real games on Windows.** What has been verified:
+**Status: first implementation, not yet run with commercial games or on a real Windows GPU.** What has been verified:
+
+- The MSVC builds from CI (Win32 build of the UWP frontend) run Wii U homebrew end to end under Wine with vkd3d
+  (D3D12 on Vulkan) and lavapipe: *MultiDRCSpaceDemo* (.rpx) and the *Homebrew App Store* (.wuhb) render correctly,
+  including Cemu's own ImGui overlay and the frontend's in-game menu. This found and fixed an upside-down output pass.
 
 - The whole shader path (decompiler-style GLSL -> HLSL -> Microsoft's `d3dcompiler_47`) with the backend's real
   translation code, root signature and binding remap tables, drawing through D3D12 (Wine's vkd3d on lavapipe) and
