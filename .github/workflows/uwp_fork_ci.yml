@@ -91,6 +91,20 @@ jobs:
           echo "::error title=vcpkg $(basename $f)::$(tail -c 900 "$f" | tr '\n' ' ')"
         done
 
+    # full logs as release assets, readable without access to the Actions UI
+    - name: "Publish build logs"
+      if: always()
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        mkdir -p ci-logs
+        for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/windows-$f"; done
+        find dependencies/vcpkg/buildtrees -name "*-err.log" -size +0 2>/dev/null | head -n 20 | while read -r f; do cp "$f" "ci-logs/vcpkg-$(basename "$f")"; done
+        echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/windows-status.txt
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
+        gh release upload ci-logs ci-logs/* --clobber
+
     - name: "Prepare package"
       shell: bash
       run: |
