@@ -12,12 +12,14 @@
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 
 
-// same GLSL as _vkGenSurfaceCopyShader_vs / _ps_depthToColor / _ps_colorToDepth in VulkanSurfaceCopy.cpp
+// Same GLSL as _vkGenSurfaceCopyShader_vs / _ps_depthToColor / _ps_colorToDepth in VulkanSurfaceCopy.cpp, except that
+// the four vec2 corners are packed into two vec4: a vec2 array has a 8 byte stride in Vulkan push constants (std430)
+// but HLSL constant buffer arrays always have a 16 byte stride. The memory layout is unchanged (8 floats, then ivec2)
 static const char* s_copySurfaceVS =
 	"#version 450\r\n"
 	"layout(location = 0) out flat ivec2 passSrcTexelOffset;\r\n"
 	"layout(push_constant) uniform pushConstants {\r\n"
-	"vec2 vertexOffsets[4];\r\n"
+	"vec4 vertexOffsets[2];\r\n"
 	"ivec2 srcTexelOffset;\r\n"
 	"}uf_pushConstants;\r\n"
 	"\r\n"
@@ -26,11 +28,11 @@ static const char* s_copySurfaceVS =
 	"switch(gl_VertexIndex)"
 	"{\r\n"
 	"case 0: tPOS = uf_pushConstants.vertexOffsets[0].xy; break;\r\n"
-	"case 1: tPOS = uf_pushConstants.vertexOffsets[1].xy; break;\r\n"
-	"case 2: tPOS = uf_pushConstants.vertexOffsets[3].xy; break;\r\n"
+	"case 1: tPOS = uf_pushConstants.vertexOffsets[0].zw; break;\r\n"
+	"case 2: tPOS = uf_pushConstants.vertexOffsets[1].zw; break;\r\n"
 	"case 3: tPOS = uf_pushConstants.vertexOffsets[0].xy; break;\r\n"
-	"case 4: tPOS = uf_pushConstants.vertexOffsets[2].xy; break;\r\n"
-	"case 5: tPOS = uf_pushConstants.vertexOffsets[3].xy; break;\r\n"
+	"case 4: tPOS = uf_pushConstants.vertexOffsets[1].xy; break;\r\n"
+	"case 5: tPOS = uf_pushConstants.vertexOffsets[1].zw; break;\r\n"
 	"}"
 	"passSrcTexelOffset = uf_pushConstants.srcTexelOffset;\r\n"
 	"gl_Position = vec4(tPOS, 0, 1.0);\r\n"

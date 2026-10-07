@@ -472,7 +472,16 @@ namespace LatteDecompiler
 		}
 		else
 		{
-			if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex || decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
+			if ((decompilerContext->shaderType == LatteConst::ShaderType::Vertex || decompilerContext->shaderType == LatteConst::ShaderType::Geometry) && decompilerContext->options->flattenV2GInterface)
+			{
+				// parameters shared between vertex shader and geometry shader, one variable per parameter at the
+				// location it would have as a block member (see LatteDecompilerOptions::flattenV2GInterface)
+				const bool isVS = decompilerContext->shaderType == LatteConst::ShaderType::Vertex;
+				const uint32 ringParameterCountVS2GS = isVS ? decompilerContext->shader->ringParameterCount : decompilerContext->shader->ringParameterCountFromPrevStage;
+				for (uint32 f = 0; f < ringParameterCountVS2GS; f++)
+					src->addFmt("layout(location = {}) {} ivec4 passV2GParameter{}{};" _CRLF, f, isVS ? "out" : "in", f, isVS ? "" : "[]");
+			}
+			else if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex || decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
 			{
 				// parameters shared between vertex shader and geometry shader
 				src->add("V2G_LAYOUT ");

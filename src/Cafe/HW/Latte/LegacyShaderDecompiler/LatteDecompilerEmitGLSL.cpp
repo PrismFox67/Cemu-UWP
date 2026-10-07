@@ -2879,14 +2879,19 @@ void _emitGSReadInputVFetchCode(LatteDecompilerShaderContext* shaderContext, Lat
 
 	src->add(" = ");
 	_emitTypeConversionPrefix(shaderContext, LATTE_DECOMPILER_DTYPE_SIGNED_INT, shaderContext->typeTracker.defaultDataType);
-	src->add("(v2g[");
 	if (texInstruction->textureFetch.srcSel[0] >= 4)
 		cemu_assert_unimplemented();
 	if (texInstruction->textureFetch.srcSel[1] >= 4)
 		cemu_assert_unimplemented();
 	// todo: Index type
-	src->add("0");
-	src->addFmt("].passV2GParameter{}.", texInstruction->textureFetch.offset/16);
+	if (shaderContext->options->flattenV2GInterface)
+		src->addFmt("(passV2GParameter{}[0].", texInstruction->textureFetch.offset/16);
+	else
+	{
+		src->add("(v2g[");
+		src->add("0");
+		src->addFmt("].passV2GParameter{}.", texInstruction->textureFetch.offset/16);
+	}
 
 
 	for(sint32 f=0; f<4; f++)
@@ -3404,7 +3409,10 @@ void _emitCFRingWriteCode(LatteDecompilerShaderContext* shaderContext, LatteDeco
 			cemu_assert_unimplemented();
 		for (sint32 burstIndex = 0; burstIndex < (sint32)(cfInstruction->exportBurstCount + 1); burstIndex++)
 		{
-			src->addFmt("v2g.passV2GParameter{}.", (cfInstruction->exportArrayBase) / 4 + burstIndex);
+			if (shaderContext->options->flattenV2GInterface)
+				src->addFmt("passV2GParameter{}.", (cfInstruction->exportArrayBase) / 4 + burstIndex);
+			else
+				src->addFmt("v2g.passV2GParameter{}.", (cfInstruction->exportArrayBase) / 4 + burstIndex);
 			_emitXYZWByMask(src, cfInstruction->memWriteCompMask);
 			src->addFmt(" = ");
 			_emitExportGPRReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_SIGNED_INT, burstIndex);

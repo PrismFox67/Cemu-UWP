@@ -809,6 +809,7 @@ void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteCons
 #endif
 	options.strictMul = g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
 	options.declareAllPSInputs = g_renderer->GetType() == RendererAPI::D3D12;
+	options.flattenV2GInterface = g_renderer->GetType() == RendererAPI::D3D12;
 }
 
 LatteDecompilerShader* LatteShader_CompileSeparableVertexShader2(uint64 baseHash, uint64& vsAuxHash, uint8* vertexShaderPtr, uint32 vertexShaderSize, bool usesGeometryShader, LatteFetchShader* fetchShader)

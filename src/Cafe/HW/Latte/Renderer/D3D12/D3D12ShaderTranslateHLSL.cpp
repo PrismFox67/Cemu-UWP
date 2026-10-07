@@ -2,6 +2,73 @@
 
 #include <spirv_cross/spirv_hlsl.hpp>
 
+#include <unordered_set>
+
+// SPIRV-Cross renames identifiers that are HLSL keywords but not ones that collide with HLSL intrinsic functions.
+// GLSL code can legally use these as variable or function names (e.g. "vec2 frac = fract(x);" in Cemu's output
+// shaders), which FXC rejects
+static void _RenameHLSLIntrinsicCollisions(spirv_cross::CompilerHLSL& compiler)
+{
+	static const std::unordered_set<std::string> kIntrinsics = {
+		"abort", "abs", "acos", "all", "AllMemoryBarrier", "AllMemoryBarrierWithGroupSync", "any", "asdouble", "asfloat",
+		"asin", "asint", "asuint", "atan", "atan2", "ceil", "CheckAccessFullyMapped", "clamp", "clip", "cos", "cosh",
+		"countbits", "cross", "D3DCOLORtoUBYTE4", "ddx", "ddx_coarse", "ddx_fine", "ddy", "ddy_coarse", "ddy_fine",
+		"degrees", "determinant", "DeviceMemoryBarrier", "DeviceMemoryBarrierWithGroupSync", "distance", "dot", "dst",
+		"errorf", "EvaluateAttributeAtCentroid", "EvaluateAttributeAtSample", "EvaluateAttributeSnapped", "exp", "exp2",
+		"f16tof32", "f32tof16", "faceforward", "firstbithigh", "firstbitlow", "floor", "fma", "fmod", "frac", "frexp",
+		"fwidth", "GetRenderTargetSampleCount", "GetRenderTargetSamplePosition", "GroupMemoryBarrier",
+		"GroupMemoryBarrierWithGroupSync", "InterlockedAdd", "InterlockedAnd", "InterlockedCompareExchange",
+		"InterlockedCompareStore", "InterlockedExchange", "InterlockedMax", "InterlockedMin", "InterlockedOr",
+		"InterlockedXor", "isfinite", "isinf", "isnan", "ldexp", "length", "lerp", "lit", "log", "log10", "log2", "mad",
+		"max", "min", "modf", "msad4", "mul", "noise", "normalize", "pow", "printf", "radians", "rcp", "reflect",
+		"refract", "reversebits", "round", "rsqrt", "saturate", "sign", "sin", "sincos", "sinh", "smoothstep", "sqrt",
+		"step", "tan", "tanh", "tex1D", "tex1Dbias", "tex1Dgrad", "tex1Dlod", "tex1Dproj", "tex2D", "tex2Dbias",
+		"tex2Dgrad", "tex2Dlod", "tex2Dproj", "tex3D", "tex3Dbias", "tex3Dgrad", "tex3Dlod", "tex3Dproj", "texCUBE",
+		"texCUBEbias", "texCUBEgrad", "texCUBElod", "texCUBEproj", "transpose", "trunc",
+	};
+	const uint32_t bound = compiler.get_current_id_bound();
+	for (uint32_t id = 1; id < bound; id++)
+	{
+		const std::string& name = compiler.get_name(id);
+		if (!name.empty() && kIntrinsics.count(name) != 0)
+			compiler.set_name(id, name + "_");
+	}
+}
+
+// SPIRV-Cross declares the geometry shader's per-vertex position input as "gl_PositionIn[]" (and fills it from the
+// input struct) but emits accesses through the GLSL block syntax "gl_in[i].gl_Position", which doesn't compile.
+// Only the generated RECT emulation geometry shader reads gl_in
+static void _FixupGeometryShaderPositionInput(std::string& hlsl)
+{
+	static const std::string kPrefix = "gl_in[";
+	static const std::string kSuffix = "].gl_Position";
+	size_t pos = 0;
+	while ((pos = hlsl.find(kPrefix, pos)) != std::string::npos)
+	{
+		// find the matching ']' (the index can be an expression with brackets)
+		size_t i = pos + kPrefix.size();
+		int depth = 1;
+		while (i < hlsl.size() && depth > 0)
+		{
+			if (hlsl[i] == '[')
+				depth++;
+			else if (hlsl[i] == ']')
+				depth--;
+			i++;
+		}
+		const size_t closing = i - 1;
+		if (depth != 0 || hlsl.compare(closing, kSuffix.size(), kSuffix) != 0)
+		{
+			pos += kPrefix.size();
+			continue;
+		}
+		const std::string index = hlsl.substr(pos + kPrefix.size(), closing - (pos + kPrefix.size()));
+		const std::string replacement = "gl_PositionIn[" + index + "]";
+		hlsl.replace(pos, closing + kSuffix.size() - pos, replacement);
+		pos += replacement.size();
+	}
+}
+
 bool D3D12ShaderTranslate::SPIRVToHLSL(const std::vector<uint32>& spirv, D3D12Const::Stage stage, std::string& hlslOut, std::string& logOut)
 {
 	hlslOut.clear();
@@ -47,6 +114,7 @@ bool D3D12ShaderTranslate::SPIRVToHLSL(const std::vector<uint32>& spirv, D3D12Co
 		rootConstants[0].space = D3D12Const::kSpacePushConstants;
 		compiler.set_root_constant_layouts(rootConstants);
 
+		_RenameHLSLIntrinsicCollisions(compiler);
 		hlslOut = compiler.compile();
 	}
 	catch (const std::exception& e)
@@ -59,5 +127,7 @@ bool D3D12ShaderTranslate::SPIRVToHLSL(const std::vector<uint32>& spirv, D3D12Co
 		logOut = "SPIRV-Cross produced no output";
 		return false;
 	}
+	if (stage == D3D12Const::Stage::Geometry)
+		_FixupGeometryShaderPositionInput(hlslOut);
 	return true;
 }

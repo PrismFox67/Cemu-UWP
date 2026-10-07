@@ -265,6 +265,9 @@ struct LatteDecompilerOptions
 	// order), including ones it never writes. D3D12 requires matching output/input signatures between stages, Vulkan
 	// allows the pixel shader to read inputs that the previous stage doesn't declare
 	bool declareAllPSInputs{ false };
+	// D3D12: pass vertex -> geometry shader parameters as separate variables instead of an interface block. The HLSL
+	// translation (SPIRV-Cross) doesn't support arrays of input blocks in geometry shaders
+	bool flattenV2GInterface{ false };
 	struct
 	{
 		bool hasRoundingModeRTEFloat32{ false };
