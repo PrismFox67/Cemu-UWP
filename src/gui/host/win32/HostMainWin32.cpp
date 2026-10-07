@@ -209,7 +209,7 @@ void WindowSystem::Create()
 	wc.style = CS_HREDRAW | CS_VREDRAW;
 	wc.lpfnWndProc = _WndProc;
 	wc.hInstance = instance;
-	wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+	wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512)); // IDC_ARROW (the A/W macro depends on UNICODE)
 	wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
 	wc.lpszClassName = L"CemuHostWindow";
 	RegisterClassExW(&wc);

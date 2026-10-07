@@ -64,6 +64,10 @@ project(Cemu VERSION 2.0.0)
 if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
 	set(CEMU_UWP ON)
 	add_compile_definitions(CEMU_UWP)
+	# CMAKE_SYSTEM_PROCESSOR is empty when CMAKE_SYSTEM_NAME is set explicitly, the architecture checks need it
+	if (NOT CMAKE_SYSTEM_PROCESSOR)
+		set(CMAKE_SYSTEM_PROCESSOR "AMD64")
+	endif()
 	# UWP apps use the DLL runtime (the VCLibs framework package)
 	set(CEMU_MSVC_RUNTIME "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 	# desktop only components
