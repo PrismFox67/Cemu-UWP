@@ -67,4 +67,13 @@ namespace MemMapper
 			munmap(baseAddr, size);
 	}
 
+
+	void* AllocateExecutableMemory(size_t size, void*& writableOut)
+	{
+		void* r = mmap(nullptr, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (r == MAP_FAILED)
+			r = nullptr;
+		writableOut = r;
+		return r;
+	}
 };

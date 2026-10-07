@@ -84,4 +84,54 @@ namespace MemMapper
 			VirtualFree(baseAddr, size, MEM_RELEASE);
 	}
 
+#ifdef CEMU_UWP
+#ifndef FILE_MAP_EXECUTE
+#define FILE_MAP_EXECUTE 0x0020 // SECTION_MAP_EXECUTE_EXPLICIT
+#endif
+	void* AllocateExecutableMemory(size_t size, void*& writableOut)
+	{
+		writableOut = nullptr;
+		// 1) read/write/execute memory (works where the system allows it for apps with the codeGeneration capability)
+		if (void* r = VirtualAllocFromApp(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE))
+		{
+			ULONG oldProtection;
+			if (VirtualProtectFromApp(r, size, PAGE_EXECUTE_READWRITE, &oldProtection))
+			{
+				writableOut = r;
+				return r;
+			}
+			cemuLog_log(LogType::Force, "MemMapper: read/write/execute memory not allowed (error {}), using a double mapping", GetLastError());
+			VirtualFree(r, 0, MEM_RELEASE);
+		}
+		// 2) one pagefile backed section mapped twice: a writable view and an executable view
+		HANDLE section = CreateFileMappingFromApp(INVALID_HANDLE_VALUE, nullptr, PAGE_EXECUTE_READWRITE, (ULONG64)size, nullptr);
+		if (!section)
+		{
+			cemuLog_log(LogType::Force, "MemMapper: Unable to create a code section (error {}). Is the codeGeneration capability missing?", GetLastError());
+			return nullptr;
+		}
+		void* writable = MapViewOfFileFromApp(section, FILE_MAP_READ | FILE_MAP_WRITE, 0, size);
+		void* executable = MapViewOfFileFromApp(section, FILE_MAP_READ | FILE_MAP_EXECUTE, 0, size);
+		CloseHandle(section); // the views keep the section alive
+		if (!writable || !executable)
+		{
+			cemuLog_log(LogType::Force, "MemMapper: Unable to map executable memory (error {})", GetLastError());
+			if (writable)
+				UnmapViewOfFile(writable);
+			if (executable)
+				UnmapViewOfFile(executable);
+			return nullptr;
+		}
+		writableOut = writable;
+		return executable;
+	}
+#else
+	void* AllocateExecutableMemory(size_t size, void*& writableOut)
+	{
+		void* r = VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+		writableOut = r;
+		return r;
+	}
+#endif
+
 };

@@ -1337,12 +1337,14 @@ void PPCRecompilerX64Gen_imlInstruction_name_r(PPCRecFunction_t* PPCRecFunction,
 }
 
 uint8* codeMemoryBlock = nullptr;
+uint8* codeMemoryBlockWritable = nullptr; // same memory as codeMemoryBlock, differs where code memory is mapped twice (UWP)
 sint32 codeMemoryBlockIndex = 0;
 sint32 codeMemoryBlockSize = 0;
 
 std::mutex mtx_allocExecutableMemory;
 
-uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size)
+// returns the address the code will run at, the code has to be written through writableOut
+uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size, uint8*& writableOut)
 {
 	std::lock_guard<std::mutex> lck(mtx_allocExecutableMemory);
 	if( codeMemoryBlockIndex+size > codeMemoryBlockSize )
@@ -1350,14 +1352,22 @@ uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size)
 		// allocate new block
 		codeMemoryBlockSize = std::max(1024*1024*4, size+1024); // 4MB (or more if the function is larger than 4MB)
 		codeMemoryBlockIndex = 0;
-		codeMemoryBlock = (uint8*)MemMapper::AllocateMemory(nullptr, codeMemoryBlockSize, MemMapper::PAGE_PERMISSION::P_RWX);
+		void* writable = nullptr;
+		codeMemoryBlock = (uint8*)MemMapper::AllocateExecutableMemory(codeMemoryBlockSize, writable);
+		codeMemoryBlockWritable = (uint8*)writable;
+		if (!codeMemoryBlock)
+		{
+			cemuLog_log(LogType::Force, "Recompiler: Unable to allocate executable memory");
+			cemu_assert(false);
+		}
 	}
 	uint8* codeMem = codeMemoryBlock + codeMemoryBlockIndex;
+	writableOut = codeMemoryBlockWritable + codeMemoryBlockIndex;
 	codeMemoryBlockIndex += size;
 	// pad to 4 byte alignment
 	while (codeMemoryBlockIndex & 3)
 	{
-		codeMemoryBlock[codeMemoryBlockIndex] = 0x90;
+		codeMemoryBlockWritable[codeMemoryBlockIndex] = 0x90;
 		codeMemoryBlockIndex++;
 	}
 	return codeMem;
@@ -1550,7 +1560,8 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 	for (auto& emitColdCode : x64GenContext.m_coldCode)
 		emitColdCode(&x64GenContext);
 	// allocate executable memory
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* writableMemory;
+	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes(), writableMemory);
 	size_t baseAddress = (size_t)executableMemory;
 	// fix relocs
 	for(auto& relocIt : x64GenContext.relocateOffsetTable2)
@@ -1597,7 +1608,7 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 
 	// copy code to executable memory
 	std::span<uint8> codeBuffer = x64GenContext.emitter->GetBuffer();
-	memcpy(executableMemory, codeBuffer.data(), codeBuffer.size_bytes());
+	memcpy(writableMemory, codeBuffer.data(), codeBuffer.size_bytes());
 	// set code
 	PPCRecFunction->x86Code = executableMemory;
 	PPCRecFunction->x86Size = codeBuffer.size_bytes();
@@ -1671,9 +1682,10 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
 	// RET
 	x64Gen_ret(&x64GenContext);
 
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* writableMemory;
+	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes(), writableMemory);
 	// copy code to executable memory
-	memcpy(executableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
+	memcpy(writableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
 	PPCRecompiler_enterRecompilerCode = (void ATTR_MS_ABI (*)(uint64,uint64))executableMemory;
 }
 
@@ -1690,9 +1702,10 @@ void* PPCRecompilerX64Gen_generateLeaveRecompilerCode()
 	// RET
 	x64Gen_ret(&x64GenContext);
 
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* writableMemory;
+	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes(), writableMemory);
 	// copy code to executable memory
-	memcpy(executableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
+	memcpy(writableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
 	return executableMemory;
 }
 
