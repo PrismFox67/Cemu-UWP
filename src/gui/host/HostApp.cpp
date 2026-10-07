@@ -15,6 +15,8 @@
 #include "config/NetworkSettings.h"
 #include "input/InputManager.h"
 #include "input/api/XInput/XInputController.h"
+#include "input/api/Keyboard/KeyboardController.h"
+#include "input/emulated/VPADController.h"
 #include "audio/IAudioAPI.h"
 
 #include <imgui.h>
@@ -143,8 +145,27 @@ namespace
 			auto xinput = std::make_shared<XInputController>(0);
 			vpad->add_controller(xinput);
 			vpad->set_default_mapping(xinput);
+			// keyboard as well, so the PC build can be tested without a controller
+			auto keyboard = std::make_shared<KeyboardController>();
+			vpad->add_controller(keyboard);
+			const std::pair<VPADController::ButtonId, uint32> keyboardMapping[] = {
+				{ VPADController::kButtonId_A, 'K' }, { VPADController::kButtonId_B, 'J' },
+				{ VPADController::kButtonId_X, 'I' }, { VPADController::kButtonId_Y, 'U' },
+				{ VPADController::kButtonId_L, 'Q' }, { VPADController::kButtonId_R, 'E' },
+				{ VPADController::kButtonId_ZL, 'Z' }, { VPADController::kButtonId_ZR, 'C' },
+				{ VPADController::kButtonId_Plus, VK_RETURN }, { VPADController::kButtonId_Minus, VK_BACK },
+				{ VPADController::kButtonId_Home, 'H' },
+				{ VPADController::kButtonId_Up, VK_UP }, { VPADController::kButtonId_Down, VK_DOWN },
+				{ VPADController::kButtonId_Left, VK_LEFT }, { VPADController::kButtonId_Right, VK_RIGHT },
+				{ VPADController::kButtonId_StickL_Up, 'W' }, { VPADController::kButtonId_StickL_Down, 'S' },
+				{ VPADController::kButtonId_StickL_Left, 'A' }, { VPADController::kButtonId_StickL_Right, 'D' },
+				{ VPADController::kButtonId_StickR_Up, VK_NUMPAD8 }, { VPADController::kButtonId_StickR_Down, VK_NUMPAD2 },
+				{ VPADController::kButtonId_StickR_Left, VK_NUMPAD4 }, { VPADController::kButtonId_StickR_Right, VK_NUMPAD6 },
+			};
+			for (const auto& [button, key] : keyboardMapping)
+				vpad->set_mapping(button, keyboard, key);
 			input.save(0);
-			cemuLog_log(LogType::Force, "Host: created a default GamePad profile for the first XInput controller");
+			cemuLog_log(LogType::Force, "Host: created a default GamePad profile for the first XInput controller and the keyboard");
 		}
 		catch (const std::exception& ex)
 		{

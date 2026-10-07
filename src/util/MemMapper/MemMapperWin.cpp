@@ -97,6 +97,9 @@ namespace MemMapper
 			ULONG oldProtection;
 			if (VirtualProtectFromApp(r, size, PAGE_EXECUTE_READWRITE, &oldProtection))
 			{
+				static bool s_logged = false;
+				if (!std::exchange(s_logged, true))
+					cemuLog_log(LogType::Force, "MemMapper: using read/write/execute memory for generated code");
 				writableOut = r;
 				return r;
 			}
@@ -122,6 +125,9 @@ namespace MemMapper
 				UnmapViewOfFile(executable);
 			return nullptr;
 		}
+		static bool s_logged = false;
+		if (!std::exchange(s_logged, true))
+			cemuLog_log(LogType::Force, "MemMapper: using a writable and an executable view of the same memory for generated code");
 		writableOut = writable;
 		return executable;
 	}

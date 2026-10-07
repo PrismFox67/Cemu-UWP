@@ -330,10 +330,12 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        # keep Visual Studio's layout: Install.ps1 expects the dependencies in Dependencies/<arch>/
+        PKGDIR=$(dirname "$(find AppPackages -name '*.msix' | head -n 1)")
         mkdir -p uwp-package
-        find AppPackages -type f \( -name "*.msix" -o -name "*.appx" -o -name "*.cer" -o -name "*.ps1" \) -exec cp {} uwp-package/ \;
-        cp CemuUWP.cer uwp-package/
-        ls -la uwp-package
+        cp -r "$PKGDIR"/. uwp-package/
+        rm -rf uwp-package/Dependencies/ARM uwp-package/Dependencies/ARM64 uwp-package/Dependencies/x86 uwp-package/TelemetryDependencies
+        find uwp-package -type f | sort
         cd uwp-package && 7z a -tzip ../cemu-uwp-x64.zip . > /dev/null && cd ..
         gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
         gh release upload ci-latest cemu-uwp-x64.zip --clobber
