@@ -80,6 +80,8 @@ endif()
 if(CEMU_UWP)
 	# UWP package: manifest, logos and the read only data folders (resources/, gameProfiles/) as deployment content
 	target_sources(CemuBin PRIVATE resource/cemu.rc gui/host/uwp/Package.appxmanifest)
+	# otherwise the generated manifest requires the Windows version of the SDK used for building (1809: *FromApp APIs)
+	set_property(TARGET CemuBin PROPERTY VS_WINDOWS_TARGET_PLATFORM_MIN_VERSION "10.0.17763.0")
 	file(GLOB UWP_LOGOS "${CMAKE_CURRENT_SOURCE_DIR}/gui/host/uwp/Assets/*.png")
 	target_sources(CemuBin PRIVATE ${UWP_LOGOS})
 	set_property(SOURCE ${UWP_LOGOS} PROPERTY VS_DEPLOYMENT_CONTENT 1)

@@ -536,8 +536,11 @@ void RendererOutputShader::InitializeStatic()
     {
     	std::string vertex_source, vertex_source_ud;
     	// vertex shader
-		vertex_source = GetVulkanVertexSource(false);
-		vertex_source_ud = GetVulkanVertexSource(true);
+		// D3D12 maps NDC +y to the top of the viewport, Vulkan (with the positive viewport height used for the backbuffer
+		// quad) maps it to the bottom. The quad orientations therefore swap under D3D12
+		const bool flipForD3D12 = g_renderer->GetType() == RendererAPI::D3D12;
+		vertex_source = GetVulkanVertexSource(flipForD3D12);
+		vertex_source_ud = GetVulkanVertexSource(!flipForD3D12);
 			
     	s_copy_shader = new RendererOutputShader(vertex_source, s_copy_shader_source);
     	s_copy_shader_ud = new RendererOutputShader(vertex_source_ud, s_copy_shader_source);
