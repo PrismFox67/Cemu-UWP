@@ -2,6 +2,7 @@
 // Structure and register interpretation follow VulkanRendererCore.cpp.
 
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
@@ -17,14 +18,18 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/OS/libs/gx2/GX2.h"
 
+#ifdef CEMU_D3D12_SPIRV_TO_DXIL
 extern "C"
 {
 #include "spirv_to_dxil.h"
 }
+#endif
 
 extern bool hasValidFramebufferAttached;
 
+#ifdef CEMU_D3D12_SPIRV_TO_DXIL
 static_assert(sizeof(dxil_spirv_vertex_runtime_data) <= D3D12Const::kRuntimeDataDwords * 4, "runtime data root constants too small");
+#endif
 
 /* --- sequence handling --- */
 
@@ -625,13 +630,24 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		m_cmdList->SetGraphicsRootDescriptorTable(D3D12Const::RootParamStageSamplers(b.stage), b.samplerTable);
 	}
 
-	// gl_VertexIndex / gl_InstanceIndex include the base vertex/instance in Vulkan, see D3D12ShaderCompiler
-	dxil_spirv_vertex_runtime_data runtimeData{};
-	runtimeData.first_vertex = baseVertex;
-	runtimeData.base_instance = baseInstance;
-	runtimeData.is_indexed_draw = isIndexed;
+	// gl_VertexIndex / gl_InstanceIndex include the base vertex/instance in Vulkan but SV_VertexID / SV_InstanceID
+	// don't. The translated shaders add these offsets back, see D3D12ShaderTranslate::SPIRVToHLSL
 	uint32 runtimeDwords[D3D12Const::kRuntimeDataDwords]{};
-	memcpy(runtimeDwords, &runtimeData, sizeof(runtimeData));
+#ifdef CEMU_D3D12_SPIRV_TO_DXIL
+	if (D3D12ShaderCompiler::GetBackend() == D3D12ShaderCompiler::Backend::SpirvToDXIL)
+	{
+		dxil_spirv_vertex_runtime_data runtimeData{};
+		runtimeData.first_vertex = baseVertex;
+		runtimeData.base_instance = baseInstance;
+		runtimeData.is_indexed_draw = isIndexed;
+		memcpy(runtimeDwords, &runtimeData, sizeof(runtimeData));
+	}
+	else
+#endif
+	{
+		runtimeDwords[0] = baseVertex; // SPIRV_Cross_BaseVertex
+		runtimeDwords[1] = baseInstance; // SPIRV_Cross_BaseInstance
+	}
 	m_cmdList->SetGraphicsRoot32BitConstants(D3D12Const::kRootParamRuntimeData, D3D12Const::kRuntimeDataDwords, runtimeDwords, 0);
 
 	if (isIndexed)

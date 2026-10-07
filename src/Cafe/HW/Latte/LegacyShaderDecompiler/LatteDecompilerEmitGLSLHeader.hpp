@@ -378,6 +378,23 @@ namespace LatteDecompiler
 	{
 		auto* src = shaderContext->shaderSource;
 		LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
+		if (shaderContext->options->declareAllPSInputs)
+		{
+			// declare every pixel shader input in the same order as _emitPSImports(), see LatteDecompilerOptions::declareAllPSInputs.
+			// Inputs the vertex shader doesn't export are never written
+			for (sint32 i = 0; i < psInputTable->count; i++)
+			{
+				if (psInputTable->import[i].semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
+					continue;
+				src->addFmt("layout(location = {}) ", i);
+				if (psInputTable->import[i].isFlat)
+					src->add("flat ");
+				if (psInputTable->import[i].isNoPerspective)
+					src->add("noperspective ");
+				src->addFmt("out vec4 passParameterSem{};" _CRLF, psInputTable->import[i].semanticId);
+			}
+			return;
+		}
 		auto parameterMask = shaderContext->shader->outputParameterMask;
 		for (uint32 i = 0; i < 32; i++)
 		{
@@ -490,11 +507,53 @@ namespace LatteDecompiler
 				if (((decompilerContext->contextRegisters[mmSQ_GSVS_RING_ITEMSIZE] & 0x7FFF) & 0xF) != 0)
 					debugBreakpoint();
 
-				for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
+				if (decompilerContext->options->declareAllPSInputs)
 				{
-					if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
-						continue;
-					src->addFmt("layout(location = {}) out vec4 passG2PParameter{};" _CRLF, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam);
+					// outputs mirror the pixel shader inputs exactly (see LatteDecompilerOptions::declareAllPSInputs).
+					// Exported parameters the pixel shader doesn't read become private variables
+					LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
+					auto isPSInputLocation = [&](uint32 location) {
+						for (sint32 i = 0; i < psInputTable->count; i++)
+						{
+							if (psInputTable->import[i].semanticId <= LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX && (psInputTable->import[i].semanticId & 0x7F) == location)
+								return true;
+						}
+						return false;
+					};
+					std::bitset<128> declaredLocations;
+					for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
+					{
+						if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
+							continue;
+						const uint32 exportParam = decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam;
+						const uint32 location = exportParam & 0x7F;
+						if (isPSInputLocation(location) && !declaredLocations.test(location))
+						{
+							src->addFmt("layout(location = {}) out vec4 passG2PParameter{};" _CRLF, location, exportParam);
+							declaredLocations.set(location);
+						}
+						else
+							src->addFmt("vec4 passG2PParameter{};" _CRLF, exportParam);
+					}
+					for (sint32 i = 0; i < psInputTable->count; i++)
+					{
+						if (psInputTable->import[i].semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
+							continue;
+						const uint32 location = psInputTable->import[i].semanticId & 0x7F;
+						if (declaredLocations.test(location))
+							continue;
+						declaredLocations.set(location);
+						src->addFmt("layout(location = {}) out vec4 passG2PUnwritten{};" _CRLF, location, location);
+					}
+				}
+				else
+				{
+					for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
+					{
+						if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
+							continue;
+						src->addFmt("layout(location = {}) out vec4 passG2PParameter{};" _CRLF, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam);
+					}
 				}
 			}
 			else if (decompilerContext->shaderType == LatteConst::ShaderType::Pixel)

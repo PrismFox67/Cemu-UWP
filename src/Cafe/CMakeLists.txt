@@ -570,8 +570,12 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12Renderer.cpp
     HW/Latte/Renderer/D3D12/D3D12Renderer.h
     HW/Latte/Renderer/D3D12/D3D12RendererCore.cpp
+    HW/Latte/Renderer/D3D12/D3D12RootSignature.h
     HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.cpp
     HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h
+    HW/Latte/Renderer/D3D12/D3D12ShaderTranslate.cpp
+    HW/Latte/Renderer/D3D12/D3D12ShaderTranslate.h
+    HW/Latte/Renderer/D3D12/D3D12ShaderTranslateHLSL.cpp
     HW/Latte/Renderer/D3D12/D3D12SpirvRemap.cpp
     HW/Latte/Renderer/D3D12/D3D12SurfaceCopy.cpp
     HW/Latte/Renderer/D3D12/D3D12SwapChain.cpp
@@ -585,8 +589,12 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/RendererShaderD3D12.cpp
     HW/Latte/Renderer/D3D12/RendererShaderD3D12.h
   )
-  target_include_directories(CemuCafe PRIVATE ${SPIRV_TO_DXIL_INCLUDE_DIR})
-  target_link_libraries(CemuCafe PRIVATE d3d12 dxgi dxguid ${SPIRV_TO_DXIL_LIBRARY})
+  target_link_libraries(CemuCafe PRIVATE d3d12 dxgi dxguid d3dcompiler spirv-cross-hlsl spirv-cross-glsl spirv-cross-core)
+  if (ENABLE_D3D12_SPIRV_TO_DXIL)
+    target_compile_definitions(CemuCafe PRIVATE CEMU_D3D12_SPIRV_TO_DXIL)
+    target_include_directories(CemuCafe PRIVATE ${SPIRV_TO_DXIL_INCLUDE_DIR})
+    target_link_libraries(CemuCafe PRIVATE ${SPIRV_TO_DXIL_LIBRARY})
+  endif()
 endif()
 
 if(APPLE)

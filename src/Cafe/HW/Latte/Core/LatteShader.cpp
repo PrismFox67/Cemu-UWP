@@ -579,6 +579,9 @@ void LatteSHRC_UpdateGSBaseHash(uint8* geometryShaderPtr, uint32 geometryShaderS
 	uint64 gsHash = gsHash1 + gsHash2;
 	gsHash += (uint64)_activeVertexShader->ringParameterCount;
 	gsHash += (LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] ? 21 : 0);
+	// D3D12 geometry shaders declare their outputs from the pixel shader's input table (see LatteDecompilerOptions::declareAllPSInputs)
+	if (g_renderer->GetType() == RendererAPI::D3D12)
+		gsHash += _activePSImportTable.key;
 	_shaderBaseHash_gs = gsHash;
 }
 
@@ -805,6 +808,7 @@ void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteCons
 	}
 #endif
 	options.strictMul = g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+	options.declareAllPSInputs = g_renderer->GetType() == RendererAPI::D3D12;
 }
 
 LatteDecompilerShader* LatteShader_CompileSeparableVertexShader2(uint64 baseHash, uint64& vsAuxHash, uint8* vertexShaderPtr, uint32 vertexShaderSize, bool usesGeometryShader, LatteFetchShader* fetchShader)

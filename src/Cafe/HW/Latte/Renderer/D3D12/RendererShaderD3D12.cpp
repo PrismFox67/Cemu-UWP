@@ -11,18 +11,18 @@ extern std::atomic_int g_compiled_shaders_async;
 namespace
 {
 	bool s_isLoadingShaders = false;
-	FileCache* s_dxilCache = nullptr;
+	FileCache* s_bytecodeCache = nullptr;
 	std::atomic<uint64> s_nextUniqueId{ 1 };
 
 	// bump whenever the cached data format or the compilation pipeline changes in an incompatible way
-	constexpr uint32 kDXILCacheVersion = 1;
-	constexpr uint32 kDXILCacheMagic = 0x4C495844; // 'DXIL'
+	constexpr uint32 kBytecodeCacheVersion = 2;
+	constexpr uint32 kBytecodeCacheMagic = 0x43423344; // 'D3BC'
 
 	struct CacheHeader
 	{
 		uint32 magic;
 		uint32 version;
-		uint32 dxilSize;
+		uint32 bytecodeSize;
 		uint8 cbvCount;
 		uint8 srvCount;
 		uint8 uavCount;
@@ -40,8 +40,8 @@ public:
 	{
 		if (m_threadsActive.exchange(true))
 			return;
-		// spirv_to_dxil is considerably more expensive than glslang alone, use a few more threads than the Vulkan backend
-		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 4);
+		// FXC is considerably more expensive than glslang alone, use a few more threads than the Vulkan backend
+		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 6);
 		for (uint32 i = 0; i < threadCount; ++i)
 			m_threads.emplace_back(&_ShaderD3D12ThreadPool::CompilerThreadFunc, this);
 	}
@@ -129,18 +129,18 @@ RendererShaderD3D12::~RendererShaderD3D12()
 
 bool RendererShaderD3D12::LoadFromCache()
 {
-	if (!s_dxilCache || !m_isGameShader || m_isGfxPackShader)
+	if (!s_bytecodeCache || !m_isGameShader || m_isGfxPackShader)
 		return false;
 	uint64 h1, h2;
 	GenerateShaderPrecompiledCacheFilename(m_type, m_baseHash, m_auxHash, h1, h2);
 	std::vector<uint8> data;
-	if (!s_dxilCache->GetFile({ h1, h2 }, data))
+	if (!s_bytecodeCache->GetFile({ h1, h2 }, data))
 		return false;
 	if (data.size() < sizeof(CacheHeader))
 		return false;
 	CacheHeader header;
 	memcpy(&header, data.data(), sizeof(CacheHeader));
-	if (header.magic != kDXILCacheMagic || header.version != kDXILCacheVersion || data.size() != sizeof(CacheHeader) + header.dxilSize)
+	if (header.magic != kBytecodeCacheMagic || header.version != kBytecodeCacheVersion || data.size() != sizeof(CacheHeader) + header.bytecodeSize)
 		return false;
 	m_remap.cbvCount = header.cbvCount;
 	m_remap.srvCount = header.srvCount;
@@ -148,30 +148,30 @@ bool RendererShaderD3D12::LoadFromCache()
 	memcpy(m_remap.cbv, header.cbv, sizeof(header.cbv));
 	memcpy(m_remap.srv, header.srv, sizeof(header.srv));
 	memcpy(m_remap.uav, header.uav, sizeof(header.uav));
-	m_dxil.assign(data.begin() + sizeof(CacheHeader), data.end());
+	m_bytecode.assign(data.begin() + sizeof(CacheHeader), data.end());
 	return true;
 }
 
 void RendererShaderD3D12::StoreInCache()
 {
-	if (!s_dxilCache || !m_isGameShader || m_isGfxPackShader || m_dxil.empty())
+	if (!s_bytecodeCache || !m_isGameShader || m_isGfxPackShader || m_bytecode.empty())
 		return;
 	uint64 h1, h2;
 	GenerateShaderPrecompiledCacheFilename(m_type, m_baseHash, m_auxHash, h1, h2);
 	CacheHeader header{};
-	header.magic = kDXILCacheMagic;
-	header.version = kDXILCacheVersion;
-	header.dxilSize = (uint32)m_dxil.size();
+	header.magic = kBytecodeCacheMagic;
+	header.version = kBytecodeCacheVersion;
+	header.bytecodeSize = (uint32)m_bytecode.size();
 	header.cbvCount = m_remap.cbvCount;
 	header.srvCount = m_remap.srvCount;
 	header.uavCount = m_remap.uavCount;
 	memcpy(header.cbv, m_remap.cbv, sizeof(header.cbv));
 	memcpy(header.srv, m_remap.srv, sizeof(header.srv));
 	memcpy(header.uav, m_remap.uav, sizeof(header.uav));
-	std::vector<uint8> data(sizeof(CacheHeader) + m_dxil.size());
+	std::vector<uint8> data(sizeof(CacheHeader) + m_bytecode.size());
 	memcpy(data.data(), &header, sizeof(CacheHeader));
-	memcpy(data.data() + sizeof(CacheHeader), m_dxil.data(), m_dxil.size());
-	s_dxilCache->AddFile({ h1, h2 }, data.data(), (sint32)data.size());
+	memcpy(data.data() + sizeof(CacheHeader), m_bytecode.data(), m_bytecode.size());
+	s_bytecodeCache->AddFile({ h1, h2 }, data.data(), (sint32)data.size());
 }
 
 void RendererShaderD3D12::CompileInternal()
@@ -183,22 +183,16 @@ void RendererShaderD3D12::CompileInternal()
 		return;
 	}
 
-	auto fail = [&](const char* step, const std::string& log) {
-		cemuLog_log(LogType::Force, "D3D12: {} failed for shader {:016x}_{:016x}: {}", step, m_baseHash, m_auxHash, log);
+	std::string log;
+	if (!D3D12ShaderCompiler::CompileGLSL(GetStage(), m_glslCode, m_bytecode, m_remap, log))
+	{
+		cemuLog_log(LogType::Force, "D3D12: Failed to compile shader {:016x}_{:016x}: {}", m_baseHash, m_auxHash, log);
 		cemuLog_logDebug(LogType::Force, "GLSL source:\n{}", m_glslCode);
-		m_dxil.clear();
+		m_bytecode.clear();
 		m_glslCode.clear();
 		m_glslCode.shrink_to_fit();
-	};
-
-	std::string log;
-	std::vector<uint32> spirv;
-	if (!D3D12ShaderCompiler::CompileGLSLToSPIRV(m_type, m_glslCode, spirv, log))
-		return fail("GLSL to SPIR-V", log);
-	if (!D3D12_RemapSpirvBindings(spirv, GetStage(), m_remap, log))
-		return fail("Binding remap", log);
-	if (!D3D12ShaderCompiler::CompileSPIRVToDXIL(spirv, m_type, m_dxil, log))
-		return fail("SPIR-V to DXIL", log);
+		return;
+	}
 
 	StoreInCache();
 	if (!s_isLoadingShaders && m_isGameShader)
@@ -241,17 +235,18 @@ bool RendererShaderD3D12::WaitForCompiled()
 
 void RendererShaderD3D12::ShaderCacheLoading_begin(uint64 cacheTitleId)
 {
-	if (s_dxilCache)
+	if (s_bytecodeCache)
 	{
-		delete s_dxilCache;
-		s_dxilCache = nullptr;
+		delete s_bytecodeCache;
+		s_bytecodeCache = nullptr;
 	}
-	const uint32 cacheMagic = GeneratePrecompiledCacheId() ^ kDXILCacheVersion;
-	const std::string cacheFilename = fmt::format("{:016x}_dxil.bin", cacheTitleId);
+	// bytecode of different compilers is not interchangeable in terms of requirements (DXIL needs shader model 6.0)
+	const uint32 cacheMagic = GeneratePrecompiledCacheId() ^ kBytecodeCacheVersion;
+	const std::string cacheFilename = fmt::format("{:016x}_d3d12_{}.bin", cacheTitleId, D3D12ShaderCompiler::GetBackendName());
 	const fs::path cachePath = ActiveSettings::GetCachePath("shaderCache/precompiled/{}", cacheFilename);
-	s_dxilCache = FileCache::Open(cachePath, true, cacheMagic);
-	if (!s_dxilCache)
-		cemuLog_log(LogType::Force, "Unable to open DXIL cache {}", cacheFilename);
+	s_bytecodeCache = FileCache::Open(cachePath, true, cacheMagic);
+	if (!s_bytecodeCache)
+		cemuLog_log(LogType::Force, "Unable to open D3D12 shader cache {}", cacheFilename);
 	s_isLoadingShaders = true;
 }
 
@@ -263,6 +258,6 @@ void RendererShaderD3D12::ShaderCacheLoading_end()
 
 void RendererShaderD3D12::ShaderCacheLoading_Close()
 {
-	delete s_dxilCache;
-	s_dxilCache = nullptr;
+	delete s_bytecodeCache;
+	s_bytecodeCache = nullptr;
 }

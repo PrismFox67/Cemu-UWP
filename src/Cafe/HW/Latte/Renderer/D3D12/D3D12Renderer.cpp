@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12SwapChain.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12RootSignature.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ImGui.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
@@ -181,7 +182,8 @@ void D3D12Renderer::CreateDevice()
 		}
 	}
 
-	// capabilities. Older runtimes reject shader models they don't know about, so query from the highest one down
+	// capabilities. Older runtimes reject shader models they don't know about, so query from the highest one down.
+	// Shader model 5.1 (DXBC, the default FXC path) is supported by every D3D12 device. 6.0 is only needed for DXIL
 	D3D12_FEATURE_DATA_SHADER_MODEL sm{};
 	m_highestShaderModel = D3D_SHADER_MODEL_5_1;
 	for (uint32 candidate = 0x67; candidate >= 0x60; candidate--)
@@ -193,8 +195,6 @@ void D3D12Renderer::CreateDevice()
 			break;
 		}
 	}
-	if ((uint32)m_highestShaderModel < 0x60)
-		throw std::runtime_error("D3D12: The device or driver does not support shader model 6.0 (DXIL), which is required");
 	D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
 	if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))))
 		m_bindingTier = options.ResourceBindingTier;
@@ -222,79 +222,9 @@ void D3D12Renderer::CreateDevice()
 
 void D3D12Renderer::CreateRootSignature()
 {
-	using namespace D3D12Const;
-	D3D12_DESCRIPTOR_RANGE1 viewRanges[3][3]{};
-	D3D12_DESCRIPTOR_RANGE1 samplerRanges[3]{};
-	D3D12_ROOT_PARAMETER1 params[kRootParamCount]{};
-	static const D3D12_SHADER_VISIBILITY visibility[3] = { D3D12_SHADER_VISIBILITY_VERTEX, D3D12_SHADER_VISIBILITY_PIXEL, D3D12_SHADER_VISIBILITY_GEOMETRY };
-	// descriptors are rewritten for every draw, the driver can't make any assumptions about their content
-	const D3D12_DESCRIPTOR_RANGE_FLAGS viewFlags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
-	for (uint32 s = 0; s < 3; s++)
-	{
-		const Stage stage = (Stage)s;
-		auto& r = viewRanges[s];
-		r[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-		r[0].NumDescriptors = kMaxCBVsPerStage;
-		r[0].BaseShaderRegister = 0;
-		r[0].RegisterSpace = RegisterSpace(stage, BindingClass::CBV);
-		r[0].Flags = viewFlags;
-		r[0].OffsetInDescriptorsFromTableStart = kStageTableOffsetCBV;
-		r[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-		r[1].NumDescriptors = kMaxSRVsPerStage;
-		r[1].BaseShaderRegister = 0;
-		r[1].RegisterSpace = RegisterSpace(stage, BindingClass::SRV);
-		r[1].Flags = viewFlags;
-		r[1].OffsetInDescriptorsFromTableStart = kStageTableOffsetSRV;
-		r[2].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-		r[2].NumDescriptors = kMaxUAVsPerStage;
-		r[2].BaseShaderRegister = 0;
-		r[2].RegisterSpace = RegisterSpace(stage, BindingClass::UAV);
-		r[2].Flags = viewFlags;
-		r[2].OffsetInDescriptorsFromTableStart = kStageTableOffsetUAV;
-
-		auto& tableParam = params[RootParamStageTable(stage)];
-		tableParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		tableParam.DescriptorTable.NumDescriptorRanges = 3;
-		tableParam.DescriptorTable.pDescriptorRanges = r;
-		tableParam.ShaderVisibility = visibility[s];
-
-		auto& sr = samplerRanges[s];
-		sr.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
-		sr.NumDescriptors = kMaxSamplersPerStage;
-		sr.BaseShaderRegister = 0;
-		sr.RegisterSpace = RegisterSpace(stage, BindingClass::SRV); // spirv_to_dxil places the sampler of a combined image sampler next to its texture
-		sr.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE;
-		sr.OffsetInDescriptorsFromTableStart = 0;
-		auto& samplerParam = params[RootParamStageSamplers(stage)];
-		samplerParam.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-		samplerParam.DescriptorTable.NumDescriptorRanges = 1;
-		samplerParam.DescriptorTable.pDescriptorRanges = &sr;
-		samplerParam.ShaderVisibility = visibility[s];
-	}
-	auto& runtimeData = params[kRootParamRuntimeData];
-	runtimeData.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	runtimeData.Constants.ShaderRegister = 0;
-	runtimeData.Constants.RegisterSpace = kSpaceRuntimeData;
-	runtimeData.Constants.Num32BitValues = kRuntimeDataDwords;
-	runtimeData.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-	auto& pushConstants = params[kRootParamPushConstants];
-	pushConstants.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	pushConstants.Constants.ShaderRegister = 0;
-	pushConstants.Constants.RegisterSpace = kSpacePushConstants;
-	pushConstants.Constants.Num32BitValues = kPushConstantDwords;
-	pushConstants.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
-	D3D12_VERSIONED_ROOT_SIGNATURE_DESC desc{};
-	desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
-	desc.Desc_1_1.NumParameters = kRootParamCount;
-	desc.Desc_1_1.pParameters = params;
-	desc.Desc_1_1.NumStaticSamplers = 0;
-	desc.Desc_1_1.pStaticSamplers = nullptr;
-	desc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-
 	ComPtr<ID3DBlob> blob;
 	ComPtr<ID3DBlob> error;
-	HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, &blob, &error);
+	HRESULT hr = D3D12_SerializeCemuRootSignature(&blob, &error);
 	if (FAILED(hr))
 	{
 		std::string msg = error ? std::string((const char*)error->GetBufferPointer(), error->GetBufferSize()) : D3D12_HResultToString(hr);

@@ -11,54 +11,72 @@
 
 extern std::atomic_int g_compiling_pipelines;
 
-// GLSL geometry shader that turns the 3 vertices of a GPU7 RECT primitive into a quad.
-// Same generator as rectsEmulationGS_generate() in the Vulkan backend
+// GLSL geometry shader that turns the 3 vertices of a GPU7 RECT primitive into a quad. Same approach as
+// rectsEmulationGS_generate() in the Vulkan backend, except that every pixel shader input is passed through: under D3D12
+// the vertex shader declares all of them (LatteDecompilerOptions::declareAllPSInputs) and the signatures of all stages
+// have to match
 static RendererShaderD3D12* _GenerateRectEmulationGS(D3D12Renderer* renderer, LatteDecompilerShader* vertexShader, const LatteContextRegister& latteRegister)
 {
+	(void)vertexShader;
+	(void)latteRegister;
+	LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
+	std::vector<uint32> semantics;
 	std::string gsSrc;
 	gsSrc.append("#version 450\r\n");
-	LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
 	gsSrc.append("layout(triangles) in;\r\n");
 	gsSrc.append("layout(triangle_strip) out;\r\n");
 	gsSrc.append("layout(max_vertices = 4) out;\r\n");
-	auto parameterMask = vertexShader->outputParameterMask;
-	for (sint32 f = 0; f < 2; f++)
+	for (sint32 i = 0; i < psInputTable->count; i++)
 	{
-		for (uint32 i = 0; i < 32; i++)
+		const auto& psImport = psInputTable->import[i];
+		if (psImport.semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
+			continue;
+		semantics.emplace_back(psImport.semanticId);
+		for (sint32 f = 0; f < 2; f++)
 		{
-			if ((parameterMask & (1 << i)) == 0)
-				continue;
-			sint32 vsSemanticId = psInputTable->getVertexShaderOutParamSemanticId(latteRegister.GetRawView(), i);
-			if (vsSemanticId < 0)
-				continue;
-			auto psImport = psInputTable->getPSImportBySemanticId(vsSemanticId);
-			if (psImport == nullptr)
-				continue;
-			gsSrc.append(fmt::format("layout(location = {}) ", psInputTable->getPSImportLocationBySemanticId(vsSemanticId)));
-			if (psImport->isFlat)
+			gsSrc.append(fmt::format("layout(location = {}) ", i));
+			if (psImport.isFlat)
 				gsSrc.append("flat ");
-			if (psImport->isNoPerspective)
+			if (psImport.isNoPerspective)
 				gsSrc.append("noperspective ");
-			gsSrc.append(f == 0 ? "in" : "out");
 			if (f == 0)
-				gsSrc.append(fmt::format(" vec4 passParameterSem{}In[];\r\n", vsSemanticId));
+				gsSrc.append(fmt::format("in vec4 passParameterSem{}In[];\r\n", psImport.semanticId));
 			else
-				gsSrc.append(fmt::format(" vec4 passParameterSem{}Out;\r\n", vsSemanticId));
+				gsSrc.append(fmt::format("out vec4 passParameterSem{}Out;\r\n", psImport.semanticId));
 		}
 	}
 	gsSrc.append("vec4 gen4thVertexA(vec4 a, vec4 b, vec4 c)\r\n{\r\nreturn b - (c - a);\r\n}\r\n");
 	gsSrc.append("vec4 gen4thVertexB(vec4 a, vec4 b, vec4 c)\r\n{\r\nreturn c - (b - a);\r\n}\r\n");
 	gsSrc.append("vec4 gen4thVertexC(vec4 a, vec4 b, vec4 c)\r\n{\r\nreturn c + (b - a);\r\n}\r\n");
+
+	auto emitVertices = [&](sint32 p0, sint32 p1, sint32 p2, sint32 p3, const char* variant) {
+		const sint32 order[4] = { p0, p1, p2, p3 };
+		for (sint32 v : order)
+		{
+			for (uint32 sem : semantics)
+			{
+				if (v == 3)
+					gsSrc.append(fmt::format("passParameterSem{0}Out = gen4thVertex{1}(passParameterSem{0}In[0], passParameterSem{0}In[1], passParameterSem{0}In[2]);\r\n", sem, variant));
+				else
+					gsSrc.append(fmt::format("passParameterSem{0}Out = passParameterSem{0}In[{1}];\r\n", sem, v));
+			}
+			if (v == 3)
+				gsSrc.append(fmt::format("gl_Position = gen4thVertex{}(gl_in[0].gl_Position, gl_in[1].gl_Position, gl_in[2].gl_Position);\r\n", variant));
+			else
+				gsSrc.append(fmt::format("gl_Position = gl_in[{}].gl_Position;\r\n", v));
+			gsSrc.append("EmitVertex();\r\n");
+		}
+	};
 	gsSrc.append("void main()\r\n{\r\n");
 	gsSrc.append("float dist0_1 = length(gl_in[1].gl_Position.xy - gl_in[0].gl_Position.xy);\r\n");
 	gsSrc.append("float dist0_2 = length(gl_in[2].gl_Position.xy - gl_in[0].gl_Position.xy);\r\n");
 	gsSrc.append("float dist1_2 = length(gl_in[2].gl_Position.xy - gl_in[1].gl_Position.xy);\r\n");
 	gsSrc.append("if(dist0_1 > dist0_2 && dist0_1 > dist1_2)\r\n{\r\n");
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 2, 1, 0, 3, "A", latteRegister);
+	emitVertices(2, 1, 0, 3, "A");
 	gsSrc.append("} else if ( dist0_2 > dist0_1 && dist0_2 > dist1_2 ) {\r\n");
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 1, 2, 0, 3, "B", latteRegister);
+	emitVertices(1, 2, 0, 3, "B");
 	gsSrc.append("} else {\r\n");
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 0, 1, 2, 3, "C", latteRegister);
+	emitVertices(0, 1, 2, 3, "C");
 	gsSrc.append("}\r\n}\r\n");
 	return renderer->CreateInternalShader(RendererShader::ShaderType::kGeometry, gsSrc);
 }
@@ -249,7 +267,7 @@ std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const Latt
 			if (location < 0)
 				continue;
 			D3D12_INPUT_ELEMENT_DESC e{};
-			// spirv_to_dxil names vertex inputs TEXCOORD<location>
+			// the HLSL translation (and spirv_to_dxil) name vertex inputs TEXCOORD<location>
 			e.SemanticName = "TEXCOORD";
 			e.SemanticIndex = (UINT)location;
 			e.Format = D3D12Format::GetVertexFormat(attr.format);

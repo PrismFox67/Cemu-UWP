@@ -67,7 +67,11 @@
         "zip"
       ]
     },
-    "libusb"
+    "libusb",
+    {
+      "name": "spirv-cross",
+      "platform": "windows"
+    }
   ],
   "overrides": [
     {
@@ -81,6 +85,10 @@
     {
       "name": "wxwidgets",
       "version": "3.3.3"
+    },
+    {
+      "name": "spirv-cross",
+      "version": "1.4.350.0"
     }
   ]
 }

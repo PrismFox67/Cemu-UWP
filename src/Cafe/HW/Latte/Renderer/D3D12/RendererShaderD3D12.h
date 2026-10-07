@@ -4,9 +4,9 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
 #include "util/helpers/Semaphore.h"
 
-// A shader stage compiled to DXIL. Compilation runs asynchronously on a small thread pool, just like RendererShaderVk.
-// Compiled DXIL (plus the binding remap table) is stored in a per-title FileCache so subsequent runs skip glslang and
-// spirv_to_dxil entirely.
+// A shader stage compiled to D3D12 bytecode (DXBC from FXC by default, see D3D12ShaderCompiler). Compilation runs
+// asynchronously on a small thread pool, just like RendererShaderVk. The bytecode (plus the binding remap table) is
+// stored in a per-title FileCache so subsequent runs skip the whole translation.
 class RendererShaderD3D12 : public RendererShader
 {
 	friend class _ShaderD3D12ThreadPool;
@@ -35,8 +35,8 @@ public:
 	bool WaitForCompiled() override;
 
 	// valid only once IsCompiled() is true
-	bool IsValid() const { return !m_dxil.empty(); }
-	D3D12_SHADER_BYTECODE GetBytecode() const { return { m_dxil.data(), m_dxil.size() }; }
+	bool IsValid() const { return !m_bytecode.empty(); }
+	D3D12_SHADER_BYTECODE GetBytecode() const { return { m_bytecode.data(), m_bytecode.size() }; }
 	const D3D12BindingRemap& GetBindingRemap() const { return m_remap; }
 	D3D12Const::Stage GetStage() const { return D3D12ShaderCompiler::StageFromShaderType(m_type); }
 	uint64 GetUniqueId() const { return m_uniqueId; }
@@ -47,7 +47,7 @@ private:
 	void StoreInCache();
 
 	std::string m_glslCode;
-	std::vector<uint8> m_dxil;
+	std::vector<uint8> m_bytecode;
 	D3D12BindingRemap m_remap;
 	uint64 m_uniqueId;
 	StateSemaphore<COMPILATION_STATE> m_compilationState{ COMPILATION_STATE::NONE };

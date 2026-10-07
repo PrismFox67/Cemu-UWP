@@ -9,7 +9,7 @@ class RendererShaderD3D12;
 struct ImDrawData;
 
 // Minimal Dear ImGui renderer on top of the backend's own infrastructure (GLSL shaders compiled through the same
-// SPIR-V -> DXIL path, shared root signature and descriptor heaps). The stock imgui_impl_dx12 backend can't be used
+// translation path as game shaders, shared root signature and descriptor heaps). The stock imgui_impl_dx12 backend can't be used
 // because it brings its own root signature and descriptor heap.
 class D3D12ImGuiRenderer
 {

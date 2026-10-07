@@ -14,7 +14,7 @@ namespace D3D12Const
 {
 	// --- resource binding model ---
 	//
-	// Shaders are compiled from Vulkan GLSL. Before translating SPIR-V to DXIL, every (set, binding) decoration is
+	// Shaders are compiled from Vulkan GLSL. Before translating SPIR-V to HLSL, every (set, binding) decoration is
 	// rewritten so each resource lands in a fixed register space:
 	//
 	//   space    = stage * kSpacesPerStage + class
@@ -40,7 +40,7 @@ namespace D3D12Const
 
 	inline constexpr uint32 kSpacesPerStage = 4;
 	inline constexpr uint32 kSpacePushConstants = 30; // internal shaders only (surface copy etc.)
-	inline constexpr uint32 kSpaceRuntimeData = 31; // spirv_to_dxil vertex runtime data (first vertex, base instance)
+	inline constexpr uint32 kSpaceRuntimeData = 31; // vertex runtime data root constants (base vertex, base instance)
 
 	inline constexpr uint32 RegisterSpace(Stage stage, BindingClass cls)
 	{
@@ -64,7 +64,7 @@ namespace D3D12Const
 	inline constexpr uint32 kRootParamPushConstants = 7;
 	inline constexpr uint32 kRootParamCount = 8;
 
-	inline constexpr uint32 kRuntimeDataDwords = 16; // must be >= sizeof(dxil_spirv_vertex_runtime_data) / 4
+	inline constexpr uint32 kRuntimeDataDwords = 16; // also large enough for spirv_to_dxil's dxil_spirv_vertex_runtime_data
 	inline constexpr uint32 kPushConstantDwords = 16;
 }
 

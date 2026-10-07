@@ -4,7 +4,7 @@
 //
 // Target: Windows 10/11 desktop (Win32 HWND) and UWP (CoreWindow / SwapChainPanel), including Xbox in Dev Mode.
 // Shaders: the backend consumes the same Vulkan-flavored GLSL as the Vulkan renderer. It is compiled to SPIR-V with
-// glslang and then translated to DXIL with Mesa's spirv_to_dxil (see RendererShaderD3D12.cpp).
+// glslang, translated to HLSL with SPIRV-Cross and compiled with FXC (see D3D12ShaderCompiler.h).
 //
 // Only APIs available to UWP apps are used. In particular: no Agility SDK features, no D3D12 enhanced barriers,
 // no D3D11on12, and no Win32 window APIs outside of the HWND swap chain path.

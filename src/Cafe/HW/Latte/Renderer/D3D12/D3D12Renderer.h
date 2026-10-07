@@ -265,7 +265,7 @@ private:
 	bool m_debugMode = false;
 	uint64 m_uniqueIdCounter = 0;
 	D3D12FormatSupport m_formatSupport;
-	D3D_SHADER_MODEL m_highestShaderModel = D3D_SHADER_MODEL_6_0;
+	D3D_SHADER_MODEL m_highestShaderModel = D3D_SHADER_MODEL_5_1;
 	D3D12_RESOURCE_BINDING_TIER m_bindingTier = D3D12_RESOURCE_BINDING_TIER_1;
 
 	// command recording
