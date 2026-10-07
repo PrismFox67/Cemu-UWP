@@ -80,10 +80,10 @@ void FileStream::SetPosition(uint64 pos)
 
 uint64 FileStream::GetSize()
 {
-	DWORD fileSizeHigh = 0;
-	DWORD fileSizeLow = 0;
-	fileSizeLow = GetFileSize(m_hFile, &fileSizeHigh);
-	return ((uint64)fileSizeHigh << 32) | (uint64)fileSizeLow;
+	LARGE_INTEGER fileSize{};
+	if (!GetFileSizeEx(m_hFile, &fileSize)) // GetFileSize is not available to UWP apps
+		return 0;
+	return (uint64)fileSize.QuadPart;
 }
 
 bool FileStream::SetEndOfFile()
@@ -93,7 +93,7 @@ bool FileStream::SetEndOfFile()
 
 void FileStream::extract(std::vector<uint8>& data)
 {
-	DWORD fileSize = GetFileSize(m_hFile, nullptr);
+	DWORD fileSize = (DWORD)GetSize();
 	data.resize(fileSize);
 	SetFilePointer(m_hFile, 0, 0, FILE_BEGIN);
 	DWORD bt;

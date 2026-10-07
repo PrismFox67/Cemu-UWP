@@ -102,8 +102,8 @@ jobs:
         for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/windows-$f"; done
         find dependencies/vcpkg/buildtrees -name "*-err.log" -size +0 2>/dev/null | head -n 20 | while read -r f; do cp "$f" "ci-logs/vcpkg-$(basename "$f")"; done
         echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/windows-status.txt
-        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
-        gh release upload ci-logs ci-logs/* --clobber
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs." || true
+        for i in 1 2 3 4; do gh release upload ci-logs ci-logs/* --clobber && break; sleep 20; done
 
     - name: "Prepare package"
       shell: bash
@@ -183,6 +183,21 @@ jobs:
         cmake --build . --config release 2>&1 | tee ../build.log
         test ${PIPESTATUS[0]} -eq 0
 
+    # a failing library stops msbuild before its dependents compile. Compile every library on its own so one run
+    # reports all compile errors
+    - name: "Compile all libraries (diagnostics)"
+      if: failure()
+      shell: bash
+      run: |
+        cd build
+        for t in CemuCommon CemuUtil CemuConfig CemuAudio CemuInput CemuComponents CemuCafe imguiImpl CemuResource CemuHostFrontend; do
+          echo "=== $t" >> ../compile-all.log
+          cmake --build . --config release --target $t -- -p:BuildProjectReferences=false -m >> ../compile-all.log 2>&1 || true
+        done
+        grep -E "(: (fatal )?error [A-Z]+[0-9]+)|(error LNK)" ../compile-all.log ../build.log 2>/dev/null | sed -E 's/^[^:]*\.log://' | sort -u | head -n 60 | while IFS= read -r line; do
+          echo "::error title=host::${line:0:900}"
+        done
+
     - name: "Publish build logs"
       if: always()
       shell: bash
@@ -190,10 +205,10 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         mkdir -p ci-logs
-        for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/host-$f"; done
+        for f in cmake.log build.log compile-all.log; do [ -f "$f" ] && cp "$f" "ci-logs/host-$f"; done
         echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/host-status.txt
-        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
-        gh release upload ci-logs ci-logs/* --clobber
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs." || true
+        for i in 1 2 3 4; do gh release upload ci-logs ci-logs/* --clobber && break; sleep 20; done
 
     - name: "Package"
       shell: bash
@@ -282,6 +297,21 @@ jobs:
           grep -E " error |error:|Error " "$f" | head -n 8 | while IFS= read -r line; do echo "::error title=uwp $f::${line:0:900}"; done
         done
 
+    # a failing library stops msbuild before its dependents compile. Compile every library on its own so one run
+    # reports all compile errors
+    - name: "Compile all libraries (diagnostics)"
+      if: failure()
+      shell: bash
+      run: |
+        cd build-uwp
+        for t in CemuCommon CemuUtil CemuConfig CemuAudio CemuInput CemuComponents CemuCafe imguiImpl CemuResource CemuHostFrontend; do
+          echo "=== $t" >> ../compile-all.log
+          cmake --build . --config Release --target $t -- -p:BuildProjectReferences=false -m >> ../compile-all.log 2>&1 || true
+        done
+        grep -E "(: (fatal )?error [A-Z]+[0-9]+)|(error LNK)" ../compile-all.log ../build.log 2>/dev/null | sed -E 's/^[^:]*\.log://' | sort -u | head -n 60 | while IFS= read -r line; do
+          echo "::error title=uwp::${line:0:900}"
+        done
+
     - name: "Publish build logs"
       if: always()
       shell: bash
@@ -289,11 +319,11 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         mkdir -p ci-logs
-        for f in cmake.log build.log; do [ -f "$f" ] && cp "$f" "ci-logs/uwp-$f"; done
+        for f in cmake.log build.log compile-all.log; do [ -f "$f" ] && cp "$f" "ci-logs/uwp-$f"; done
         find dependencies/vcpkg/buildtrees -name "*-err.log" -size +0 2>/dev/null | head -n 20 | while read -r f; do cp "$f" "ci-logs/uwp-vcpkg-$(basename "$f")"; done
         echo "${GITHUB_SHA} ${{ job.status }}" > ci-logs/uwp-status.txt
-        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs."
-        gh release upload ci-logs ci-logs/* --clobber
+        gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "CI logs" --notes "Build logs of the latest CI runs." || true
+        for i in 1 2 3 4; do gh release upload ci-logs ci-logs/* --clobber && break; sleep 20; done
 
     - name: "Collect package"
       shell: bash

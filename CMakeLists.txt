@@ -68,6 +68,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
 	if (NOT CMAKE_SYSTEM_PROCESSOR)
 		set(CMAKE_SYSTEM_PROCESSOR "AMD64")
 	endif()
+	# UWP projects enable the SDL checks by default, which turn deprecation warnings (sprintf etc.) into errors
+	add_compile_options(/sdl-)
+	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 	# UWP apps use the DLL runtime (the VCLibs framework package)
 	set(CEMU_MSVC_RUNTIME "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 	# desktop only components
