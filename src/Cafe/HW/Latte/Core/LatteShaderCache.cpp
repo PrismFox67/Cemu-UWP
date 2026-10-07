@@ -16,6 +16,9 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
+#endif
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/RendererShaderMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCache.h"
@@ -294,6 +297,11 @@ void LatteShaderCache_finish()
 		RendererShaderMtl::ShaderCacheLoading_end();
 		return;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		RendererShaderD3D12::ShaderCacheLoading_end();
+		return;
+#endif
 	}
 }
 
@@ -388,6 +396,11 @@ void LatteShaderCache_Load()
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
 		RendererShaderMtl::ShaderCacheLoading_begin(cacheTitleId);
+		break;
+#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		RendererShaderD3D12::ShaderCacheLoading_begin(cacheTitleId);
 		break;
 #endif
 	}
@@ -985,6 +998,11 @@ void LatteShaderCache_Close()
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
 		RendererShaderMtl::ShaderCacheLoading_Close();
+		break;
+#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		RendererShaderD3D12::ShaderCacheLoading_Close();
 		break;
 #endif
 	}

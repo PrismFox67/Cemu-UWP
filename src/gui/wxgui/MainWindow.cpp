@@ -56,6 +56,9 @@
 #include "canvas/MetalCanvas.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "canvas/D3D12Canvas.h"
+#endif
 
 //Cafe libs
 #include "Cafe/OS/libs/nfc/nfc.h"
@@ -1615,6 +1618,10 @@ void MainWindow::CreateCanvas()
 	#ifdef ENABLE_METAL
 	if (ActiveSettings::GetGraphicsAPI() == kMetal)
 		m_render_canvas = new MetalCanvas(m_game_panel, wxSize(1280, 720), true);
+	#endif
+	#ifdef ENABLE_D3D12
+	if (ActiveSettings::GetGraphicsAPI() == kD3D12)
+		m_render_canvas = new D3D12Canvas(m_game_panel, wxSize(1280, 720), true);
 	#endif
 	if (!m_render_canvas)
 		cemu_assert(false && "Failed to create canvas or invalid graphics API selected");

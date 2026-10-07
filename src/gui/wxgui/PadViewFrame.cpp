@@ -15,6 +15,9 @@
 #ifdef ENABLE_METAL
 #include "wxgui/canvas/MetalCanvas.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "wxgui/canvas/D3D12Canvas.h"
+#endif
 #include "config/CemuConfig.h"
 #include "wxgui/MainWindow.h"
 #include "wxgui/helpers/wxHelpers.h"
@@ -90,6 +93,10 @@ void PadViewFrame::InitializeRenderCanvas()
 		#ifdef ENABLE_METAL
 		if (ActiveSettings::GetGraphicsAPI() == kMetal)
 			m_render_canvas = new MetalCanvas(this, wxSize(854, 480), false);
+		#endif
+		#ifdef ENABLE_D3D12
+		if (ActiveSettings::GetGraphicsAPI() == kD3D12)
+			m_render_canvas = new D3D12Canvas(this, wxSize(854, 480), false);
 		#endif
 		sizer->Add(m_render_canvas, 1, wxEXPAND, 0, nullptr);
 	}

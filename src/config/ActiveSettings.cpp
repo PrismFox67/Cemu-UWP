@@ -123,6 +123,11 @@ GraphicAPI ActiveSettings::GetGraphicsAPI()
 		return api;
 	fallbackAPI = fallbackAPI.value_or(kMetal);
 #endif
+#ifdef ENABLE_D3D12
+	if (api == kD3D12)
+		return api;
+	fallbackAPI = fallbackAPI.value_or(kD3D12);
+#endif
 #ifdef ENABLE_OPENGL
 	if (api == kOpenGL)
 		return api;

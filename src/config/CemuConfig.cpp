@@ -130,6 +130,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	else
 		vk_graphic_device_uuid = legacy_graphic_device_uuid;
 	mtl_graphic_device_uuid = graphic.get("mtlDevice", 0);
+	d3d12_adapter_luid = graphic.get("d3d12Adapter", (uint64)0); // LUIDs use all 64 bits
 	vsync = graphic.get("VSync", 0);
 	overrideAppGammaPreference = graphic.get("OverrideAppGammaPreference", false);
 	overrideGammaValue = graphic.get("OverrideGammaValue", 2.2f);
@@ -364,6 +365,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("device", legacy_graphic_device_uuid);
 	graphic.set("vkDevice", vk_graphic_device_uuid);
 	graphic.set("mtlDevice", mtl_graphic_device_uuid);
+	graphic.set("d3d12Adapter", d3d12_adapter_luid);
 	graphic.set("VSync", vsync);
 	graphic.set("OverrideAppGammaPreference", overrideAppGammaPreference);
 	graphic.set("OverrideGammaValue", overrideGammaValue);

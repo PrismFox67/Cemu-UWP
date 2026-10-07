@@ -349,7 +349,7 @@ void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compil
 	// check if a custom shader is present
 	std::string shaderSrc;
 
-	const std::string* customShaderSrc = GraphicPack2::FindCustomShaderSource(shader->baseHash, shader->auxHash, gpShaderType, g_renderer->GetType() == RendererAPI::Vulkan, g_renderer->GetType() == RendererAPI::Metal);
+	const std::string* customShaderSrc = GraphicPack2::FindCustomShaderSource(shader->baseHash, shader->auxHash, gpShaderType, RendererUsesVulkanGLSL(g_renderer->GetType()), g_renderer->GetType() == RendererAPI::Metal);
 	if (customShaderSrc)
 	{
 		shaderSrc.assign(*customShaderSrc);
@@ -751,6 +751,7 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 		shader->resourceMapping = decompilerOutput.resourceMappingGL;
 		break;
 	case RendererAPI::Vulkan:
+	case RendererAPI::D3D12:
 		shader->resourceMapping = decompilerOutput.resourceMappingVK;
 		break;
 	case RendererAPI::Metal:

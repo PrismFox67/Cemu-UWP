@@ -548,6 +548,47 @@ if (ENABLE_VULKAN)
   )
 endif()
 
+if (ENABLE_D3D12)
+  target_sources(CemuCafe PRIVATE
+    HW/Latte/Renderer/D3D12/CachedFBOD3D12.cpp
+    HW/Latte/Renderer/D3D12/CachedFBOD3D12.h
+    HW/Latte/Renderer/D3D12/D3D12BindingModel.h
+    HW/Latte/Renderer/D3D12/D3D12Common.cpp
+    HW/Latte/Renderer/D3D12/D3D12Common.h
+    HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.cpp
+    HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.h
+    HW/Latte/Renderer/D3D12/D3D12Format.cpp
+    HW/Latte/Renderer/D3D12/D3D12Format.h
+    HW/Latte/Renderer/D3D12/D3D12ImGui.cpp
+    HW/Latte/Renderer/D3D12/D3D12ImGui.h
+    HW/Latte/Renderer/D3D12/D3D12InternalPipelines.h
+    HW/Latte/Renderer/D3D12/D3D12Memory.cpp
+    HW/Latte/Renderer/D3D12/D3D12Memory.h
+    HW/Latte/Renderer/D3D12/D3D12PipelineCache.cpp
+    HW/Latte/Renderer/D3D12/D3D12PipelineCache.h
+    HW/Latte/Renderer/D3D12/D3D12Query.cpp
+    HW/Latte/Renderer/D3D12/D3D12Renderer.cpp
+    HW/Latte/Renderer/D3D12/D3D12Renderer.h
+    HW/Latte/Renderer/D3D12/D3D12RendererCore.cpp
+    HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.cpp
+    HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h
+    HW/Latte/Renderer/D3D12/D3D12SpirvRemap.cpp
+    HW/Latte/Renderer/D3D12/D3D12SurfaceCopy.cpp
+    HW/Latte/Renderer/D3D12/D3D12SwapChain.cpp
+    HW/Latte/Renderer/D3D12/D3D12SwapChain.h
+    HW/Latte/Renderer/D3D12/D3D12TextureReadback.cpp
+    HW/Latte/Renderer/D3D12/D3D12TextureReadback.h
+    HW/Latte/Renderer/D3D12/LatteTextureD3D12.cpp
+    HW/Latte/Renderer/D3D12/LatteTextureD3D12.h
+    HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.cpp
+    HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h
+    HW/Latte/Renderer/D3D12/RendererShaderD3D12.cpp
+    HW/Latte/Renderer/D3D12/RendererShaderD3D12.h
+  )
+  target_include_directories(CemuCafe PRIVATE ${SPIRV_TO_DXIL_INCLUDE_DIR})
+  target_link_libraries(CemuCafe PRIVATE d3d12 dxgi dxguid ${SPIRV_TO_DXIL_LIBRARY})
+endif()
+
 if(APPLE)
 	target_sources(CemuCafe PRIVATE
 	    HW/Latte/Renderer/MetalView.mm

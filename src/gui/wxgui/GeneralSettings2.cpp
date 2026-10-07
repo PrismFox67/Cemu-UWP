@@ -34,6 +34,9 @@
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#endif
 #include "Cafe/Account/Account.h"
 
 #include <boost/tokenizer.hpp>
@@ -112,6 +115,19 @@ public:
 
 private:
 	MetalRenderer::DeviceInfo m_device_info;
+};
+#endif
+
+#ifdef ENABLE_D3D12
+class wxD3D12Adapter : public wxClientData
+{
+public:
+	wxD3D12Adapter(const D3D12Renderer::AdapterInfo& info)
+		: m_info(info) {}
+	const D3D12Renderer::AdapterInfo& GetAdapterInfo() const { return m_info; }
+
+private:
+	D3D12Renderer::AdapterInfo m_info;
 };
 #endif
 
@@ -373,6 +389,10 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 #ifdef ENABLE_METAL
 		choices[api_size++] = "Metal";
 		m_api_map.push_back(GraphicAPI::kMetal);
+#endif
+#ifdef ENABLE_D3D12
+		choices[api_size++] = "Direct3D 12";
+		m_api_map.push_back(GraphicAPI::kD3D12);
 #endif
 		wxASSERT(api_size > 0);
 
@@ -1260,6 +1280,18 @@ void GeneralSettings2::StoreConfig()
 				config.mtl_graphic_device_uuid = {};
 		}
 #endif
+#ifdef ENABLE_D3D12
+		if (config.graphic_api == GraphicAPI::kD3D12)
+		{
+			config.d3d12_adapter_luid = 0;
+			if (selection != wxNOT_FOUND)
+			{
+				const auto* info = (wxD3D12Adapter*)m_graphic_device->GetClientObject(selection);
+				if (info)
+					config.d3d12_adapter_luid = info->GetAdapterInfo().luid;
+			}
+		}
+#endif
 	}
 
 
@@ -1851,6 +1883,48 @@ void GeneralSettings2::HandleGraphicsApiSelection()
 				for (size_t i = 0; i < devices.size(); ++i)
 				{
 					if (config.mtl_graphic_device_uuid == devices[i].uuid)
+					{
+						m_graphic_device->SetSelection(i);
+						break;
+					}
+				}
+			}
+		}
+		else
+		{
+			cemu_assert(g_renderer != nullptr);
+			m_graphic_device->Append(g_renderer->GetDeviceName());
+			m_graphic_device->SetSelection(0);
+		}
+		break;
+	}
+#endif
+#ifdef ENABLE_D3D12
+	case GraphicAPI::kD3D12:
+	{
+		m_gx2drawdone_sync->Disable();
+		m_async_compile->Disable(); // pipelines are compiled synchronously for now
+#ifdef ENABLE_METAL
+		m_force_mesh_shaders->Disable();
+#endif
+		m_vsync->AppendString(_("Off"));
+		m_vsync->AppendString(_("On"));
+		m_vsync->Select(selection == 0 ? 0 : 1);
+
+		m_graphic_device->Enable();
+		m_graphic_device->Clear();
+		if (!CafeSystem::IsTitleRunning())
+		{
+			auto adapters = D3D12Renderer::GetAdapters();
+			for (const auto& adapter : adapters)
+				m_graphic_device->Append(adapter.name, new wxD3D12Adapter(adapter));
+			if (!adapters.empty())
+			{
+				m_graphic_device->SetSelection(0);
+				const auto& config = GetConfig();
+				for (size_t i = 0; i < adapters.size(); ++i)
+				{
+					if (config.d3d12_adapter_luid == adapters[i].luid)
 					{
 						m_graphic_device->SetSelection(i);
 						break;

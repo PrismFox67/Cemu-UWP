@@ -70,6 +70,7 @@ enum GraphicAPI
 	kOpenGL = 0,
 	kVulkan,
 	kMetal,
+	kD3D12,
 	COUNT
 };
 
@@ -79,6 +80,8 @@ constexpr GraphicAPI kDefaultGraphicsAPI = kVulkan;
 constexpr GraphicAPI kDefaultGraphicsAPI = kMetal;
 #elif defined(ENABLE_OPENGL)
 constexpr GraphicAPI kDefaultGraphicsAPI = kOpenGL;
+#elif defined(ENABLE_D3D12)
+constexpr GraphicAPI kDefaultGraphicsAPI = kD3D12;
 #endif
 
 enum AudioChannels
@@ -442,6 +445,7 @@ struct CemuConfig
 	std::array<uint8, 16> legacy_graphic_device_uuid{}; // placeholder option for backwards compatibility with settings from 2.6 and before (renamed to "vkDevice")
 	std::array<uint8, 16> vk_graphic_device_uuid;
 	uint64 mtl_graphic_device_uuid{ 0 };
+	uint64 d3d12_adapter_luid{ 0 }; // 0 = default adapter
 	ConfigValue<int> vsync{ 0 }; // 0 = off, 1+ = depending on render backend
 	ConfigValue<bool> gx2drawdone_sync { true };
 	ConfigValue<bool> render_upside_down{ false };

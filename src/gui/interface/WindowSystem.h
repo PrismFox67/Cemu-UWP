@@ -12,6 +12,8 @@ namespace WindowSystem
 			Wayland,
 			Cocoa,
 			Windows,
+			UWPCoreWindow, // surface = IUnknown* of the app's Windows::UI::Core::CoreWindow (D3D12 only)
+			UWPSwapChainPanel, // surface unused, the host attaches D3D12Renderer::GetSwapChain() to its SwapChainPanel (D3D12 only)
 		} backend;
 		void* display = nullptr;
 		void* surface = nullptr;

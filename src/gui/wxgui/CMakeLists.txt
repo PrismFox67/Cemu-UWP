@@ -135,6 +135,13 @@ if (ENABLE_METAL)
   )
 endif()
 
+if (ENABLE_D3D12)
+  target_sources(CemuWxGui PRIVATE
+    canvas/D3D12Canvas.cpp
+    canvas/D3D12Canvas.h
+  )
+endif()
+
 if (ENABLE_BLUEZ)
   target_sources(CemuWxGui PRIVATE
     input/PairingDialog.cpp

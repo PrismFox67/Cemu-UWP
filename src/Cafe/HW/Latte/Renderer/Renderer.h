@@ -34,9 +34,17 @@ enum class RendererAPI
 	OpenGL,
 	Vulkan,
 	Metal,
+	D3D12,
 
 	MAX
 };
+
+// D3D12 consumes the same Vulkan-flavored GLSL as the Vulkan backend (compiled GLSL -> SPIR-V -> DXIL), so it shares
+// all of Vulkan's shader generation paths, shader caches layouts and graphic pack shader replacements
+inline bool RendererUsesVulkanGLSL(RendererAPI api)
+{
+	return api == RendererAPI::Vulkan || api == RendererAPI::D3D12;
+}
 
 using ImTextureID = void*;
 

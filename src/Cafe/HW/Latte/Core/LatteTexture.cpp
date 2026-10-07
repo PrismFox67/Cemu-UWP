@@ -579,9 +579,9 @@ bool __LatteTexture_IsBlockedFormatRelation(LatteTexture* texture1, LatteTexture
 			return true;
 	}
 
-#ifdef ENABLE_VULKAN
-	// Vulkan has stricter rules
-	if (g_renderer->GetType() == RendererAPI::Vulkan)
+#if defined(ENABLE_VULKAN) || defined(ENABLE_D3D12)
+	// Vulkan (and D3D12) have stricter rules
+	if (RendererUsesVulkanGLSL(g_renderer->GetType()))
 	{
 		// found in Smash (Wii Fit Stage)
 		if (texture1->format == Latte::E_GX2SURFFMT::D32_FLOAT && Latte::GetHWFormat(texture2->format) == Latte::E_HWFMT::HWFMT_8_24)

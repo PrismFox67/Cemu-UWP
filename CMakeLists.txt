@@ -119,6 +119,10 @@ endif()
 option(ENABLE_OPENGL "Enables the OpenGL backend" ${ENABLE_OPENGL_DEFAULT})
 option(ENABLE_VULKAN "Enables the Vulkan backend" ON)
 option(ENABLE_METAL "Enables the Metal backend" ${ENABLE_METAL_DEFAULT})
+if (WIN32)
+	# requires Mesa's spirv_to_dxil library, see src/Cafe/HW/Latte/Renderer/D3D12/README.md
+	option(ENABLE_D3D12 "Enables the Direct3D 12 backend" OFF)
+endif()
 option(ENABLE_DISCORD_RPC "Enables the Discord Rich Presence feature" ON)
 
 if (ENABLE_METAL AND NOT APPLE)
@@ -213,6 +217,23 @@ if (ENABLE_METAL)
     include_directories(${CMAKE_SOURCE_DIR}/dependencies/metal-cpp)
 
     add_compile_definitions(ENABLE_METAL)
+endif()
+
+if (ENABLE_D3D12)
+	if (NOT WIN32)
+		message(FATAL_ERROR "The D3D12 backend is only supported on Windows")
+	endif()
+	# spirv_to_dxil is built from Mesa (meson -Dspirv-to-dxil=true). Point SPIRV_TO_DXIL_ROOT at its install prefix
+	find_path(SPIRV_TO_DXIL_INCLUDE_DIR NAMES spirv_to_dxil.h
+		HINTS ${SPIRV_TO_DXIL_ROOT} $ENV{SPIRV_TO_DXIL_ROOT}
+		PATH_SUFFIXES include include/spirv_to_dxil src/microsoft/spirv_to_dxil)
+	find_library(SPIRV_TO_DXIL_LIBRARY NAMES spirv_to_dxil libspirv_to_dxil
+		HINTS ${SPIRV_TO_DXIL_ROOT} $ENV{SPIRV_TO_DXIL_ROOT}
+		PATH_SUFFIXES lib lib64 bin)
+	if (NOT SPIRV_TO_DXIL_INCLUDE_DIR OR NOT SPIRV_TO_DXIL_LIBRARY)
+		message(FATAL_ERROR "ENABLE_D3D12 requires spirv_to_dxil. Set SPIRV_TO_DXIL_ROOT to the Mesa install prefix")
+	endif()
+	add_compile_definitions(ENABLE_D3D12)
 endif()
 
 if (ENABLE_DISCORD_RPC)

@@ -306,6 +306,8 @@ GraphicPack2::GraphicPack2(fs::path rulesPath, IniParser& rules)
 			m_renderer_api = RendererAPI::OpenGL;
 		else if (boost::iequals(*option_rendererFilter, "metal"))
 			m_renderer_api = RendererAPI::Metal;
+		else if (boost::iequals(*option_rendererFilter, "d3d12"))
+			m_renderer_api = RendererAPI::D3D12;
 		else
 			cemuLog_log(LogType::Force, "Unknown value '{}' for rendererFilter option", *option_rendererFilter);
 	}
@@ -971,7 +973,12 @@ bool GraphicPack2::Activate()
 
 	// check if gp should be loaded
 	if (m_renderer_api.has_value() && m_renderer_api.value() != g_renderer->GetType())
-		return false;
+	{
+		// D3D12 runs the Vulkan GLSL, so packs filtered to Vulkan are compatible with it
+		const bool vulkanPackOnD3D12 = m_renderer_api.value() == RendererAPI::Vulkan && g_renderer->GetType() == RendererAPI::D3D12;
+		if (!vulkanPackOnD3D12)
+			return false;
+	}
 
 	if (m_gfx_vendor.has_value())
 	{
