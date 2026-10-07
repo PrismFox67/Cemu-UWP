@@ -1,0 +1,119 @@
+# CI for the D3D12 / UWP fork. Builds Cemu for Windows with MSVC and the D3D12 backend enabled, and publishes the
+# result as a downloadable artifact and as the "ci-latest" pre-release.
+name: Windows D3D12 build
+
+on:
+  push:
+    branches:
+      - "d3d12-backend"
+      - "uwp/**"
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  VCPKG_ROOT: "${{github.workspace}}/dependencies/vcpkg"
+  VCPKG_BINARY_SOURCES: 'clear;nuget,GitHub,readwrite'
+  VCPKG_FORCE_DOWNLOADED_BINARIES: true
+
+concurrency:
+  group: windows-d3d12-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-d3d12:
+    runs-on: windows-2022
+    steps:
+    - name: "Checkout repo"
+      uses: actions/checkout@v6
+      with:
+        submodules: "recursive"
+
+    - name: "Setup cmake"
+      uses: jwlawson/actions-setup-cmake@v2
+      with:
+        cmake-version: '3.29.0'
+
+    - name: "Bootstrap vcpkg"
+      run: |
+        ./dependencies/vcpkg/bootstrap-vcpkg.bat
+
+    - name: 'Setup NuGet Credentials for vcpkg'
+      shell: 'bash'
+      run: |
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        sources add \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+        -storepasswordincleartext \
+        -name "GitHub" \
+        -username "${{ github.repository_owner }}" \
+        -password "${{ secrets.GITHUB_TOKEN }}"
+        `./dependencies/vcpkg/vcpkg.exe fetch nuget | tail -n 1` \
+        setapikey "${{ secrets.GITHUB_TOKEN }}" \
+        -source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+
+    # turns compiler/linker/CMake errors into annotations on the commit
+    - name: "Register problem matchers"
+      shell: bash
+      run: echo "::add-matcher::.github/problem-matchers/msvc.json"
+
+    - name: "cmake"
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=release -DENABLE_D3D12=ON -DVCPKG_INSTALL_OPTIONS="--clean-after-build" 2>&1 | tee ../cmake.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Build Cemu"
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config release 2>&1 | tee ../build.log
+        test ${PIPESTATUS[0]} -eq 0
+
+    - name: "Report failure summary"
+      if: failure()
+      shell: bash
+      run: |
+        for f in cmake.log build.log; do
+          [ -f "$f" ] || continue
+          grep -E "error|Error|FAILED" "$f" | grep -v "^\s*$" | head -n 8 | while IFS= read -r line; do
+            echo "::error title=$f::${line:0:900}"
+          done
+        done
+        # vcpkg port failures write their logs under buildtrees
+        find dependencies/vcpkg/buildtrees -name "*-err.log" -size +0 2>/dev/null | head -n 2 | while read -r f; do
+          echo "::error title=vcpkg $(basename $f)::$(tail -c 900 "$f" | tr '\n' ' ')"
+        done
+
+    - name: "Prepare package"
+      shell: bash
+      run: |
+        mv bin/Cemu_release.exe bin/Cemu.exe
+        rm -f bin/Cemu_release.pdb
+        # dxcompiler/dxil are only needed for the optional DXC shader path (CEMU_D3D12_SHADER_COMPILER=dxc)
+        SDKBIN=$(ls -d "/c/Program Files (x86)/Windows Kits/10/bin/10."*/x64 | sort -V | tail -n 1)
+        cp "$SDKBIN/dxcompiler.dll" "$SDKBIN/dxil.dll" bin/ || true
+        cd bin && 7z a -tzip ../cemu-d3d12-windows-x64.zip . > /dev/null
+
+    - name: "Upload artifact"
+      uses: actions/upload-artifact@v6
+      with:
+        name: cemu-d3d12-windows-x64
+        path: ./cemu-d3d12-windows-x64.zip
+
+    - name: "Publish ci-latest pre-release"
+      if: github.event_name == 'push'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release delete ci-latest --yes --cleanup-tag 2>/dev/null || true
+        gh release create ci-latest cemu-d3d12-windows-x64.zip --prerelease --target "${GITHUB_SHA}" \
+          --title "CI build (${GITHUB_REF_NAME} @ ${GITHUB_SHA:0:7})" \
+          --notes "Automatic Windows build with the Direct3D 12 backend. Not an official Cemu release."
