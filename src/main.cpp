@@ -222,8 +222,10 @@ void ToolShaderCacheMerger();
 // entrypoint for release builds
 int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nShowCmd)
 {
+#ifndef CEMU_UWP // the UWP shell initializes the (multithreaded) apartment with winrt::init_apartment()
 	if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)))
 		cemuLog_log(LogType::Force, "CoInitializeEx() failed");
+#endif
 #ifdef HAS_SDL
 	SDL_SetMainReady();
 #endif
@@ -237,8 +239,10 @@ int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int
 // entrypoint for debug builds with console
 int main(int argc, char* argv[])
 {
+#ifndef CEMU_UWP // the UWP shell initializes the (multithreaded) apartment with winrt::init_apartment()
 	if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)))
 		cemuLog_log(LogType::Force, "CoInitializeEx() failed");
+#endif
 #ifdef HAS_SDL
 	SDL_SetMainReady();
 #endif
