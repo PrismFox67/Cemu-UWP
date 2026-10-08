@@ -200,6 +200,11 @@ if (ENABLE_HOST_FRONTEND)
 		message(FATAL_ERROR "ENABLE_HOST_FRONTEND requires ENABLE_D3D12")
 	endif()
 	add_compile_definitions(CEMU_HOST_FRONTEND)
+	if (MSVC)
+		# keep symbols for release builds so stack traces of hangs and crashes on test machines can be resolved
+		add_compile_options($<$<CONFIG:Release>:/Z7>)
+		add_link_options($<$<CONFIG:Release>:/DEBUG:FULL> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+	endif()
 endif()
 
 find_package(Threads REQUIRED)
