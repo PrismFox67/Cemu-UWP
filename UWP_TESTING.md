@@ -131,8 +131,8 @@ Settings → Game folders.
 
 ## Known limitations
 
-- The D3D12 renderer is new. Mario Kart 8 (v1, no update) boots to its attract mode on an Intel Iris Xe with the
-  Win32 host build; gameplay is not verified yet. See the
+- The D3D12 renderer is new. Mario Kart 8 (v1, no update) runs on an Intel Iris Xe with the Win32 host build: title
+  screen, menus, character select and a Grand Prix race render correctly at 60 FPS. Other games are untested. See the
   [renderer README](src/Cafe/HW/Latte/Renderer/D3D12/README.md#known-risks) for the parts most likely to break.
 - Keep "Compile shaders asynchronously" on (default). Without it a slow driver shader compile freezes the game; on
   Intel GPUs that took minutes for some Mario Kart 8 pipelines.
