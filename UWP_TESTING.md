@@ -77,6 +77,10 @@ scripts.
    double-clicking them.
 4. Start **Cemu UWP** from the Start menu.
 
+Without a certificate (Developer Mode on): rename the `.msix` to `.zip`, extract it into a folder that stays, delete
+`AppxSignature.p7x` from it, and run `Add-AppxPackage -Register <folder>\AppxManifest.xml` in PowerShell (install the
+VCLibs `.appx` first if it is missing). Start a game directly with `Start-Process "cemu:?path=<url-encoded path>"`.
+
 Files: the app's user data is in `%LOCALAPPDATA%\Packages\CemuUWP.Unofficial_<id>\LocalState` (put `keys.txt` there).
 A UWP app can only read folders that it's allowed to. Either keep games inside `LocalState`, or give the game folder
 the `ALL APPLICATION PACKAGES` permission as described in step 3 of the Xbox section below, then add its path under
@@ -142,9 +146,14 @@ Settings → Game folders.
   load them from the cache in seconds. After the shaders, the loading screen also creates every pipeline the game used
   before ("Loading cached pipelines"); on a new device or after a driver update that takes a while once, later starts
   are fast. Turn it off under Settings → "Compile pipelines while the game loads" for shorter loading but more stutter.
-- To skip most of the first-time stutter on the Xbox, play on the PC first, then copy
-  `shaderCache/transferable/<titleId>.bin` and `<titleId>_d3d12pipelines.bin` from the PC's user folder to the Xbox's
-  `LocalState/shaderCache/transferable/`. The Xbox then compiles those shaders and pipelines on its loading screen.
+- To skip the first-time shader compiling and most of the stutter on the Xbox, play on the PC first, then copy from the
+  PC's `user/shaderCache/` to the Xbox's `LocalState/shaderCache/` (same sub folders):
+  - `transferable/<titleId>_shaders.bin` and `transferable/<titleId>_d3d12pipelines.bin`: which shaders and pipelines
+    the game uses
+  - `precompiled/<titleId>_d3d12_fxc.bin`: the compiled shaders. Optional but worth it: without it the first start
+    compiles every shader again (Mario Kart 8 in the UWP build: about 12 minutes with it missing, 25 seconds with it)
+
+  Don't copy `driver/`, it only works with the GPU driver that created it. Tested with the UWP build on Windows.
 - The UWP/Xbox frontend has no graphic pack, button remapping, online or account UI yet. Settings files from the
   normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be copied into the user folder.
 - No Vulkan/OpenGL, cubeb, SDL controllers, Wiimotes or DirectInput in the UWP build; audio uses XAudio2 and
