@@ -577,6 +577,11 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 	}
 	if (!s_launcherContext)
 		return;
+	if (down && virtualKey == VK_ESCAPE && HostControllers::IsPairing())
+	{
+		HostControllers::CancelPairing();
+		return;
+	}
 	ImGui::SetCurrentContext(s_launcherContext);
 	ImGuiIO& io = ImGui::GetIO();
 	if (virtualKey == VK_SHIFT || virtualKey == VK_LSHIFT || virtualKey == VK_RSHIFT)

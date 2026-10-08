@@ -367,7 +367,7 @@ namespace
 				else if (info.padConnected)
 					ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), info.hasKeyboard ? "connected (+ keyboard)" : "connected");
 				else
-					ImGui::TextDisabled("turn on controller %d", info.pad + 1);
+					ImGui::TextDisabled(info.hasKeyboard ? "turn on controller %d (keyboard works)" : "turn on controller %d", info.pad + 1);
 			}
 			ImGui::EndDisabled();
 			ImGui::PopID();
