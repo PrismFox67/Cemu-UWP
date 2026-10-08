@@ -125,7 +125,9 @@ Settings → Game folders.
 
 - Dev Home shows the app as installed but it closes immediately: get `log.txt` from `LocalState` via Device Portal.
   If there's no log, try the same package on Windows (section 3) to see whether the problem is specific to the Xbox.
-- Very slow or out of memory: check that **App type** is **Game**.
+- Very slow or out of memory: check that **App type** is **Game**. Even as a Game the process budget is limited;
+  another UWP Cemu port measured about 5 GB on a Series S. Note the "Commited mem" values in `log.txt` and the
+  memory use shown in Device Portal when it happens.
 - No games listed: the folder needs the `ALL APPLICATION PACKAGES` permission (re-apply it to sub-folders), and the
   drive must be NTFS.
 

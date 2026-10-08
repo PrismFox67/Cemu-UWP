@@ -204,6 +204,10 @@ if (ENABLE_HOST_FRONTEND)
 		# keep symbols for release builds so stack traces of hangs and crashes on test machines can be resolved
 		add_compile_options($<$<CONFIG:Release>:/Z7>)
 		add_link_options($<$<CONFIG:Release>:/DEBUG:FULL> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+		# Default stack reserve of every thread created without an explicit size (pipeline and shader compile threads,
+		# the GPU thread). Driver shader compilers recurse deeply while creating complex pipelines, on Xbox this has been
+		# reported to overflow a 1 MB stack. Only address space is reserved, pages are committed on use
+		add_link_options(/STACK:134217728)
 	endif()
 endif()
 
