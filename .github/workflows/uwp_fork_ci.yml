@@ -221,6 +221,11 @@ jobs:
         cd pkg && 7z a -tzip ../cemu-host-win32-x64.zip . > /dev/null && cd ..
         gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
         gh release upload ci-latest cemu-host-win32-x64.zip --clobber
+        # debug symbols for stack traces of hangs and crashes, kept out of the main zip because of their size
+        if [ -f bin/Cemu_Host_release.pdb ]; then
+          (cd bin && 7z a -tzip ../cemu-host-win32-x64-pdb.zip Cemu_Host_release.pdb > /dev/null)
+          gh release upload ci-latest cemu-host-win32-x64-pdb.zip --clobber
+        fi
 
     - name: "Upload artifact"
       uses: actions/upload-artifact@v6
