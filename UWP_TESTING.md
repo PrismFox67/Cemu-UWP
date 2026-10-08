@@ -46,13 +46,20 @@ Set them in a command prompt before starting: `set CEMU_D3D12_DEBUG=1` then `Cem
 3. Controls:
    - Launcher: D-pad/left stick to move, A to select, B to go back, LB/RB to switch tabs, Y for settings.
      Mouse and keyboard work too.
-   - In game: **hold View + Menu (Back + Start) for one second** to open the menu (Resume, show TV or GamePad
-     screen, FPS counter, Save and exit Cemu). On a keyboard, F1 opens it, arrows and Enter select, Esc closes it.
-     **Save and exit Cemu** saves the settings and closes the program; start it again to play something else.
-   - The first XInput controller and the keyboard are the Wii U GamePad. Keyboard: left stick W/A/S/D, D-pad arrow
-     keys, A/B/X/Y = K/J/I/U, L/R = Q/E, ZL/ZR = Z/C, Plus = Enter, Minus = Backspace, Home = H, right stick on the
-     number pad (8/4/2/6). The mapping is created on first start and stored in
-     `user/controllerProfiles/controller0.xml`; edit that file or copy one from the normal Cemu to change it.
+   - In game: **hold View + Menu (Back + Start) for one second** to open the menu (Resume, Pair controllers, show TV
+     or GamePad screen, FPS counter, Save and exit Cemu). On a keyboard, F1 opens it, arrows and Enter select, Esc
+     closes it. **Save and exit Cemu** saves the settings and closes the program; start it again to play something
+     else.
+   - Players: controller 1 (plus the keyboard) is the Wii U GamePad for player 1, controllers 2-4 are Pro Controllers
+     for players 2-4. Turning on a second controller is enough for a second player.
+   - **Controllers** tab in the launcher: pick the controller type (Wii U GamePad, Pro Controller, Classic
+     Controller, not connected) and the physical controller for each player.
+   - **Pair controllers** (Controllers tab or in-game menu): press A on the controller for player 1, then player 2,
+     and so on, then Menu (Start) to finish. Players without a controller are disconnected. B / Esc cancels.
+   - Keyboard (player 1): left stick W/A/S/D, D-pad arrow keys, A/B/X/Y = K/J/I/U, L/R = Q/E, ZL/ZR = Z/C,
+     Plus = Enter, Minus = Backspace, Home = H, right stick on the number pad (8/4/2/6).
+   - Mappings are stored as normal Cemu profiles in `user/controllerProfiles/controller<N>.xml`; edit them or copy
+     some from the normal Cemu to change individual buttons.
    - Alt+Enter or F11: fullscreen.
 
 ## 3. UWP package on Windows
@@ -124,10 +131,14 @@ Settings → Game folders.
 
 ## Known limitations
 
-- The D3D12 renderer is new. It has run homebrew under Wine with vkd3d (D3D12 on Vulkan), but no commercial games
-  and no real Windows GPU driver yet. See the
+- The D3D12 renderer is new. Mario Kart 8 (v1, no update) boots to its attract mode on an Intel Iris Xe with the
+  Win32 host build; gameplay is not verified yet. See the
   [renderer README](src/Cafe/HW/Latte/Renderer/D3D12/README.md#known-risks) for the parts most likely to break.
-- The UWP/Xbox frontend has no graphic pack, controller mapping, online or account UI yet. Settings files from the
+- Keep "Compile shaders asynchronously" on (default). Without it a slow driver shader compile freezes the game; on
+  Intel GPUs that took minutes for some Mario Kart 8 pipelines.
+- The first start of a game compiles its shaders on the loading screen, which can take minutes with FXC. Later starts
+  load them from the cache in seconds.
+- The UWP/Xbox frontend has no graphic pack, button remapping, online or account UI yet. Settings files from the
   normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be copied into the user folder.
 - No Vulkan/OpenGL, cubeb, SDL controllers, Wiimotes or DirectInput in the UWP build; audio uses XAudio2 and
   controllers use XInput.
