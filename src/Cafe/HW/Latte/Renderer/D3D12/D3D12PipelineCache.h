@@ -4,25 +4,29 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 
 class D3D12Renderer;
 class CachedFBOD3D12;
 class RendererShaderD3D12;
+class D3D12PipelineCompileQueue;
+struct D3D12PipelineCompileJob;
 struct LatteFetchShader;
 struct LatteDecompilerShader;
 
 struct D3D12PipelineInfo
 {
-	ComPtr<ID3D12PipelineState> pso;
+	ComPtr<ID3D12PipelineState> pso; // written once by whichever thread creates it, then published through isReady
 	D3D_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	bool usesBlendConstants = false;
 	bool blendConstantAlphaOnly = false; // only CONSTANT_ALPHA factors are used, replicate alpha into RGB
 	bool usesStencil = false;
 	uint32 stencilRef = 0;
 	std::unique_ptr<RendererShaderD3D12> rectEmulationGS; // generated geometry shader for RECTS primitives
-	bool isValid() const { return pso != nullptr; }
+	std::atomic<bool> isReady{ false }; // false while the PSO is still being created on a compile thread
+	bool isValid() const { return isReady.load(std::memory_order_acquire) && pso != nullptr; }
 };
 
 // Translates the current Latte register state into D3D12 pipeline state objects.
@@ -33,6 +37,9 @@ public:
 	explicit D3D12PipelineCache(D3D12Renderer* renderer);
 	~D3D12PipelineCache();
 
+	// With async compile enabled this never blocks: if the shaders or the PSO are not ready yet the returned pipeline is
+	// not valid and the draw is skipped, like in the Vulkan backend. Driver shader compilers (Intel's in particular) can
+	// take minutes for large Latte shaders, which would otherwise freeze the GPU thread
 	D3D12PipelineInfo* GetOrCreate(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
 		CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
 
@@ -46,10 +53,12 @@ public:
 		const CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
 
 private:
-	std::unique_ptr<D3D12PipelineInfo> CreatePipeline(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
-		CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
+	// fills the job with a self-contained pipeline description, returns false if no pipeline can be created
+	bool PreparePipeline(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
+		CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType, D3D12PipelineCompileJob& job);
 
 	D3D12Renderer* m_renderer;
-	std::unordered_map<uint64, std::unique_ptr<D3D12PipelineInfo>> m_pipelines;
+	std::unordered_map<uint64, std::shared_ptr<D3D12PipelineInfo>> m_pipelines;
+	std::shared_ptr<D3D12PipelineCompileQueue> m_compileQueue;
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
 };

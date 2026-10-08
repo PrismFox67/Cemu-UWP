@@ -1903,7 +1903,7 @@ void GeneralSettings2::HandleGraphicsApiSelection()
 	case GraphicAPI::kD3D12:
 	{
 		m_gx2drawdone_sync->Disable();
-		m_async_compile->Disable(); // pipelines are compiled synchronously for now
+		m_async_compile->Enable();
 #ifdef ENABLE_METAL
 		m_force_mesh_shaders->Disable();
 #endif

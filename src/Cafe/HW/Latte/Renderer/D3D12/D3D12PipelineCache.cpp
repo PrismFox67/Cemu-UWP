@@ -8,8 +8,126 @@
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteConst.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "config/CemuConfig.h"
+
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <thread>
 
 extern std::atomic_int g_compiling_pipelines;
+extern std::atomic_int g_compiling_pipelines_async;
+
+// A pipeline description that no longer references any Latte or renderer object, so it can be compiled on another thread
+// while the GPU thread continues (shaders may even be deleted in the meantime)
+struct D3D12PipelineCompileJob
+{
+	std::shared_ptr<D3D12PipelineInfo> info;
+	ComPtr<ID3D12Device> device;
+	ComPtr<ID3D12RootSignature> rootSignature;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
+	std::vector<D3D12_INPUT_ELEMENT_DESC> inputElements;
+	std::vector<uint8> vsBytecode, gsBytecode, psBytecode;
+	uint64 vsHash = 0;
+	uint64 psHash = 0;
+
+	void Run()
+	{
+		auto toBytecode = [](const std::vector<uint8>& v) { return v.empty() ? D3D12_SHADER_BYTECODE{} : D3D12_SHADER_BYTECODE{ v.data(), v.size() }; };
+		desc.pRootSignature = rootSignature.Get();
+		desc.InputLayout.pInputElementDescs = inputElements.data();
+		desc.InputLayout.NumElements = (UINT)inputElements.size();
+		desc.VS = toBytecode(vsBytecode);
+		desc.GS = toBytecode(gsBytecode);
+		desc.PS = toBytecode(psBytecode);
+		const auto start = std::chrono::steady_clock::now();
+		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
+		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+		if (FAILED(hr))
+		{
+			cemuLog_log(LogType::Force, "D3D12: CreateGraphicsPipelineState failed ({}) for VS {:016x} PS {:016x}", D3D12_HResultToString(hr), vsHash, psHash);
+			info->pso.Reset();
+		}
+		else if (ms >= 2000)
+			cemuLog_log(LogType::Force, "D3D12: The driver took {}ms to create the pipeline for VS {:016x} PS {:016x}", ms, vsHash, psHash);
+		info->isReady.store(true, std::memory_order_release);
+	}
+};
+
+class D3D12PipelineCompileQueue
+{
+public:
+	static std::shared_ptr<D3D12PipelineCompileQueue> Create()
+	{
+		auto queue = std::make_shared<D3D12PipelineCompileQueue>();
+		// drivers parallelize poorly internally, a few threads are enough to keep one slow pipeline from blocking the rest
+		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 4, 1, 3);
+		for (uint32 i = 0; i < threadCount; i++)
+			queue->m_threads.emplace_back([queue]() { queue->ThreadFunc(); }); // threads keep the queue alive if detached
+		return queue;
+	}
+
+	void Push(std::unique_ptr<D3D12PipelineCompileJob> job)
+	{
+		std::lock_guard lock(m_mutex);
+		m_jobs.push_back(std::move(job));
+		m_jobAvailable.notify_one();
+	}
+
+	void Stop()
+	{
+		std::unique_lock lock(m_mutex);
+		m_stop = true;
+		m_jobs.clear();
+		m_jobAvailable.notify_all();
+		// a driver compile can take minutes or hang, it must not block closing the game
+		const bool idle = m_jobFinished.wait_for(lock, std::chrono::seconds(3), [this]() { return m_busyThreads == 0; });
+		lock.unlock();
+		if (!idle)
+			cemuLog_log(LogType::Force, "D3D12: A pipeline is still being created by the driver, not waiting for it");
+		for (auto& t : m_threads)
+		{
+			if (idle)
+				t.join();
+			else
+				t.detach();
+		}
+		m_threads.clear();
+	}
+
+private:
+	void ThreadFunc()
+	{
+		SetThreadName("d3d12PsoComp");
+		std::unique_lock lock(m_mutex);
+		while (true)
+		{
+			m_jobAvailable.wait(lock, [this]() { return m_stop || !m_jobs.empty(); });
+			if (m_stop)
+				return;
+			std::unique_ptr<D3D12PipelineCompileJob> job = std::move(m_jobs.front());
+			m_jobs.pop_front();
+			m_busyThreads++;
+			lock.unlock();
+			job->Run();
+			job.reset();
+			lock.lock();
+			m_busyThreads--;
+			m_jobFinished.notify_all();
+		}
+	}
+
+	std::mutex m_mutex;
+	std::condition_variable m_jobAvailable;
+	std::condition_variable m_jobFinished;
+	std::deque<std::unique_ptr<D3D12PipelineCompileJob>> m_jobs;
+	std::vector<std::thread> m_threads;
+	uint32 m_busyThreads = 0;
+	bool m_stop = false;
+};
+
+// returned while shaders or the PSO are still compiling, never valid
+static D3D12PipelineInfo s_pendingPipeline;
 
 // GLSL geometry shader that turns the 3 vertices of a GPU7 RECT primitive into a quad. Same approach as
 // rectsEmulationGS_generate() in the Vulkan backend, except that every pixel shader input is passed through: under D3D12
@@ -123,17 +241,20 @@ static D3D_PRIMITIVE_TOPOLOGY _GetTopology(Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PR
 D3D12PipelineCache::D3D12PipelineCache(D3D12Renderer* renderer)
 	: m_renderer(renderer)
 {
+	m_compileQueue = D3D12PipelineCompileQueue::Create();
 }
 
 D3D12PipelineCache::~D3D12PipelineCache()
 {
+	m_compileQueue->Stop();
 	Clear();
 }
 
 void D3D12PipelineCache::Clear()
 {
+	// pipelines still being created are owned by their compile job until it finishes, they were never used by the GPU
 	for (auto& it : m_pipelines)
-		if (it.second->pso)
+		if (it.second->isValid())
 			m_renderer->ReleaseObjectDeferred(it.second->pso);
 	m_pipelines.clear();
 	for (auto& it : m_internalPipelines)
@@ -211,32 +332,52 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	auto it = m_pipelines.find(hash);
 	if (it != m_pipelines.end())
 		return it->second.get();
+
+	const bool async = GetConfig().async_compile.GetValue();
+	for (LatteDecompilerShader* shader : { vertexShader, geometryShader, pixelShader })
+	{
+		auto* s = shader ? static_cast<RendererShaderD3D12*>(shader->shader) : nullptr;
+		if (!s)
+			continue;
+		if (!async)
+			s->PreponeCompilation(true);
+		else if (!s->IsCompiled())
+			return &s_pendingPipeline; // skip the draw, the pipeline is created once the shaders are done
+	}
+
+	auto job = std::make_unique<D3D12PipelineCompileJob>();
+	job->info = std::make_shared<D3D12PipelineInfo>();
+	D3D12PipelineInfo* result = job->info.get();
+	m_pipelines.emplace(hash, job->info);
+	if (!PreparePipeline(fetchShader, vertexShader, geometryShader, pixelShader, fbo, lcr, indexType, *job))
+	{
+		result->isReady.store(true, std::memory_order_release); // stays invalid, the draws are skipped
+		return result;
+	}
 	g_compiling_pipelines++;
-	auto pipeline = CreatePipeline(fetchShader, vertexShader, geometryShader, pixelShader, fbo, lcr, indexType);
-	g_compiling_pipelines--;
-	D3D12PipelineInfo* result = pipeline.get();
-	m_pipelines.emplace(hash, std::move(pipeline));
+	if (async)
+	{
+		g_compiling_pipelines_async++;
+		m_compileQueue->Push(std::move(job));
+	}
+	else
+		job->Run();
 	return result;
 }
 
-std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
-	CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType)
+bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
+	CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType, D3D12PipelineCompileJob& job)
 {
-	auto info = std::make_unique<D3D12PipelineInfo>();
+	D3D12PipelineInfo* info = job.info.get();
 	const auto& support = m_renderer->GetFormatSupport();
 
 	auto* vsHost = vertexShader ? static_cast<RendererShaderD3D12*>(vertexShader->shader) : nullptr;
 	auto* gsHost = geometryShader ? static_cast<RendererShaderD3D12*>(geometryShader->shader) : nullptr;
 	auto* psHost = pixelShader ? static_cast<RendererShaderD3D12*>(pixelShader->shader) : nullptr;
-	for (RendererShaderD3D12* s : { vsHost, gsHost, psHost })
-	{
-		if (s)
-			s->PreponeCompilation(true);
-	}
 	if (!vsHost || !vsHost->IsValid() || (gsHost && !gsHost->IsValid()) || (psHost && !psHost->IsValid()))
 	{
 		cemuLog_logDebug(LogType::Force, "D3D12: Pipeline creation skipped due to invalid shader(s)");
-		return info;
+		return false;
 	}
 
 	const auto primitiveMode = lcr.VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
@@ -245,18 +386,26 @@ std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const Latt
 	{
 		info->rectEmulationGS.reset(_GenerateRectEmulationGS(m_renderer, vertexShader, lcr));
 		if (!info->rectEmulationGS->IsValid())
-			return info;
+			return false;
 		gsHost = info->rectEmulationGS.get();
 	}
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
-	desc.pRootSignature = m_renderer->GetRootSignature();
-	desc.VS = vsHost->GetBytecode();
+	// the job owns copies of everything the description points to (see D3D12PipelineCompileJob::Run)
+	job.device = m_renderer->GetDevice();
+	job.rootSignature = m_renderer->GetRootSignature();
+	job.vsHash = vertexShader ? vertexShader->baseHash : 0;
+	job.psHash = pixelShader ? pixelShader->baseHash : 0;
+	auto copyBytecode = [](RendererShaderD3D12* s, std::vector<uint8>& out) {
+		const D3D12_SHADER_BYTECODE bc = s->GetBytecode();
+		out.assign((const uint8*)bc.pShaderBytecode, (const uint8*)bc.pShaderBytecode + bc.BytecodeLength);
+	};
+	copyBytecode(vsHost, job.vsBytecode);
 	if (gsHost)
-		desc.GS = gsHost->GetBytecode();
+		copyBytecode(gsHost, job.gsBytecode);
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc = job.desc;
 
 	// --- input layout ---
-	std::vector<D3D12_INPUT_ELEMENT_DESC> inputElements;
+	std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements = job.inputElements;
 	inputElements.reserve(16);
 	for (auto& bufferGroup : fetchShader->bufferGroups)
 	{
@@ -286,8 +435,6 @@ std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const Latt
 			inputElements.push_back(e);
 		}
 	}
-	desc.InputLayout.pInputElementDescs = inputElements.data();
-	desc.InputLayout.NumElements = (UINT)inputElements.size();
 
 	// --- input assembly ---
 	D3D12_PRIMITIVE_TOPOLOGY_TYPE topologyType;
@@ -350,7 +497,7 @@ std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const Latt
 	desc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
 	if (!discardAllFragments && psHost)
-		desc.PS = psHost->GetBytecode();
+		copyBytecode(psHost, job.psBytecode);
 
 	// --- blend ---
 	const Latte::LATTE_CB_COLOR_CONTROL& colorControlReg = lcr.CB_COLOR_CONTROL;
@@ -517,15 +664,7 @@ std::unique_ptr<D3D12PipelineInfo> D3D12PipelineCache::CreatePipeline(const Latt
 	desc.SampleDesc.Quality = 0;
 	desc.NodeMask = 0;
 	desc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-
-	HRESULT hr = m_renderer->GetDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
-	if (FAILED(hr))
-	{
-		cemuLog_log(LogType::Force, "D3D12: CreateGraphicsPipelineState failed ({}) for VS {:016x} PS {:016x}", D3D12_HResultToString(hr),
-			vertexShader ? vertexShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0);
-		info->pso.Reset();
-	}
-	return info;
+	return true;
 }
 
 ID3D12PipelineState* D3D12PipelineCache::GetInternalPipeline(RendererShaderD3D12* vs, RendererShaderD3D12* ps, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat, bool depthWrite, bool alphaBlend)
