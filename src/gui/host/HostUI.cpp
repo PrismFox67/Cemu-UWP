@@ -270,6 +270,12 @@ namespace
 			config.async_compile = asyncCompile;
 			changed = true;
 		}
+		bool precompile = config.precompile_pipelines.GetValue();
+		if (ImGui::Checkbox("Compile pipelines while the game loads (longer loading, less stutter)", &precompile))
+		{
+			config.precompile_pipelines = precompile;
+			changed = true;
+		}
 		const char* filters[] = { "Bilinear", "Bicubic", "Hermite", "Nearest neighbor" };
 		int upscale = std::clamp<int>(config.upscale_filter.GetValue(), 0, 3);
 		ImGui::SetNextItemWidth(400.0f * s_scale);

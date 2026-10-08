@@ -139,7 +139,12 @@ Settings → Game folders.
 - Keep "Compile shaders asynchronously" on (default). Without it a slow driver shader compile freezes the game; on
   Intel GPUs that took minutes for some Mario Kart 8 pipelines.
 - The first start of a game compiles its shaders on the loading screen, which can take minutes with FXC. Later starts
-  load them from the cache in seconds.
+  load them from the cache in seconds. After the shaders, the loading screen also creates every pipeline the game used
+  before ("Loading cached pipelines"); on a new device or after a driver update that takes a while once, later starts
+  are fast. Turn it off under Settings → "Compile pipelines while the game loads" for shorter loading but more stutter.
+- To skip most of the first-time stutter on the Xbox, play on the PC first, then copy
+  `shaderCache/transferable/<titleId>.bin` and `<titleId>_d3d12pipelines.bin` from the PC's user folder to the Xbox's
+  `LocalState/shaderCache/transferable/`. The Xbox then compiles those shaders and pipelines on its loading screen.
 - The UWP/Xbox frontend has no graphic pack, button remapping, online or account UI yet. Settings files from the
   normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be copied into the user folder.
 - No Vulkan/OpenGL, cubeb, SDL controllers, Wiimotes or DirectInput in the UWP build; audio uses XAudio2 and

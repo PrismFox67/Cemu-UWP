@@ -18,6 +18,8 @@
 #endif
 #ifdef ENABLE_D3D12
 #include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
 #endif
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/RendererShaderMtl.h"
@@ -517,6 +519,10 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
+#ifdef ENABLE_D3D12
+	if (g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_pipelines.GetValue())
+		LatteShaderCache_LoadPipelineCache(cacheTitleId);
+#endif
 
 
 	g_renderer->BeginFrame(true);
@@ -690,6 +696,11 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 		g_shaderCacheLoaderState.pipelineFileCount = MetalPipelineCache::GetInstance().BeginLoading(cacheTitleId);
 		break;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		g_shaderCacheLoaderState.pipelineFileCount = D3D12Renderer::GetInstance()->GetPipelineCache()->BeginPreload(cacheTitleId);
+		break;
+#endif
 	}
 
 	g_shaderCacheLoaderState.loadedPipelines = 0;
@@ -707,6 +718,11 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 		MetalPipelineCache::GetInstance().EndLoading();
 		break;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		D3D12Renderer::GetInstance()->GetPipelineCache()->EndPreload();
+		break;
+#endif
 	}
 }
 
@@ -722,6 +738,10 @@ bool LatteShaderCache_updatePipelineLoadingProgress()
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
 		return MetalPipelineCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
+#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::D3D12:
+		return D3D12Renderer::GetInstance()->GetPipelineCache()->UpdatePreload(g_shaderCacheLoaderState.loadedPipelines);
 #endif
 	}
 

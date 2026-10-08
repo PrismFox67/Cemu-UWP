@@ -18,6 +18,7 @@
 #include <deque>
 #include <fstream>
 #include <thread>
+#include <unordered_set>
 
 extern std::atomic_int g_compiling_pipelines;
 extern std::atomic_int g_compiling_pipelines_async;
@@ -130,8 +131,20 @@ private:
 // while the GPU thread continues (shaders may even be deleted in the meantime)
 struct D3D12PipelineCompileJob
 {
+	// where the bytecode of a stage comes from, recorded so the pipeline can be recreated at the next launch
+	struct ShaderRef
+	{
+		enum Kind : uint8 { kNone = 0, kGameShader = 1, kInline = 2 }; // kInline: generated shader, bytecode is recorded
+		uint8 kind = kNone;
+		uint64 baseHash = 0;
+		uint64 auxHash = 0;
+	};
+	static constexpr uint32 kRecordVersion = 1;
+
 	std::shared_ptr<D3D12PipelineInfo> info;
 	std::shared_ptr<D3D12PipelineDiskCache> diskCache;
+	std::shared_ptr<std::atomic<uint32>> finishedCounter; // incremented when the job is done (pipeline preloading)
+	ShaderRef vsRef, gsRef, psRef;
 	ComPtr<ID3D12Device> device;
 	ComPtr<ID3D12RootSignature> rootSignature;
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
@@ -149,16 +162,126 @@ struct D3D12PipelineCompileJob
 		desc.VS = toBytecode(vsBytecode);
 		desc.GS = toBytecode(gsBytecode);
 		desc.PS = toBytecode(psBytecode);
+		CreatePipeline();
+		info->isReady.store(true, std::memory_order_release);
+		if (finishedCounter)
+			++*finishedCounter;
+		if (diskCache)
+			diskCache->SaveIfDue();
+	}
+
+	// the parts of the description that don't depend on Latte objects or the running process
+	std::vector<uint8> SerializeRecord() const
+	{
+		std::vector<uint8> out;
+		auto put = [&out](const void* data, size_t size) { out.insert(out.end(), (const uint8*)data, (const uint8*)data + size); };
+		put(&kRecordVersion, sizeof(kRecordVersion));
+		for (const ShaderRef* ref : { &vsRef, &gsRef, &psRef })
+		{
+			put(&ref->kind, sizeof(ref->kind));
+			if (ref->kind == ShaderRef::kGameShader)
+			{
+				put(&ref->baseHash, sizeof(ref->baseHash));
+				put(&ref->auxHash, sizeof(ref->auxHash));
+			}
+		}
+		if (gsRef.kind == ShaderRef::kInline)
+		{
+			const uint32 size = (uint32)gsBytecode.size();
+			put(&size, sizeof(size));
+			put(gsBytecode.data(), gsBytecode.size());
+		}
+		const uint32 elementCount = (uint32)inputElements.size();
+		put(&elementCount, sizeof(elementCount));
+		for (const auto& e : inputElements)
+		{
+			put(&e.SemanticIndex, sizeof(e.SemanticIndex));
+			put(&e.Format, sizeof(e.Format));
+			put(&e.InputSlot, sizeof(e.InputSlot));
+			put(&e.AlignedByteOffset, sizeof(e.AlignedByteOffset));
+			put(&e.InputSlotClass, sizeof(e.InputSlotClass));
+			put(&e.InstanceDataStepRate, sizeof(e.InstanceDataStepRate));
+		}
+		ForEachPlainDescField([&](void* data, size_t size) { put(data, size); });
+		return out;
+	}
+
+	// restores everything but the bytecode of game shaders, see D3D12PipelineCache::ResolveRecordedShaders()
+	bool DeserializeRecord(const std::vector<uint8>& in)
+	{
+		size_t pos = 0;
+		auto get = [&](void* data, size_t size) {
+			if (pos + size > in.size())
+				return false;
+			memcpy(data, in.data() + pos, size);
+			pos += size;
+			return true;
+		};
+		uint32 version = 0;
+		if (!get(&version, sizeof(version)) || version != kRecordVersion)
+			return false;
+		for (ShaderRef* ref : { &vsRef, &gsRef, &psRef })
+		{
+			if (!get(&ref->kind, sizeof(ref->kind)) || ref->kind > ShaderRef::kInline)
+				return false;
+			if (ref->kind == ShaderRef::kGameShader && (!get(&ref->baseHash, sizeof(ref->baseHash)) || !get(&ref->auxHash, sizeof(ref->auxHash))))
+				return false;
+		}
+		if (vsRef.kind != ShaderRef::kGameShader || psRef.kind == ShaderRef::kInline)
+			return false;
+		if (gsRef.kind == ShaderRef::kInline)
+		{
+			uint32 size = 0;
+			if (!get(&size, sizeof(size)) || size > in.size())
+				return false;
+			gsBytecode.resize(size);
+			if (!get(gsBytecode.data(), size))
+				return false;
+		}
+		uint32 elementCount = 0;
+		if (!get(&elementCount, sizeof(elementCount)) || elementCount > 32)
+			return false;
+		inputElements.resize(elementCount);
+		for (auto& e : inputElements)
+		{
+			e.SemanticName = "TEXCOORD";
+			if (!get(&e.SemanticIndex, sizeof(e.SemanticIndex)) || !get(&e.Format, sizeof(e.Format)) || !get(&e.InputSlot, sizeof(e.InputSlot)) ||
+				!get(&e.AlignedByteOffset, sizeof(e.AlignedByteOffset)) || !get(&e.InputSlotClass, sizeof(e.InputSlotClass)) || !get(&e.InstanceDataStepRate, sizeof(e.InstanceDataStepRate)))
+				return false;
+		}
+		bool ok = true;
+		ForEachPlainDescField([&](void* data, size_t size) { ok = ok && get(data, size); });
+		return ok && pos == in.size();
+	}
+
+private:
+	// description members that are plain values (no pointers)
+	template<typename F>
+	void ForEachPlainDescField(F&& f) const
+	{
+		auto& d = const_cast<D3D12_GRAPHICS_PIPELINE_STATE_DESC&>(desc);
+		f(&d.BlendState, sizeof(d.BlendState));
+		f(&d.SampleMask, sizeof(d.SampleMask));
+		f(&d.RasterizerState, sizeof(d.RasterizerState));
+		f(&d.DepthStencilState, sizeof(d.DepthStencilState));
+		f(&d.IBStripCutValue, sizeof(d.IBStripCutValue));
+		f(&d.PrimitiveTopologyType, sizeof(d.PrimitiveTopologyType));
+		f(&d.NumRenderTargets, sizeof(d.NumRenderTargets));
+		f(d.RTVFormats, sizeof(d.RTVFormats));
+		f(&d.DSVFormat, sizeof(d.DSVFormat));
+		f(&d.SampleDesc, sizeof(d.SampleDesc));
+		f(&d.Flags, sizeof(d.Flags));
+	}
+
+	void CreatePipeline()
+	{
 		std::wstring cacheName;
 		if (diskCache)
 		{
 			const std::string key = fmt::format("{:016x}", CalculateCacheKey());
 			cacheName.assign(key.begin(), key.end());
 			if (diskCache->Load(cacheName, desc, info->pso))
-			{
-				info->isReady.store(true, std::memory_order_release);
 				return;
-			}
 		}
 		const auto start = std::chrono::steady_clock::now();
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
@@ -175,12 +298,8 @@ struct D3D12PipelineCompileJob
 			if (diskCache)
 				diskCache->Store(cacheName, info->pso.Get());
 		}
-		info->isReady.store(true, std::memory_order_release);
-		if (diskCache)
-			diskCache->SaveIfDue();
 	}
 
-private:
 	// identifies the complete pipeline description, see D3D12PipelineDiskCache
 	uint64 CalculateCacheKey() const
 	{
@@ -223,6 +342,79 @@ private:
 		add(&desc.Flags, sizeof(desc.Flags));
 		return h;
 	}
+};
+
+// Descriptions of all pipelines a title has used (D3D12PipelineCompileJob::SerializeRecord), so they can be created while
+// the game loads. Unlike the driver cache it doesn't depend on the GPU or driver: it lives next to the transferable shader
+// cache and can be copied to another device (e.g. from a PC to an Xbox) together with it.
+class D3D12PipelineRecordFile
+{
+public:
+	explicit D3D12PipelineRecordFile(const fs::path& path) : m_path(path)
+	{
+		std::ifstream file(path, std::ios::binary);
+		uint32 header[2]{};
+		if (!file || !file.read((char*)header, sizeof(header)) || header[0] != kMagic || header[1] != kVersion)
+			return; // missing or incompatible, recreated on the first new record
+		m_headerValid = true;
+		while (true)
+		{
+			uint32 size = 0;
+			if (!file.read((char*)&size, sizeof(size)) || size == 0 || size > 1024 * 1024)
+				break;
+			std::vector<uint8> record(size);
+			if (!file.read((char*)record.data(), size))
+				break; // incomplete last record (closed while writing)
+			if (m_known.insert(_Hash(record)).second)
+				m_records.emplace_back(std::move(record));
+			m_validSize = (uint64)file.tellg();
+		}
+	}
+
+	const std::vector<std::vector<uint8>>& GetRecords() const { return m_records; }
+
+	void Add(const std::vector<uint8>& record)
+	{
+		std::lock_guard lock(m_mutex);
+		if (!m_known.insert(_Hash(record)).second)
+			return;
+		std::error_code ec;
+		if (!m_headerValid)
+		{
+			fs::create_directories(m_path.parent_path(), ec);
+			std::ofstream file(m_path, std::ios::binary | std::ios::trunc);
+			const uint32 header[2] = { kMagic, kVersion };
+			if (!file.write((const char*)header, sizeof(header)))
+				return;
+			m_headerValid = true;
+			m_validSize = sizeof(header);
+		}
+		else if (fs::file_size(m_path, ec) != m_validSize && !ec)
+			fs::resize_file(m_path, m_validSize, ec); // drop an incomplete record left by an earlier crash
+		std::ofstream file(m_path, std::ios::binary | std::ios::app);
+		const uint32 size = (uint32)record.size();
+		if (file.write((const char*)&size, sizeof(size)) && file.write((const char*)record.data(), size) && file.flush())
+			m_validSize += sizeof(size) + size;
+	}
+
+private:
+	static constexpr uint32 kMagic = 0x4c503344; // 'D3PL'
+	static constexpr uint32 kVersion = 1;
+
+	static uint64 _Hash(const std::vector<uint8>& data)
+	{
+		uint64 h = 0xcbf29ce484222325ull;
+		for (uint8 b : data)
+			h = (h ^ b) * 0x100000001b3ull;
+		return h;
+	}
+
+	std::mutex m_mutex;
+	fs::path m_path;
+	bool m_headerValid = false;
+	uint64 m_validSize = 0;
+	std::unordered_set<uint64> m_known;
+	std::vector<std::vector<uint8>> m_records; // loaded from the file, used once for preloading
 };
 
 class D3D12PipelineCompileQueue
@@ -435,6 +627,93 @@ void D3D12PipelineCache::SaveDiskCache()
 		m_diskCache->Save();
 }
 
+void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
+{
+	if (m_diskCacheOpened)
+		return;
+	m_diskCacheOpened = true;
+	m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
+	if (m_diskCache) // recreating pipelines at launch only helps if they can be cached
+		m_recordFile = std::make_unique<D3D12PipelineRecordFile>(ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12pipelines.bin", titleId));
+}
+
+bool D3D12PipelineCache::ResolveRecordedShaders(D3D12PipelineCompileJob& job)
+{
+	using Ref = D3D12PipelineCompileJob::ShaderRef;
+	auto resolve = [](const Ref& ref, LatteDecompilerShader* (*find)(uint64, uint64), std::vector<uint8>& bytecode) {
+		if (ref.kind != Ref::kGameShader)
+			return true; // none, or the inline bytecode was restored from the record
+		LatteDecompilerShader* shader = find(ref.baseHash, ref.auxHash);
+		auto* hostShader = shader ? static_cast<RendererShaderD3D12*>(shader->shader) : nullptr;
+		if (!hostShader)
+			return false;
+		hostShader->PreponeCompilation(true);
+		if (!hostShader->IsValid())
+			return false;
+		const D3D12_SHADER_BYTECODE bc = hostShader->GetBytecode();
+		bytecode.assign((const uint8*)bc.pShaderBytecode, (const uint8*)bc.pShaderBytecode + bc.BytecodeLength);
+		return true;
+	};
+	if (!resolve(job.vsRef, LatteSHRC_FindVertexShader, job.vsBytecode) ||
+		!resolve(job.gsRef, LatteSHRC_FindGeometryShader, job.gsBytecode) ||
+		!resolve(job.psRef, LatteSHRC_FindPixelShader, job.psBytecode))
+		return false;
+	job.vsHash = job.vsRef.baseHash;
+	job.psHash = job.psRef.baseHash;
+	job.device = m_renderer->GetDevice();
+	job.rootSignature = m_renderer->GetRootSignature();
+	return true;
+}
+
+uint32 D3D12PipelineCache::BeginPreload(uint64 titleId)
+{
+	OpenDiskCaches(titleId);
+	m_preload = {};
+	m_preload.finished = std::make_shared<std::atomic<uint32>>(0);
+	m_preload.start = std::chrono::steady_clock::now();
+	return m_recordFile ? (uint32)m_recordFile->GetRecords().size() : 0;
+}
+
+bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount)
+{
+	static const std::vector<std::vector<uint8>> s_noRecords;
+	const std::vector<std::vector<uint8>>& records = m_recordFile ? m_recordFile->GetRecords() : s_noRecords;
+	// keep the compile threads busy, but don't queue everything at once: every job holds copies of its bytecode
+	constexpr uint32 kMaxInFlight = 32;
+	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(20);
+	while (m_preload.next < records.size() && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
+	{
+		auto job = std::make_unique<D3D12PipelineCompileJob>();
+		const bool usable = job->DeserializeRecord(records[m_preload.next++]) && ResolveRecordedShaders(*job);
+		if (!usable)
+		{
+			m_preload.skipped++;
+			continue;
+		}
+		job->info = std::make_shared<D3D12PipelineInfo>(); // only lives until the pipeline is in the driver cache
+		job->diskCache = m_diskCache;
+		job->finishedCounter = m_preload.finished;
+		m_preload.submitted++;
+		m_compileQueue->Push(std::move(job));
+	}
+	finishedCount = *m_preload.finished + m_preload.skipped;
+	if (m_preload.next < records.size() || *m_preload.finished < m_preload.submitted)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1)); // the loading screen calls this in a loop
+		return true;
+	}
+	return false;
+}
+
+void D3D12PipelineCache::EndPreload()
+{
+	if (!m_recordFile)
+		return;
+	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_preload.start).count();
+	cemuLog_log(LogType::Force, "D3D12: Precompiled {} pipelines in {}ms ({} skipped, their shaders are not in the shader cache)", m_preload.submitted, ms, m_preload.skipped);
+	SaveDiskCache();
+}
+
 void D3D12PipelineCache::Clear()
 {
 	// pipelines still being created are owned by their compile job until it finishes, they were never used by the GPU
@@ -527,12 +806,7 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 			s->PreponeCompilation(true);
 	}
 
-	if (!m_diskCacheOpened)
-	{
-		m_diskCacheOpened = true;
-		const uint64 titleId = CafeSystem::GetForegroundTitleId();
-		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
-	}
+	OpenDiskCaches(CafeSystem::GetForegroundTitleId());
 
 	auto job = std::make_unique<D3D12PipelineCompileJob>();
 	job->info = std::make_shared<D3D12PipelineInfo>();
@@ -544,6 +818,8 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		result->isReady.store(true, std::memory_order_release); // stays invalid, the draws are skipped
 		return result;
 	}
+	if (m_recordFile)
+		m_recordFile->Add(job->SerializeRecord());
 	g_compiling_pipelines++;
 	if (async)
 	{
@@ -596,6 +872,12 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 	copyBytecode(vsHost, job.vsBytecode);
 	if (gsHost)
 		copyBytecode(gsHost, job.gsBytecode);
+	using Ref = D3D12PipelineCompileJob::ShaderRef;
+	job.vsRef = { Ref::kGameShader, vertexShader->baseHash, vertexShader->auxHash };
+	if (info->rectEmulationGS)
+		job.gsRef.kind = Ref::kInline;
+	else if (geometryShader)
+		job.gsRef = { Ref::kGameShader, geometryShader->baseHash, geometryShader->auxHash };
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc = job.desc;
 
 	// --- input layout ---
@@ -691,7 +973,10 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 	desc.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
 
 	if (!discardAllFragments && psHost)
+	{
 		copyBytecode(psHost, job.psBytecode);
+		job.psRef = { Ref::kGameShader, pixelShader->baseHash, pixelShader->auxHash };
+	}
 
 	// --- blend ---
 	const Latte::LATTE_CB_COLOR_CONTROL& colorControlReg = lcr.CB_COLOR_CONTROL;

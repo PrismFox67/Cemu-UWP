@@ -175,6 +175,7 @@ public:
 	D3D12StagingDescriptorHeap& GetStagingDSVHeap() { return *m_stagingDSVHeap; }
 	D3D12_CPU_DESCRIPTOR_HANDLE GetNullRTV() const { return m_nullRTV; }
 	ID3D12RootSignature* GetRootSignature() const { return m_rootSignature.Get(); }
+	D3D12PipelineCache* GetPipelineCache() const { return m_pipelineCache.get(); }
 
 	D3D12UploadAllocation AllocateUpload(uint64 size, uint64 alignment) { return m_uploadRing->Allocate(size, alignment); }
 	void ReleaseResourceDeferred(ComPtr<ID3D12Resource> resource);
