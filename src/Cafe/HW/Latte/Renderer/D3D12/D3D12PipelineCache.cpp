@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Core/LatteConst.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "config/CemuConfig.h"
+#include "util/helpers/helpers.h"
 
 #include <chrono>
 #include <condition_variable>
