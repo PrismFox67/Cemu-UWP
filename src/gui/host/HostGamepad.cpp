@@ -20,11 +20,31 @@ namespace
 HostGamepad::State HostGamepad::Poll()
 {
 	State result;
-	for (DWORD i = 0; i < XUSER_MAX_COUNT; i++)
+	for (int i = 0; i < kMaxPads; i++)
+	{
+		const State pad = PollPad(i);
+		if (!pad.connected)
+			continue;
+		result.connected = true;
+		result.buttons |= pad.buttons;
+		result.leftTrigger = std::max(result.leftTrigger, pad.leftTrigger);
+		result.rightTrigger = std::max(result.rightTrigger, pad.rightTrigger);
+		auto pickLarger = [](float current, float candidate) { return std::abs(candidate) > std::abs(current) ? candidate : current; };
+		result.leftX = pickLarger(result.leftX, pad.leftX);
+		result.leftY = pickLarger(result.leftY, pad.leftY);
+		result.rightX = pickLarger(result.rightX, pad.rightX);
+		result.rightY = pickLarger(result.rightY, pad.rightY);
+	}
+	return result;
+}
+
+HostGamepad::State HostGamepad::PollPad(int index)
+{
+	State result;
 	{
 		XINPUT_STATE xs{};
-		if (XInputGetState(i, &xs) != ERROR_SUCCESS)
-			continue;
+		if (index < 0 || index >= kMaxPads || XInputGetState((DWORD)index, &xs) != ERROR_SUCCESS)
+			return result;
 		result.connected = true;
 		const WORD b = xs.Gamepad.wButtons;
 		auto map = [&](WORD xinputButton, Button button) {
@@ -51,13 +71,12 @@ HostGamepad::State HostGamepad::Poll()
 			result.buttons |= kLT;
 		if (rt > 0.5f)
 			result.buttons |= kRT;
-		result.leftTrigger = std::max(result.leftTrigger, lt);
-		result.rightTrigger = std::max(result.rightTrigger, rt);
-		auto pickLarger = [](float current, float candidate) { return std::abs(candidate) > std::abs(current) ? candidate : current; };
-		result.leftX = pickLarger(result.leftX, _NormalizeStick(xs.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE));
-		result.leftY = pickLarger(result.leftY, _NormalizeStick(xs.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE));
-		result.rightX = pickLarger(result.rightX, _NormalizeStick(xs.Gamepad.sThumbRX, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE));
-		result.rightY = pickLarger(result.rightY, _NormalizeStick(xs.Gamepad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE));
+		result.leftTrigger = lt;
+		result.rightTrigger = rt;
+		result.leftX = _NormalizeStick(xs.Gamepad.sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+		result.leftY = _NormalizeStick(xs.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+		result.rightX = _NormalizeStick(xs.Gamepad.sThumbRX, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+		result.rightY = _NormalizeStick(xs.Gamepad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
 	}
 	return result;
 }

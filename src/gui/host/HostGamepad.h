@@ -33,8 +33,13 @@ namespace HostGamepad
 		float leftTrigger = 0.0f, rightTrigger = 0.0f;
 	};
 
+	constexpr int kMaxPads = 4; // XInput user indices
+
 	// combined state of all connected controllers (any controller can drive the UI)
 	State Poll();
+
+	// state of a single controller, connected is false if there is none at this index
+	State PollPad(int index);
 
 	// feeds the polled state into the current ImGui context as gamepad navigation input
 	void FeedImGui(const State& state);

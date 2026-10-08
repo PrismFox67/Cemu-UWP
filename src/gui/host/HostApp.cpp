@@ -2,6 +2,7 @@
 #include "gui/host/HostPlatform.h"
 #include "gui/host/HostUI.h"
 #include "gui/host/HostGamepad.h"
+#include "gui/host/HostControllers.h"
 #include "gui/host/LauncherRenderer.h"
 
 #include "Cafe/CafeSystem.h"
@@ -40,6 +41,7 @@ namespace
 	enum MenuItem
 	{
 		kMenuResume,
+		kMenuPairControllers,
 		kMenuGamePadScreen,
 		kMenuShowFPS,
 		kMenuExit,
@@ -130,48 +132,6 @@ namespace
 			return false;
 		}
 		return true;
-	}
-
-	// first controller slot: Wii U GamePad driven by the first XInput controller, unless a profile already exists
-	void _SetupDefaultController()
-	{
-		auto& input = InputManager::instance();
-		if (input.get_controller(0))
-			return;
-		try
-		{
-			auto vpad = input.set_controller(0, EmulatedController::Type::VPAD);
-			if (!vpad)
-				return;
-			auto xinput = std::make_shared<XInputController>(0);
-			vpad->add_controller(xinput);
-			vpad->set_default_mapping(xinput);
-			// keyboard as well, so the PC build can be tested without a controller
-			auto keyboard = std::make_shared<KeyboardController>();
-			vpad->add_controller(keyboard);
-			const std::pair<VPADController::ButtonId, uint32> keyboardMapping[] = {
-				{ VPADController::kButtonId_A, 'K' }, { VPADController::kButtonId_B, 'J' },
-				{ VPADController::kButtonId_X, 'I' }, { VPADController::kButtonId_Y, 'U' },
-				{ VPADController::kButtonId_L, 'Q' }, { VPADController::kButtonId_R, 'E' },
-				{ VPADController::kButtonId_ZL, 'Z' }, { VPADController::kButtonId_ZR, 'C' },
-				{ VPADController::kButtonId_Plus, VK_RETURN }, { VPADController::kButtonId_Minus, VK_BACK },
-				{ VPADController::kButtonId_Home, 'H' },
-				{ VPADController::kButtonId_Up, VK_UP }, { VPADController::kButtonId_Down, VK_DOWN },
-				{ VPADController::kButtonId_Left, VK_LEFT }, { VPADController::kButtonId_Right, VK_RIGHT },
-				{ VPADController::kButtonId_StickL_Up, 'W' }, { VPADController::kButtonId_StickL_Down, 'S' },
-				{ VPADController::kButtonId_StickL_Left, 'A' }, { VPADController::kButtonId_StickL_Right, 'D' },
-				{ VPADController::kButtonId_StickR_Up, VK_NUMPAD8 }, { VPADController::kButtonId_StickR_Down, VK_NUMPAD2 },
-				{ VPADController::kButtonId_StickR_Left, VK_NUMPAD4 }, { VPADController::kButtonId_StickR_Right, VK_NUMPAD6 },
-			};
-			for (const auto& [button, key] : keyboardMapping)
-				vpad->set_mapping(button, keyboard, key);
-			input.save(0);
-			cemuLog_log(LogType::Force, "Host: created a default GamePad profile for the first XInput controller and the keyboard");
-		}
-		catch (const std::exception& ex)
-		{
-			cemuLog_log(LogType::Force, "Host: failed to create the default controller profile: {}", ex.what());
-		}
 	}
 
 	void _ApplyHostDefaults(bool firstStart)
@@ -300,6 +260,7 @@ namespace
 		const auto now = std::chrono::steady_clock::now();
 		io.DeltaTime = std::clamp(std::chrono::duration<float>(now - s_lastFrame).count(), 1.0f / 1000.0f, 0.25f);
 		s_lastFrame = now;
+		HostControllers::UpdatePairing();
 		HostGamepad::FeedImGui(HostGamepad::Poll());
 
 		s_launcher->NewFrame();
@@ -323,6 +284,10 @@ namespace
 		{
 		case kMenuResume:
 			s_menuOpen = false;
+			break;
+		case kMenuPairControllers:
+			s_menuOpen = false;
+			HostControllers::BeginPairing();
 			break;
 		case kMenuGamePadScreen:
 			// same state the screen swap hotkey (Ctrl+Tab in the wx frontend) flips
@@ -348,6 +313,11 @@ namespace
 		const HostGamepad::State pad = HostGamepad::Poll();
 		const uint32 pressed = pad.buttons & ~s_lastPadButtons;
 		s_lastPadButtons = pad.buttons;
+		if (HostControllers::IsPairing())
+		{
+			HostControllers::UpdatePairing();
+			return;
+		}
 
 		// hold View + Menu (Back + Start) for one second to open the menu
 		const bool combo = (pad.buttons & (HostGamepad::kBack | HostGamepad::kStart)) == (HostGamepad::kBack | HostGamepad::kStart);
@@ -422,7 +392,7 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	CemuCommonInit();
 	_ApplyHostDefaults(firstStart);
 	GetConfigHandle().Save();
-	_SetupDefaultController();
+	HostControllers::SetupDefaults();
 
 	auto& windowInfo = _WindowInfo();
 	windowInfo.canvas_main = HostPlatform::GetRenderTarget();
@@ -582,6 +552,11 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 		// keyboard access to the in-game menu: F1 opens/closes, arrows + enter select
 		if (!down)
 			return;
+		if (virtualKey == VK_ESCAPE && HostControllers::IsPairing())
+		{
+			HostControllers::CancelPairing();
+			return;
+		}
 		if (virtualKey == VK_F1)
 		{
 			s_menuOpen = !s_menuOpen;
@@ -625,6 +600,11 @@ void HostApp::OnChar(uint32 utf32)
 
 bool HostApp::OnBackRequested()
 {
+	if (HostControllers::IsPairing())
+	{
+		HostControllers::CancelPairing();
+		return true;
+	}
 	if (s_state == State::Running)
 	{
 		// B in game belongs to the game. Only close the menu if it is open
@@ -646,10 +626,43 @@ bool HostApp::IsInGameMenuOpen()
 
 void HostApp::DrawInGameMenu()
 {
-	if (!s_menuOpen)
+	const bool pairing = HostControllers::IsPairing();
+	if (!s_menuOpen && !pairing)
 		return;
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 	const float scale = std::max(1.0f, viewport->Size.y / 1080.0f);
+	if (pairing)
+	{
+		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowBgAlpha(0.88f);
+		ImFont* pairingFont = ImGui_GetFont(28.0f * scale);
+		if (pairingFont)
+			ImGui::PushFont(pairingFont);
+		if (ImGui::Begin("##pairing", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
+		{
+			const int next = HostControllers::GetPairingPlayer();
+			ImGui::TextDisabled("Pair controllers");
+			ImGui::Separator();
+			for (int p = 0; p < HostControllers::kPlayerCount; p++)
+			{
+				if (p < next)
+				{
+					const auto info = HostControllers::GetPlayer(p);
+					ImGui::Text("  Player %d: %s, controller %d", p + 1, HostControllers::KindName(info.kind), info.pad + 1);
+				}
+				else if (p == next)
+					ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.2f, 1.0f), "> Player %d: press A on its controller", p + 1);
+				else
+					ImGui::TextDisabled("  Player %d", p + 1);
+			}
+			ImGui::Separator();
+			ImGui::TextDisabled(next > 0 ? "Menu: done (remaining players are disconnected)" : "Press A on the controller for player 1");
+		}
+		ImGui::End();
+		if (pairingFont)
+			ImGui::PopFont();
+		return;
+	}
 	ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(0.88f);
 	ImFont* font = ImGui_GetFont(28.0f * scale);
@@ -662,6 +675,7 @@ void HostApp::DrawInGameMenu()
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
 			"Resume",
+			"Pair controllers",
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			"Save and exit Cemu",

@@ -1,5 +1,7 @@
 #include "gui/host/HostUI.h"
 #include "gui/host/HostPlatform.h"
+#include "gui/host/HostControllers.h"
+#include "gui/host/HostGamepad.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -43,7 +45,15 @@ namespace
 	std::vector<GameEntry> s_games;
 	bool s_wasScanning = false;
 	int s_selectedGame = 0;
-	int s_tab = 0; // 0 games, 1 settings, 2 about
+	enum Tab
+	{
+		kTabGames,
+		kTabControllers,
+		kTabSettings,
+		kTabAbout,
+		kTabCount,
+	};
+	int s_tab = kTabGames;
 	char s_newPathBuffer[1024]{};
 	std::vector<std::function<void()>> s_deferred; // run after the frame (picker callbacks etc.)
 	std::optional<fs::path> s_pendingLaunch; // set by the file picker
@@ -291,6 +301,81 @@ namespace
 			GetConfigHandle().Save();
 	}
 
+	void _DrawControllersTab()
+	{
+		using namespace HostControllers;
+		if (IsPairing())
+		{
+			const int next = GetPairingPlayer();
+			ImGui::PushFont(s_fontLarge);
+			ImGui::Text("Press A on the controller for player %d", next + 1);
+			ImGui::PopFont();
+			ImGui::TextWrapped(next > 0 ? "Press Menu (Start) when everyone is paired. Players without a controller are disconnected." : "Each controller becomes the next player when its A button is pressed.");
+		}
+		else if (ImGui::Button("Pair controllers (press A on each)"))
+			s_deferred.emplace_back([]() { BeginPairing(); });
+		ImGui::Spacing();
+
+		const float columnWidth = 360.0f * s_scale;
+		for (int player = 0; player < kPlayerCount; player++)
+		{
+			ImGui::PushID(player);
+			const PlayerInfo info = GetPlayer(player);
+			const bool pairedNow = IsPairing() && player == GetPairingPlayer();
+			ImGui::SeparatorText(fmt::format("Player {}{}", player + 1, pairedNow ? "  < waiting for A" : "").c_str());
+			ImGui::BeginDisabled(IsPairing());
+
+			ImGui::SetNextItemWidth(columnWidth);
+			if (ImGui::BeginCombo("##kind", KindName(info.kind)))
+			{
+				for (int k = 0; k < (int)Kind::Count; k++)
+				{
+					const Kind kind = (Kind)k;
+					if (!IsKindAllowed(player, kind))
+						continue;
+					if (ImGui::Selectable(KindName(kind), kind == info.kind))
+					{
+						// a newly connected player without a controller gets the one with the same number
+						const int pad = info.pad >= 0 ? info.pad : player;
+						s_deferred.emplace_back([player, kind, pad]() { SetPlayer(player, kind, pad); });
+					}
+				}
+				ImGui::EndCombo();
+			}
+			if (info.kind != Kind::None)
+			{
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(columnWidth);
+				const std::string padLabel = info.pad >= 0 ? fmt::format("Controller {}", info.pad + 1) : std::string("No controller");
+				if (ImGui::BeginCombo("##pad", padLabel.c_str()))
+				{
+					for (int pad = -1; pad < HostGamepad::kMaxPads; pad++)
+					{
+						const bool connected = pad >= 0 && HostGamepad::PollPad(pad).connected;
+						const std::string label = pad < 0 ? std::string("No controller") : fmt::format("Controller {}{}", pad + 1, connected ? "" : " (not connected)");
+						if (ImGui::Selectable(label.c_str(), pad == info.pad))
+						{
+							const Kind kind = info.kind;
+							s_deferred.emplace_back([player, kind, pad]() { SetPlayer(player, kind, pad); });
+						}
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::SameLine();
+				if (info.pad < 0)
+					ImGui::TextDisabled(info.hasKeyboard ? "keyboard only" : "no input");
+				else if (info.padConnected)
+					ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), info.hasKeyboard ? "connected (+ keyboard)" : "connected");
+				else
+					ImGui::TextDisabled("turn on controller %d", info.pad + 1);
+			}
+			ImGui::EndDisabled();
+			ImGui::PopID();
+		}
+		ImGui::Spacing();
+		ImGui::TextDisabled("Buttons use the default layout of each controller type (Xbox A = Wii U A, positions as printed).");
+	}
+
 	void _DrawAboutTab()
 	{
 		ImGui::TextUnformatted(BUILD_VERSION_WITH_NAME_STRING);
@@ -299,7 +384,8 @@ namespace
 		ImGui::TextWrapped("Controls");
 		ImGui::BulletText("D-pad / left stick: move, A: select, B: back");
 		ImGui::BulletText("In game: hold View + Menu for one second to open the menu");
-		ImGui::BulletText("The first connected controller is mapped to the Wii U GamePad");
+		ImGui::BulletText("Controller 1 is the Wii U GamePad, controllers 2-4 are Pro Controllers for players 2-4");
+		ImGui::BulletText("Change this under Controllers, or pick \"Pair controllers\" in the in-game menu");
 		ImGui::Spacing();
 		ImGui::TextWrapped("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own.");
 	}
@@ -355,16 +441,19 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		ImGui::SameLine();
 		ImGui::TextDisabled("%s  |  %s", BUILD_VERSION_WITH_NAME_STRING, HostPlatform::GetName());
 
-		// LB/RB switch tabs
-		if (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
-			s_tab = (s_tab + 2) % 3;
-		if (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
-			s_tab = (s_tab + 1) % 3;
-		if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
-			s_tab = 1;
+		// LB/RB switch tabs (not while pairing, every button press belongs to the pairing then)
+		const bool pairing = HostControllers::IsPairing();
+		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
+			s_tab = (s_tab + kTabCount - 1) % kTabCount;
+		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
+			s_tab = (s_tab + 1) % kTabCount;
+		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+			s_tab = kTabSettings;
+		if (pairing)
+			s_tab = kTabControllers;
 
-		const char* tabNames[] = { "Games", "Settings", "About" };
-		for (int i = 0; i < 3; i++)
+		const char* tabNames[kTabCount] = { "Games", "Controllers", "Settings", "About" };
+		for (int i = 0; i < kTabCount; i++)
 		{
 			if (i > 0)
 				ImGui::SameLine();
@@ -380,9 +469,11 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		ImGui::TextDisabled("(LB / RB)");
 		ImGui::Separator();
 
-		if (s_tab == 0)
+		if (s_tab == kTabGames)
 			launch = _DrawGamesTab();
-		else if (s_tab == 1)
+		else if (s_tab == kTabControllers)
+			_DrawControllersTab();
+		else if (s_tab == kTabSettings)
 			_DrawSettingsTab();
 		else
 			_DrawAboutTab();
