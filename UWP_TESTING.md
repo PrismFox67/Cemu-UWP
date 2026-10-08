@@ -55,7 +55,9 @@ Set them in a command prompt before starting: `set CEMU_D3D12_DEBUG=1` then `Cem
    - **Controllers** tab in the launcher: pick the controller type (Wii U GamePad, Pro Controller, Classic
      Controller, not connected) and the physical controller for each player.
    - **Pair controllers** (Controllers tab or in-game menu): press A on the controller for player 1, then player 2,
-     and so on, then Menu (Start) to finish. Players without a controller are disconnected. B / Esc cancels.
+     and so on, then Menu (Start) to finish. B / Esc cancels. In the launcher, players without a controller are
+     disconnected; in game they keep their setup, because adding or removing controllers while a game runs reportedly
+     can make the Xbox terminate the app. To change the number of players, pair from the launcher.
    - Keyboard (player 1): left stick W/A/S/D, D-pad arrow keys, A/B/X/Y = K/J/I/U, L/R = Q/E, ZL/ZR = Z/C,
      Plus = Enter, Minus = Backspace, Home = H, right stick on the number pad (8/4/2/6).
    - Mappings are stored as normal Cemu profiles in `user/controllerProfiles/controller<N>.xml`; edit them or copy
@@ -100,7 +102,9 @@ Settings → Game folders.
 3. Prepare a USB drive for games on a PC: format it **NTFS**, create a folder such as `Cemu\games`, copy games there,
    then right-click the folder → **Properties → Security → Edit → Add** → type `ALL APPLICATION PACKAGES` →
    **Check Names** → OK → tick **Full control** → OK. This lets sandboxed apps read the folder. (Without it, the app
-   only sees its own `LocalState` folder.)
+   only sees its own `LocalState` folder.) This is also the fast option: the app then opens game files directly,
+   while folders opened through a file picker go through Windows' storage broker, which another Xbox Cemu port found
+   to be slow on the console.
 
 ### Install
 

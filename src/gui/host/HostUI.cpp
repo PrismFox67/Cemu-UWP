@@ -319,7 +319,7 @@ namespace
 			ImGui::TextWrapped(next > 0 ? "Press Menu (Start) when everyone is paired. Players without a controller are disconnected." : "Each controller becomes the next player when its A button is pressed.");
 		}
 		else if (ImGui::Button("Pair controllers (press A on each)"))
-			s_deferred.emplace_back([]() { BeginPairing(); });
+			s_deferred.emplace_back([]() { BeginPairing(false); });
 		ImGui::Spacing();
 
 		const float columnWidth = 360.0f * s_scale;

@@ -287,7 +287,7 @@ namespace
 			break;
 		case kMenuPairControllers:
 			s_menuOpen = false;
-			HostControllers::BeginPairing();
+			HostControllers::BeginPairing(true);
 			break;
 		case kMenuGamePadScreen:
 			// same state the screen swap hotkey (Ctrl+Tab in the wx frontend) flips
@@ -661,7 +661,7 @@ void HostApp::DrawInGameMenu()
 					ImGui::TextDisabled("  Player %d", p + 1);
 			}
 			ImGui::Separator();
-			ImGui::TextDisabled(next > 0 ? "Menu: done (remaining players are disconnected)" : "Press A on the controller for player 1");
+			ImGui::TextDisabled(next > 0 ? "Menu: done (remaining players keep their controllers)" : "Press A on the controller for player 1");
 		}
 		ImGui::End();
 		if (pairingFont)

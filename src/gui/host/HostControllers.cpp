@@ -15,6 +15,7 @@ namespace
 	{
 		std::atomic_bool active = false;
 		std::atomic_int nextPlayer = 0;
+		bool disconnectUnpaired = true;
 		uint32 lastButtons[HostGamepad::kMaxPads]{};
 		bool padUsed[HostGamepad::kMaxPads]{};
 		HostControllers::Kind previousKinds[HostControllers::kPlayerCount]{};
@@ -66,9 +67,13 @@ namespace
 
 	void _FinishPairing()
 	{
-		// players that didn't get a controller are disconnected, so the game doesn't see phantom controllers
-		for (int p = s_pairing.nextPlayer; p < HostControllers::kPlayerCount; p++)
-			HostControllers::SetPlayer(p, HostControllers::Kind::None, -1);
+		// players that didn't get a controller are disconnected, so the game doesn't see phantom controllers. Not while a
+		// game runs: removing controllers changes the input topology (see SetPlayer)
+		if (s_pairing.disconnectUnpaired)
+		{
+			for (int p = s_pairing.nextPlayer; p < HostControllers::kPlayerCount; p++)
+				HostControllers::SetPlayer(p, HostControllers::Kind::None, -1);
+		}
 		s_pairing.active = false;
 		cemuLog_log(LogType::Force, "Host: controller pairing finished with {} player(s)", s_pairing.nextPlayer.load());
 	}
@@ -143,7 +148,11 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 		}
 		if (!IsKindAllowed(player, kind))
 			kind = Kind::Pro;
-		auto emulated = input.set_controller(player, _ToEmulatedType(kind));
+		// Only replace the emulated controller if its type changes. Recreating it changes the input topology the game
+		// sees, which another Xbox UWP Cemu port found can terminate the process while a title is running
+		auto emulated = input.get_controller(player);
+		if (!emulated || emulated->type() != _ToEmulatedType(kind))
+			emulated = input.set_controller(player, _ToEmulatedType(kind));
 		if (!emulated)
 			return;
 		emulated->clear_controllers(); // set_controller carries over the controllers of the previous profile
@@ -163,8 +172,9 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 	}
 }
 
-void HostControllers::BeginPairing()
+void HostControllers::BeginPairing(bool gameRunning)
 {
+	s_pairing.disconnectUnpaired = !gameRunning;
 	for (int p = 0; p < kPlayerCount; p++)
 		s_pairing.previousKinds[p] = GetPlayer(p).kind;
 	for (int i = 0; i < HostGamepad::kMaxPads; i++)

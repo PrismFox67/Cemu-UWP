@@ -37,7 +37,8 @@ namespace HostControllers
 	void SetPlayer(int player, Kind kind, int pad);
 
 	// pairing. UpdatePairing() polls the controllers and has to be called every frame from the UI thread while pairing
-	void BeginPairing();
+	// in game, players without a controller keep their setup instead of being disconnected
+	void BeginPairing(bool gameRunning);
 	void CancelPairing();
 	bool IsPairing();
 	int GetPairingPlayer(); // player waiting for a controller
