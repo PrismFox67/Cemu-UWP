@@ -127,11 +127,12 @@ Ordered by how likely they are to cause problems in games:
 ## Not implemented yet
 
 - Precompiling pipelines while the shader cache loads (like Vulkan's pipeline cache). Pipelines are created when a draw
-  first needs them: with "Async shader compile" enabled on background threads, skipping the draws until they are ready
-  (Intel's driver compiler took minutes for some Mario Kart 8 pipelines, which froze the GPU thread while they were
-  created synchronously). Pipelines that take the driver more than 2 seconds are logged. Driver compiled pipelines are
-  kept per title in `shaderCache/driver/d3d12/<titleId>.bin` (ID3D12PipelineLibrary), so only the first visit of a
-  scene waits for the driver.
+  first needs them. With "Async shader compile" enabled that happens on background threads and the draw waits at most
+  2 seconds before it is skipped (Intel's driver compiler took minutes for some Mario Kart 8 pipelines, which froze the
+  GPU thread when they were created synchronously). Skipping right away is not an option: with it, the 3D scene of a
+  Mario Kart 8 race stayed black for the whole race (probably a once-per-course draw such as its lighting was skipped). Pipelines that take the driver more than 2
+  seconds are logged. Driver compiled pipelines are kept per title in `shaderCache/driver/d3d12/<titleId>.bin`
+  (ID3D12PipelineLibrary), so only the first visit of a scene waits for the driver.
 - Point size (D3D12 has no point sprites; points render 1 pixel wide).
 - Readback of alternate formats (same limitation as Vulkan).
 - Separate back-face stencil reference/masks.

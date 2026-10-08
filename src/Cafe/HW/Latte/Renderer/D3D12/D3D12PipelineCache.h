@@ -37,9 +37,10 @@ public:
 	explicit D3D12PipelineCache(D3D12Renderer* renderer);
 	~D3D12PipelineCache();
 
-	// With async compile enabled this never blocks: if the shaders or the PSO are not ready yet the returned pipeline is
-	// not valid and the draw is skipped, like in the Vulkan backend. Driver shader compilers (Intel's in particular) can
-	// take minutes for large Latte shaders, which would otherwise freeze the GPU thread
+	// With async compile enabled, new pipelines are created on worker threads and waited for at most 2 seconds; if the
+	// driver takes longer the returned pipeline is not valid and the draw is skipped until it is ready. Driver shader
+	// compilers (Intel's in particular) can take minutes for large Latte shaders, which would otherwise freeze the GPU
+	// thread. Pipelines found in the disk cache are ready within milliseconds
 	D3D12PipelineInfo* GetOrCreate(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
 		CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
 

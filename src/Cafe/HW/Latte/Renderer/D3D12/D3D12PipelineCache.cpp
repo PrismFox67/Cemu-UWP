@@ -246,6 +246,14 @@ public:
 		m_jobAvailable.notify_one();
 	}
 
+	// returns true if the pipeline became ready within the timeout
+	bool WaitForReady(const D3D12PipelineInfo* info, std::chrono::milliseconds timeout)
+	{
+		std::unique_lock lock(m_mutex);
+		// jobs mark the pipeline ready before they lock the mutex to notify, so a wakeup can't be missed
+		return m_jobFinished.wait_for(lock, timeout, [info]() { return info->isReady.load(std::memory_order_acquire); });
+	}
+
 	void Stop()
 	{
 		std::unique_lock lock(m_mutex);
@@ -298,8 +306,6 @@ private:
 	bool m_stop = false;
 };
 
-// returned while shaders or the PSO are still compiling, never valid
-static D3D12PipelineInfo s_pendingPipeline;
 
 // GLSL geometry shader that turns the 3 vertices of a GPU7 RECT primitive into a quad. Same approach as
 // rectsEmulationGS_generate() in the Vulkan backend, except that every pixel shader input is passed through: under D3D12
@@ -515,13 +521,10 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	const bool async = GetConfig().async_compile.GetValue();
 	for (LatteDecompilerShader* shader : { vertexShader, geometryShader, pixelShader })
 	{
+		// FXC/DXC are slow for large shaders but never pathological, and the bytecode cache makes later runs instant
 		auto* s = shader ? static_cast<RendererShaderD3D12*>(shader->shader) : nullptr;
-		if (!s)
-			continue;
-		if (!async)
+		if (s)
 			s->PreponeCompilation(true);
-		else if (!s->IsCompiled())
-			return &s_pendingPipeline; // skip the draw, the pipeline is created once the shaders are done
 	}
 
 	if (!m_diskCacheOpened)
@@ -544,8 +547,12 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	g_compiling_pipelines++;
 	if (async)
 	{
-		g_compiling_pipelines_async++;
+		// Skipping draws is only a last resort: games render some things only once, and a skipped draw can leave them
+		// black for good (Mario Kart 8's race scene stayed black when draws were skipped right away). Wait like a synchronous compile would, but give up on the driver
+		// after a while so a pathological compile (minutes on Intel) can't freeze the game
 		m_compileQueue->Push(std::move(job));
+		if (!m_compileQueue->WaitForReady(result, std::chrono::milliseconds(2000)))
+			g_compiling_pipelines_async++;
 	}
 	else
 		job->Run();
