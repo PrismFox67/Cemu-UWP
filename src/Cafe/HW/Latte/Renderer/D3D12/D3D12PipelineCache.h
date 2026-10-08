@@ -48,6 +48,8 @@ public:
 
 	uint32 GetPipelineCount() const { return (uint32)m_pipelines.size(); }
 	void Clear();
+	// writes newly created pipelines to the per-title disk cache (also done periodically and on destruction)
+	void SaveDiskCache();
 
 	static uint64 CalculateHash(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader,
 		const CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
@@ -60,5 +62,7 @@ private:
 	D3D12Renderer* m_renderer;
 	std::unordered_map<uint64, std::shared_ptr<D3D12PipelineInfo>> m_pipelines;
 	std::shared_ptr<D3D12PipelineCompileQueue> m_compileQueue;
+	std::shared_ptr<class D3D12PipelineDiskCache> m_diskCache; // created for the running title on first use
+	bool m_diskCacheOpened = false;
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
 };

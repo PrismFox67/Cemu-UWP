@@ -9,21 +9,129 @@
 #include "Cafe/HW/Latte/Core/LatteConst.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "config/CemuConfig.h"
+#include "config/ActiveSettings.h"
+#include "Cafe/CafeSystem.h"
 #include "util/helpers/helpers.h"
 
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <fstream>
 #include <thread>
 
 extern std::atomic_int g_compiling_pipelines;
 extern std::atomic_int g_compiling_pipelines_async;
+
+// Driver compiled pipelines of one title, stored with ID3D12PipelineLibrary. Creating a pipeline can take the driver
+// seconds (Intel), which leaves the scene black while draws are skipped; loading it from the library takes milliseconds.
+// Entries are keyed by a hash of the complete description, and the runtime additionally rejects a load whose description
+// doesn't match, so a stale entry only costs a cache miss. Files of another driver version are discarded.
+class D3D12PipelineDiskCache
+{
+public:
+	static std::shared_ptr<D3D12PipelineDiskCache> Open(ID3D12Device* device, const fs::path& path)
+	{
+		ComPtr<ID3D12Device1> device1;
+		if (FAILED(device->QueryInterface(IID_PPV_ARGS(&device1))))
+			return nullptr;
+		auto cache = std::make_shared<D3D12PipelineDiskCache>();
+		cache->m_path = path;
+		{
+			std::ifstream file(path, std::ios::binary);
+			if (file)
+				cache->m_blob.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+		}
+		HRESULT hr = E_FAIL;
+		if (!cache->m_blob.empty())
+		{
+			// the library references the blob for its whole lifetime
+			hr = device1->CreatePipelineLibrary(cache->m_blob.data(), cache->m_blob.size(), IID_PPV_ARGS(&cache->m_library));
+			if (FAILED(hr))
+				cemuLog_log(LogType::Force, "D3D12: Discarding the pipeline cache ({}), it was created by another driver or is damaged", D3D12_HResultToString(hr));
+			else
+				cemuLog_log(LogType::Force, "D3D12: Loaded pipeline cache ({} KB)", cache->m_blob.size() / 1024);
+		}
+		if (FAILED(hr))
+		{
+			cache->m_blob.clear();
+			hr = device1->CreatePipelineLibrary(nullptr, 0, IID_PPV_ARGS(&cache->m_library));
+			if (FAILED(hr))
+			{
+				cemuLog_log(LogType::Force, "D3D12: Pipeline libraries are not supported ({}), pipelines are not cached", D3D12_HResultToString(hr));
+				return nullptr;
+			}
+		}
+		cache->m_lastSave = std::chrono::steady_clock::now();
+		return cache;
+	}
+
+	bool Load(const std::wstring& name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc, ComPtr<ID3D12PipelineState>& pso)
+	{
+		std::lock_guard lock(m_mutex);
+		return SUCCEEDED(m_library->LoadGraphicsPipeline(name.c_str(), &desc, IID_PPV_ARGS(&pso)));
+	}
+
+	void Store(const std::wstring& name, ID3D12PipelineState* pso)
+	{
+		std::lock_guard lock(m_mutex);
+		if (SUCCEEDED(m_library->StorePipeline(name.c_str(), pso)))
+			m_dirty = true;
+	}
+
+	// save at most every 30 seconds while pipelines are being created, the app may be closed without a clean shutdown
+	void SaveIfDue()
+	{
+		{
+			std::lock_guard lock(m_mutex);
+			if (!m_dirty || std::chrono::steady_clock::now() - m_lastSave < std::chrono::seconds(30))
+				return;
+		}
+		Save();
+	}
+
+	void Save()
+	{
+		std::vector<uint8> data;
+		{
+			std::lock_guard lock(m_mutex);
+			if (!m_dirty)
+				return;
+			data.resize(m_library->GetSerializedSize());
+			if (data.empty() || FAILED(m_library->Serialize(data.data(), data.size())))
+				return;
+			m_dirty = false;
+			m_lastSave = std::chrono::steady_clock::now();
+		}
+		std::lock_guard fileLock(m_fileMutex);
+		std::error_code ec;
+		fs::create_directories(m_path.parent_path(), ec);
+		const fs::path tmpPath = m_path.string() + ".tmp";
+		{
+			std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
+			if (!file.write((const char*)data.data(), (std::streamsize)data.size()))
+				return;
+		}
+		fs::rename(tmpPath, m_path, ec); // replace the old file only once the new one is complete
+		if (ec)
+			cemuLog_log(LogType::Force, "D3D12: Failed to save the pipeline cache: {}", ec.message());
+	}
+
+private:
+	std::mutex m_mutex;
+	std::mutex m_fileMutex;
+	fs::path m_path;
+	std::vector<uint8> m_blob; // declared before m_library, which references it
+	ComPtr<ID3D12PipelineLibrary> m_library;
+	bool m_dirty = false;
+	std::chrono::steady_clock::time_point m_lastSave;
+};
 
 // A pipeline description that no longer references any Latte or renderer object, so it can be compiled on another thread
 // while the GPU thread continues (shaders may even be deleted in the meantime)
 struct D3D12PipelineCompileJob
 {
 	std::shared_ptr<D3D12PipelineInfo> info;
+	std::shared_ptr<D3D12PipelineDiskCache> diskCache;
 	ComPtr<ID3D12Device> device;
 	ComPtr<ID3D12RootSignature> rootSignature;
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
@@ -41,6 +149,17 @@ struct D3D12PipelineCompileJob
 		desc.VS = toBytecode(vsBytecode);
 		desc.GS = toBytecode(gsBytecode);
 		desc.PS = toBytecode(psBytecode);
+		std::wstring cacheName;
+		if (diskCache)
+		{
+			const std::string key = fmt::format("{:016x}", CalculateCacheKey());
+			cacheName.assign(key.begin(), key.end());
+			if (diskCache->Load(cacheName, desc, info->pso))
+			{
+				info->isReady.store(true, std::memory_order_release);
+				return;
+			}
+		}
 		const auto start = std::chrono::steady_clock::now();
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
@@ -49,9 +168,60 @@ struct D3D12PipelineCompileJob
 			cemuLog_log(LogType::Force, "D3D12: CreateGraphicsPipelineState failed ({}) for VS {:016x} PS {:016x}", D3D12_HResultToString(hr), vsHash, psHash);
 			info->pso.Reset();
 		}
-		else if (ms >= 2000)
-			cemuLog_log(LogType::Force, "D3D12: The driver took {}ms to create the pipeline for VS {:016x} PS {:016x}", ms, vsHash, psHash);
+		else
+		{
+			if (ms >= 2000)
+				cemuLog_log(LogType::Force, "D3D12: The driver took {}ms to create the pipeline for VS {:016x} PS {:016x}", ms, vsHash, psHash);
+			if (diskCache)
+				diskCache->Store(cacheName, info->pso.Get());
+		}
 		info->isReady.store(true, std::memory_order_release);
+		if (diskCache)
+			diskCache->SaveIfDue();
+	}
+
+private:
+	// identifies the complete pipeline description, see D3D12PipelineDiskCache
+	uint64 CalculateCacheKey() const
+	{
+		uint64 h = 0xcbf29ce484222325ull ^ 2; // version, bump when the hashed data changes
+		auto add = [&h](const void* data, size_t size) {
+			const uint8* p = (const uint8*)data;
+			for (size_t i = 0; i < size; i++)
+				h = (h ^ p[i]) * 0x100000001b3ull;
+		};
+		auto addVector = [&](const std::vector<uint8>& v) {
+			const uint64 size = v.size();
+			add(&size, sizeof(size));
+			add(v.data(), v.size());
+		};
+		addVector(vsBytecode);
+		addVector(gsBytecode);
+		addVector(psBytecode);
+		for (const auto& e : inputElements)
+		{
+			add(e.SemanticName, strlen(e.SemanticName));
+			add(&e.SemanticIndex, sizeof(e.SemanticIndex));
+			add(&e.Format, sizeof(e.Format));
+			add(&e.InputSlot, sizeof(e.InputSlot));
+			add(&e.AlignedByteOffset, sizeof(e.AlignedByteOffset));
+			add(&e.InputSlotClass, sizeof(e.InputSlotClass));
+			add(&e.InstanceDataStepRate, sizeof(e.InstanceDataStepRate));
+		}
+		// plain value structs. Padding bytes are zero because the description is value-initialized; if they weren't,
+		// the result would only be a cache miss
+		add(&desc.BlendState, sizeof(desc.BlendState));
+		add(&desc.SampleMask, sizeof(desc.SampleMask));
+		add(&desc.RasterizerState, sizeof(desc.RasterizerState));
+		add(&desc.DepthStencilState, sizeof(desc.DepthStencilState));
+		add(&desc.IBStripCutValue, sizeof(desc.IBStripCutValue));
+		add(&desc.PrimitiveTopologyType, sizeof(desc.PrimitiveTopologyType));
+		add(&desc.NumRenderTargets, sizeof(desc.NumRenderTargets));
+		add(desc.RTVFormats, sizeof(desc.RTVFormats));
+		add(&desc.DSVFormat, sizeof(desc.DSVFormat));
+		add(&desc.SampleDesc, sizeof(desc.SampleDesc));
+		add(&desc.Flags, sizeof(desc.Flags));
+		return h;
 	}
 };
 
@@ -61,8 +231,9 @@ public:
 	static std::shared_ptr<D3D12PipelineCompileQueue> Create()
 	{
 		auto queue = std::make_shared<D3D12PipelineCompileQueue>();
-		// drivers parallelize poorly internally, a few threads are enough to keep one slow pipeline from blocking the rest
-		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 4, 1, 3);
+		// pipeline creation is mostly the driver's single threaded shader compiler, so it scales with threads. Leave
+		// half of the cores to emulation
+		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 4);
 		for (uint32 i = 0; i < threadCount; i++)
 			queue->m_threads.emplace_back([queue]() { queue->ThreadFunc(); }); // threads keep the queue alive if detached
 		return queue;
@@ -248,7 +419,14 @@ D3D12PipelineCache::D3D12PipelineCache(D3D12Renderer* renderer)
 D3D12PipelineCache::~D3D12PipelineCache()
 {
 	m_compileQueue->Stop();
+	SaveDiskCache();
 	Clear();
+}
+
+void D3D12PipelineCache::SaveDiskCache()
+{
+	if (m_diskCache)
+		m_diskCache->Save();
 }
 
 void D3D12PipelineCache::Clear()
@@ -346,8 +524,16 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 			return &s_pendingPipeline; // skip the draw, the pipeline is created once the shaders are done
 	}
 
+	if (!m_diskCacheOpened)
+	{
+		m_diskCacheOpened = true;
+		const uint64 titleId = CafeSystem::GetForegroundTitleId();
+		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
+	}
+
 	auto job = std::make_unique<D3D12PipelineCompileJob>();
 	job->info = std::make_shared<D3D12PipelineInfo>();
+	job->diskCache = m_diskCache;
 	D3D12PipelineInfo* result = job->info.get();
 	m_pipelines.emplace(hash, job->info);
 	if (!PreparePipeline(fetchShader, vertexShader, geometryShader, pixelShader, fbo, lcr, indexType, *job))

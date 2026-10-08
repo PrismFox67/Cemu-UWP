@@ -126,10 +126,12 @@ Ordered by how likely they are to cause problems in games:
 
 ## Not implemented yet
 
-- A persistent pipeline (PSO) cache. With "Async shader compile" enabled, pipelines are created on background threads
-  and draws are skipped until they are ready (Intel's driver compiler took minutes for some Mario Kart 8 pipelines,
-  which froze the GPU thread while they were created synchronously). Pipelines that take the driver more than 2 seconds
-  are logged.
+- Precompiling pipelines while the shader cache loads (like Vulkan's pipeline cache). Pipelines are created when a draw
+  first needs them: with "Async shader compile" enabled on background threads, skipping the draws until they are ready
+  (Intel's driver compiler took minutes for some Mario Kart 8 pipelines, which froze the GPU thread while they were
+  created synchronously). Pipelines that take the driver more than 2 seconds are logged. Driver compiled pipelines are
+  kept per title in `shaderCache/driver/d3d12/<titleId>.bin` (ID3D12PipelineLibrary), so only the first visit of a
+  scene waits for the driver.
 - Point size (D3D12 has no point sprites; points render 1 pixel wide).
 - Readback of alternate formats (same limitation as Vulkan).
 - Separate back-face stencil reference/masks.
