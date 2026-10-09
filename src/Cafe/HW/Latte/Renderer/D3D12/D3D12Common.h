@@ -142,3 +142,5 @@ inline uint32 D3D12_CalcSubresource(uint32 mipSlice, uint32 arraySlice, uint32 p
 }
 
 void D3D12_SetDebugName(ID3D12Object* object, const std::string& name);
+// Device Removed Extended Data (GPU operation breadcrumbs, page fault info). Call before creating a device
+bool D3D12_EnableDeviceRemovedDiagnostics();

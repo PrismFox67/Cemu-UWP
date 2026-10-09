@@ -130,6 +130,12 @@ void D3D12Renderer::CreateDevice()
 	}
 	D3D12_ThrowIfFailed(CreateDXGIFactory2(factoryFlags, IID_PPV_ARGS(&m_dxgiFactory)), "CreateDXGIFactory2");
 
+	// Device Removed Extended Data: the runtime records the GPU operations of every command list and the allocation of a
+	// GPU page fault, which LogDeviceRemovedData() writes to the log. It is part of the runtime (no Graphics Tools needed)
+	// and the only way to find out what killed the device on a machine without a debugger, like an Xbox
+	m_dredEnabled = D3D12_EnableDeviceRemovedDiagnostics();
+	cemuLog_log(LogType::Force, "D3D12: Device removed diagnostics (DRED) {}", m_dredEnabled ? "enabled" : "not available");
+
 	// pick the adapter. 0 means "default"
 	const uint64 requestedLuid = GetConfig().d3d12_adapter_luid;
 	ComPtr<IDXGIAdapter1> adapter;
@@ -340,6 +346,8 @@ void D3D12Renderer::ResetCommandList()
 	m_freeAllocators.pop_front();
 	D3D12_ThrowIfFailed(m_currentAllocator->Reset(), "ID3D12CommandAllocator::Reset");
 	D3D12_ThrowIfFailed(m_cmdList->Reset(m_currentAllocator.Get(), nullptr), "ID3D12GraphicsCommandList::Reset");
+	if (m_dredEnabled) // identifies the command list in the device removed diagnostics
+		D3D12_SetDebugName(m_cmdList.Get(), fmt::format("Cemu submission #{}", m_lastSubmittedFenceValue + 1));
 	m_drawsInCommandList = 0;
 	m_hasRecordedWork = false;
 	InvalidateDrawState();
@@ -367,7 +375,19 @@ void D3D12Renderer::SubmitCommandList(bool waitIdle)
 	m_statSubmitsPerFrame++;
 	m_submitSoon = false;
 
-	if (waitIdle)
+	// The first submissions are waited for and logged, so a GPU that rejects startup work (seen on Xbox) is caught at the
+	// exact submission that caused it instead of somewhere later
+	constexpr uint64 kLoggedStartupSubmissions = 40;
+	if (submissionId <= kLoggedStartupSubmissions)
+	{
+		const uint32 draws = m_drawsInCommandList;
+		WaitForSubmission(submissionId);
+		const HRESULT removed = m_device->GetDeviceRemovedReason();
+		cemuLog_log(LogType::Force, "D3D12: startup submission #{} ({} draws): {}", submissionId, draws, SUCCEEDED(removed) ? "ok" : D3D12_HResultToString(removed));
+		if (FAILED(removed))
+			HandleDeviceError(removed, fmt::format("Startup submission #{}", submissionId).c_str());
+	}
+	else if (waitIdle)
 		WaitForSubmission(submissionId);
 	ResetCommandList();
 }
@@ -411,7 +431,83 @@ void D3D12Renderer::HandleDeviceError(HRESULT hr, const char* what)
 	HRESULT reason = m_device ? m_device->GetDeviceRemovedReason() : hr;
 	std::string msg = fmt::format("D3D12: {} failed ({}). Device removed reason: {}", what, D3D12_HResultToString(hr), D3D12_HResultToString(reason));
 	cemuLog_log(LogType::Force, "{}", msg);
+	if (FAILED(reason))
+		LogDeviceRemovedData();
 	throw std::runtime_error(msg);
+}
+
+namespace
+{
+	const char* _BreadcrumbOpName(D3D12_AUTO_BREADCRUMB_OP op)
+	{
+		static const char* const s_names[] = {
+			"SetMarker", "BeginEvent", "EndEvent", "DrawInstanced", "DrawIndexedInstanced", "ExecuteIndirect", "Dispatch",
+			"CopyBufferRegion", "CopyTextureRegion", "CopyResource", "CopyTiles", "ResolveSubresource", "ClearRenderTargetView",
+			"ClearUnorderedAccessView", "ClearDepthStencilView", "ResourceBarrier", "ExecuteBundle", "Present", "ResolveQueryData",
+			"BeginSubmission", "EndSubmission", "DecodeFrame", "ProcessFrames", "AtomicCopyBufferUint", "AtomicCopyBufferUint64",
+			"ResolveSubresourceRegion", "WriteBufferImmediate", "DecodeFrame1", "SetProtectedResourceSession", "DecodeFrame2",
+			"ProcessFrames1", "BuildRaytracingAccelerationStructure", "EmitRaytracingAccelerationStructurePostbuildInfo",
+			"CopyRaytracingAccelerationStructure", "DispatchRays", "InitializeMetaCommand", "ExecuteMetaCommand", "EstimateMotion",
+			"ResolveMotionVectorHeap", "SetPipelineState1", "InitializeExtensionCommand", "ExecuteExtensionCommand", "DispatchMesh",
+		};
+		return (uint32)op < std::size(s_names) ? s_names[op] : "Unknown";
+	}
+
+	std::string _DredName(const char* nameA, const wchar_t* nameW)
+	{
+		if (nameA)
+			return nameA;
+		if (nameW)
+		{
+			std::wstring w(nameW);
+			return std::string(w.begin(), w.end());
+		}
+		return "(unnamed)";
+	}
+}
+
+void D3D12Renderer::LogDeviceRemovedData()
+{
+	static bool s_logged = false;
+	if (s_logged)
+		return;
+	s_logged = true;
+	ComPtr<ID3D12DeviceRemovedExtendedData> dred;
+	if (!m_dredEnabled || !m_device || FAILED(m_device.As(&dred)))
+	{
+		cemuLog_log(LogType::Force, "D3D12: No device removed diagnostics (DRED) available");
+		return;
+	}
+	D3D12_DRED_AUTO_BREADCRUMBS_OUTPUT breadcrumbs{};
+	if (SUCCEEDED(dred->GetAutoBreadcrumbsOutput(&breadcrumbs)))
+	{
+		uint32 nodeCount = 0;
+		for (const D3D12_AUTO_BREADCRUMB_NODE* node = breadcrumbs.pHeadAutoBreadcrumbNode; node; node = node->pNext)
+		{
+			const uint32 completed = node->pLastBreadcrumbValue ? *node->pLastBreadcrumbValue : 0;
+			nodeCount++;
+			if (completed >= node->BreadcrumbCount)
+				continue; // finished on the GPU, not the cause
+			cemuLog_log(LogType::Force, "DRED: {} on {}: {} of {} operations completed", _DredName(node->pCommandListDebugNameA, node->pCommandListDebugNameW),
+				_DredName(node->pCommandQueueDebugNameA, node->pCommandQueueDebugNameW), completed, node->BreadcrumbCount);
+			const uint32 first = completed > 8 ? completed - 8 : 0;
+			const uint32 last = std::min<uint32>(node->BreadcrumbCount, completed + 8);
+			for (uint32 i = first; i < last; i++)
+				cemuLog_log(LogType::Force, "DRED:   [{}] {}{}", i, _BreadcrumbOpName(node->pCommandHistory[i]), i == completed ? "   <- not completed, likely the faulting operation" : "");
+		}
+		cemuLog_log(LogType::Force, "DRED: {} command list(s) recorded", nodeCount);
+	}
+	D3D12_DRED_PAGE_FAULT_OUTPUT pageFault{};
+	if (SUCCEEDED(dred->GetPageFaultAllocationOutput(&pageFault)) && pageFault.PageFaultVA != 0)
+	{
+		cemuLog_log(LogType::Force, "DRED: GPU page fault at address 0x{:016x}", (uint64)pageFault.PageFaultVA);
+		for (const D3D12_DRED_ALLOCATION_NODE* a = pageFault.pHeadExistingAllocationNode; a; a = a->pNext)
+			cemuLog_log(LogType::Force, "DRED:   existing allocation at that address: {} (type {})", _DredName(a->ObjectNameA, a->ObjectNameW), (uint32)a->AllocationType);
+		for (const D3D12_DRED_ALLOCATION_NODE* a = pageFault.pHeadRecentFreedAllocationNode; a; a = a->pNext)
+			cemuLog_log(LogType::Force, "DRED:   recently freed allocation at that address: {} (type {})", _DredName(a->ObjectNameA, a->ObjectNameW), (uint32)a->AllocationType);
+	}
+	else
+		cemuLog_log(LogType::Force, "DRED: no GPU page fault recorded");
 }
 
 void D3D12Renderer::ReleaseResourceDeferred(ComPtr<ID3D12Resource> resource)

@@ -29,6 +29,21 @@ void D3D12_ThrowIfFailed(HRESULT hr, const char* what)
 	throw std::runtime_error(msg);
 }
 
+bool D3D12_EnableDeviceRemovedDiagnostics()
+{
+	// D3D12 returns the same device for an adapter until it is released, so this has to happen before the first device
+	// of the process is created (the host frontend's launcher creates one before the emulator)
+	static const bool s_enabled = []() {
+		ComPtr<ID3D12DeviceRemovedExtendedDataSettings> settings;
+		if (FAILED(D3D12GetDebugInterface(IID_PPV_ARGS(&settings))))
+			return false;
+		settings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+		settings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+		return true;
+	}();
+	return s_enabled;
+}
+
 void D3D12_SetDebugName(ID3D12Object* object, const std::string& name)
 {
 	if (!object)

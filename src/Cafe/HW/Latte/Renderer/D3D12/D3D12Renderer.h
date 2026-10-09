@@ -198,6 +198,7 @@ public:
 	void RequestSubmitSoon() { m_submitSoon = true; }
 
 	[[noreturn]] void HandleDeviceError(HRESULT hr, const char* what);
+	void LogDeviceRemovedData(); // DRED breadcrumbs and page fault info, logged once
 
 	// used by internal shaders (surface copy, output blit, imgui)
 	RendererShaderD3D12* CreateInternalShader(RendererShader::ShaderType type, const std::string& glsl);
@@ -264,6 +265,7 @@ private:
 	uint64 m_lastSubmittedFenceValue = 0;
 	uint64 m_completedFenceValue = 0;
 	bool m_debugMode = false;
+	bool m_dredEnabled = false;
 	uint64 m_uniqueIdCounter = 0;
 	D3D12FormatSupport m_formatSupport;
 	D3D_SHADER_MODEL m_highestShaderModel = D3D_SHADER_MODEL_5_1;
