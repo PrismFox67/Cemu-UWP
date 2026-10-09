@@ -633,6 +633,8 @@ void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
 	if (m_diskCacheOpened)
 		return;
 	m_diskCacheOpened = true;
+	if (!m_renderer->IsPipelineLibrarySupported())
+		return; // see D3D12Renderer::CreateDevice. Pipelines are then only created on demand
 	m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
 	if (m_diskCache) // recreating pipelines at launch only helps if they can be cached
 		m_recordFile = std::make_unique<D3D12PipelineRecordFile>(ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12pipelines.bin", titleId));

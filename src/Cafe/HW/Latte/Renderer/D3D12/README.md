@@ -140,6 +140,9 @@ Ordered by how likely they are to cause problems in games:
     cache loading screen is shown.
   - `shaderCache/driver/d3d12/<titleId>.bin` (ID3D12PipelineLibrary) keeps the pipelines compiled by the driver, so
     later launches load them in milliseconds. It is discarded when the driver changes.
+  - On Xbox both are off: the Xbox UWP driver (SraKmd) removes the device (DXGI_ERROR_DRIVER_INTERNAL_ERROR) when a
+    pipeline library is created, and precompiling without a library to keep the result would be wasted work. Pipelines
+    are created when a draw needs them. Keeping precompiled pipelines in memory instead is a possible improvement.
 - Point size (D3D12 has no point sprites; points render 1 pixel wide).
 - Readback of alternate formats (same limitation as Vulkan).
 - Separate back-face stencil reference/masks.

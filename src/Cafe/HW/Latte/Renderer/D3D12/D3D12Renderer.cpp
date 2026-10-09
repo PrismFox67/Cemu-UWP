@@ -209,6 +209,15 @@ void D3D12Renderer::CreateDevice()
 		cemuLog_log(LogType::Force, "D3D12: Resource binding tier {} detected. Tier 3 is recommended, shaders that use more than 14 uniform blocks per stage may fail", (uint32)m_bindingTier);
 	D3D12Format::InitFormatSupport(m_device.Get(), m_formatSupport);
 
+	// pipeline libraries (driver pipeline cache on disk). The Xbox UWP driver (SraKmd) removes the device with
+	// DXGI_ERROR_DRIVER_INTERNAL_ERROR when one is created, instead of failing the call, so it is never used there
+	D3D12_FEATURE_DATA_SHADER_CACHE shaderCache{};
+	m_pipelineLibrarySupported = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_SHADER_CACHE, &shaderCache, sizeof(shaderCache))) &&
+		(shaderCache.SupportFlags & D3D12_SHADER_CACHE_SUPPORT_LIBRARY) != 0;
+	if (m_selectedDeviceName.rfind("SraKmd", 0) == 0)
+		m_pipelineLibrarySupported = false;
+	cemuLog_log(LogType::Force, "D3D12: Pipeline cache (pipeline libraries): {}", m_pipelineLibrarySupported ? "supported" : "not supported");
+
 	// queue + fence
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
