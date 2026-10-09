@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Common.h"
 
+#include <atomic>
 #include <stdexcept>
 
 std::string D3D12_HResultToString(HRESULT hr)
@@ -42,6 +43,25 @@ bool D3D12_EnableDeviceRemovedDiagnostics()
 		return true;
 	}();
 	return s_enabled;
+}
+
+static std::atomic<const char*> s_lastGoodCheckpoint{ "(none)" };
+static std::atomic<bool> s_removalReported{ false };
+
+bool D3D12_Checkpoint(ID3D12Device* device, const char* where)
+{
+	if (!device)
+		return true;
+	const HRESULT reason = device->GetDeviceRemovedReason();
+	if (SUCCEEDED(reason))
+	{
+		s_lastGoodCheckpoint.store(where, std::memory_order_relaxed);
+		return true;
+	}
+	if (!s_removalReported.exchange(true))
+		cemuLog_log(LogType::Force, "D3D12: device removed ({}), first noticed after: {}. Last check where it was still fine: {}",
+			D3D12_HResultToString(reason), where, s_lastGoodCheckpoint.load(std::memory_order_relaxed));
+	return false;
 }
 
 void D3D12_SetDebugName(ID3D12Object* object, const std::string& name)

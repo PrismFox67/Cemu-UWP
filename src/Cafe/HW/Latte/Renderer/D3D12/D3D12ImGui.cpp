@@ -89,6 +89,7 @@ ID3D12PipelineState* D3D12ImGuiRenderer::GetPipeline(DXGI_FORMAT rtvFormat)
 	desc.RTVFormats[0] = rtvFormat;
 	desc.SampleDesc.Count = 1;
 	HRESULT hr = m_renderer->GetDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&m_pipeline));
+	D3D12_Checkpoint(m_renderer->GetDevice(), "ImGui pipeline created");
 	if (FAILED(hr))
 	{
 		cemuLog_log(LogType::Force, "D3D12: Failed to create ImGui pipeline: {}", D3D12_HResultToString(hr));
@@ -118,6 +119,7 @@ void* D3D12ImGuiRenderer::CreateTexture(const uint8* rgba, sint32 width, sint32 
 		return nullptr;
 	}
 	D3D12_SetDebugName(tex->resource.Get(), "ImGuiTexture");
+	D3D12_Checkpoint(device, "ImGui texture: resource created");
 
 	const uint32 rowBytes = (uint32)width * 4;
 	const uint32 rowPitch = AlignUp<uint32>(rowBytes, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
@@ -139,6 +141,7 @@ void* D3D12ImGuiRenderer::CreateTexture(const uint8* rgba, sint32 width, sint32 
 	D3D12_RESOURCE_BARRIER barrier = D3D12_TransitionBarrier(tex->resource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	cmdList->ResourceBarrier(1, &barrier);
 	m_renderer->m_hasRecordedWork = true;
+	D3D12_Checkpoint(device, "ImGui texture: upload recorded");
 
 	tex->srv = m_renderer->GetStagingViewHeap().Allocate();
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -147,6 +150,7 @@ void* D3D12ImGuiRenderer::CreateTexture(const uint8* rgba, sint32 width, sint32 
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srvDesc.Texture2D.MipLevels = 1;
 	device->CreateShaderResourceView(tex->resource.Get(), &srvDesc, tex->srv);
+	D3D12_Checkpoint(device, "ImGui texture: SRV created");
 	return tex;
 }
 

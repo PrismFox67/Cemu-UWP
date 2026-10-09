@@ -72,6 +72,7 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 	D3D12_HEAP_PROPERTIES heapProps = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	const D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
 	HRESULT hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
+	D3D12_Checkpoint(renderer->GetDevice(), "game texture created");
 	if (FAILED(hr))
 	{
 		cemuLog_log(LogType::Force, "D3D12: Failed to create texture {}x{}x{} fmt {:04x} ({}): {}", m_desc.Width, m_desc.Height, m_desc.DepthOrArraySize, (uint32)format, (uint32)m_desc.Format, D3D12_HResultToString(hr));

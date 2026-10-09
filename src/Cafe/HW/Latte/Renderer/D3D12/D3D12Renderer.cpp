@@ -83,6 +83,7 @@ D3D12Renderer::D3D12Renderer()
 
 	// first command list
 	ResetCommandList();
+	D3D12_Checkpoint(m_device.Get(), "renderer constructed");
 }
 
 D3D12Renderer::~D3D12Renderer()
@@ -353,6 +354,7 @@ void D3D12Renderer::ResetCommandList()
 	InvalidateDrawState();
 	BindRootSignatureAndHeaps();
 	occlusionQuery_notifyBeginCommandList();
+	D3D12_Checkpoint(m_device.Get(), "command list reset");
 }
 
 void D3D12Renderer::SubmitCommandList(bool waitIdle)
@@ -363,6 +365,7 @@ void D3D12Renderer::SubmitCommandList(bool waitIdle)
 	if (FAILED(hr))
 		HandleDeviceError(hr, "ID3D12GraphicsCommandList::Close");
 	ID3D12CommandList* lists[] = { m_cmdList.Get() };
+	D3D12_Checkpoint(m_device.Get(), "command list closed");
 	m_queue->ExecuteCommandLists(1, lists);
 	const uint64 submissionId = m_lastSubmittedFenceValue + 1;
 	hr = m_queue->Signal(m_fence.Get(), submissionId);
@@ -629,8 +632,11 @@ void D3D12Renderer::NotifyFBORelease(CachedFBOD3D12* fbo)
 void D3D12Renderer::Initialize()
 {
 	Renderer::Initialize();
+	D3D12_Checkpoint(m_device.Get(), "Renderer::Initialize");
 	m_imgui = std::make_unique<D3D12ImGuiRenderer>(this);
+	D3D12_Checkpoint(m_device.Get(), "ImGui renderer created (internal shaders)");
 	surfaceCopy_init();
+	D3D12_Checkpoint(m_device.Get(), "surfaceCopy_init");
 }
 
 void D3D12Renderer::Shutdown()
@@ -690,6 +696,7 @@ void D3D12Renderer::InitializeSurface(const Vector2i& size, bool mainWindow)
 	auto swapChain = std::make_unique<D3D12SwapChain>(m_device.Get(), m_dxgiFactory.Get(), m_queue.Get(), m_stagingRTVHeap.get(), type, handle.surface, (uint32)size.x, (uint32)size.y);
 	if (!swapChain->IsValid())
 		throw std::runtime_error("D3D12: Failed to create swap chain");
+	D3D12_Checkpoint(m_device.Get(), mainWindow ? "TV swap chain created" : "GamePad swap chain created");
 	if (mainWindow)
 		m_swapChainMain = std::move(swapChain);
 	else
@@ -759,8 +766,10 @@ bool D3D12Renderer::AcquireBackbuffer(bool mainWindow)
 	{
 		WaitForIdle();
 		swapChain->Resize(w, h);
+		D3D12_Checkpoint(m_device.Get(), "swap chain resized");
 	}
 	TransitionResource(swapChain->GetCurrentBackbuffer(), swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+	D3D12_Checkpoint(m_device.Get(), "backbuffer acquired");
 	return true;
 }
 
@@ -782,6 +791,7 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	const int vsync = GetConfig().vsync.GetValue();
 	if (!swapChain->Present(vsync != 0 ? 1 : 0))
 		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
+	D3D12_Checkpoint(m_device.Get(), "present");
 }
 
 void D3D12Renderer::ClearColorbuffer(bool padView)
@@ -896,7 +906,10 @@ ImTextureID D3D12Renderer::GenerateTexture(const std::vector<uint8>& data, const
 		rgba[i * 4 + 2] = data[i * 3 + 2];
 		rgba[i * 4 + 3] = 0xFF;
 	}
-	return m_imgui->CreateTexture(rgba.data(), size.x, size.y);
+	D3D12_Checkpoint(m_device.Get(), "before GenerateTexture");
+	ImTextureID texture = m_imgui->CreateTexture(rgba.data(), size.x, size.y);
+	D3D12_Checkpoint(m_device.Get(), "GenerateTexture");
+	return texture;
 }
 
 void D3D12Renderer::DeleteTexture(ImTextureID id)
@@ -922,6 +935,7 @@ RendererShaderD3D12* D3D12Renderer::CreateInternalShader(RendererShader::ShaderT
 {
 	auto* shader = new RendererShaderD3D12(type, 0, 0, false, false, glsl);
 	shader->PreponeCompilation(true);
+	D3D12_Checkpoint(m_device.Get(), "internal shader compiled");
 	return shader;
 }
 

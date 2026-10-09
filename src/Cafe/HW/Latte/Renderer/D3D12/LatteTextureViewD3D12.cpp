@@ -219,6 +219,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateSRV(uint32 gpuSamplerSw
 	}
 	D3D12_CPU_DESCRIPTOR_HANDLE h = m_renderer->GetStagingViewHeap().Allocate();
 	m_renderer->GetDevice()->CreateShaderResourceView(m_baseTexture->GetResource(), &desc, h);
+	D3D12_Checkpoint(m_renderer->GetDevice(), "texture SRV created");
 	return h;
 }
 
@@ -253,6 +254,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetRTV()
 	}
 	m_rtv = m_renderer->GetStagingRTVHeap().Allocate();
 	m_renderer->GetDevice()->CreateRenderTargetView(m_baseTexture->GetResource(), &desc, m_rtv);
+	D3D12_Checkpoint(m_renderer->GetDevice(), "texture RTV created");
 	return m_rtv;
 }
 
@@ -280,5 +282,6 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetDSV()
 	}
 	m_dsv = m_renderer->GetStagingDSVHeap().Allocate();
 	m_renderer->GetDevice()->CreateDepthStencilView(m_baseTexture->GetResource(), &desc, m_dsv);
+	D3D12_Checkpoint(m_renderer->GetDevice(), "texture DSV created");
 	return m_dsv;
 }

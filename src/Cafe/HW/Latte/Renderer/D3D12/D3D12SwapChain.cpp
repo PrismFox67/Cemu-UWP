@@ -75,6 +75,7 @@ void D3D12SwapChain::CreateBufferViews()
 		rtvDesc.Format = kFormat;
 		rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 		m_device->CreateRenderTargetView(b.resource.Get(), &rtvDesc, b.rtv);
+		D3D12_Checkpoint(m_device, "swap chain backbuffer RTV created");
 		b.state = D3D12_RESOURCE_STATE_PRESENT;
 	}
 	m_currentIndex = m_swapChain->GetCurrentBackBufferIndex();

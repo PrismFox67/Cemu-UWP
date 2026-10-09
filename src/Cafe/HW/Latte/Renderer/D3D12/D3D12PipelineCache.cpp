@@ -285,6 +285,7 @@ private:
 		}
 		const auto start = std::chrono::steady_clock::now();
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
+		D3D12_Checkpoint(device.Get(), "game pipeline created");
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 		if (FAILED(hr))
 		{
@@ -1191,6 +1192,7 @@ ID3D12PipelineState* D3D12PipelineCache::GetInternalPipeline(RendererShaderD3D12
 
 	ComPtr<ID3D12PipelineState> pso;
 	HRESULT hr = m_renderer->GetDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pso));
+	D3D12_Checkpoint(m_renderer->GetDevice(), "internal pipeline created");
 	if (FAILED(hr))
 	{
 		cemuLog_log(LogType::Force, "D3D12: Failed to create internal pipeline: {}", D3D12_HResultToString(hr));
