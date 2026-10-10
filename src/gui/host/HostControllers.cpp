@@ -65,6 +65,18 @@ namespace
 			vpad->set_mapping(button, keyboard, key);
 	}
 
+	// Every emulated button is mapped to exactly one physical controller, so the keyboard mapping takes those buttons away
+	// from the controller (on Xbox only the stick clicks were left). The keyboard is only for testing the PC build without
+	// a controller
+	bool _WantsKeyboard(int pad)
+	{
+#if defined(CEMU_UWP)
+		return false;
+#else
+		return pad < 0 || !HostGamepad::PollPad(pad).connected;
+#endif
+	}
+
 	void _FinishPairing()
 	{
 		// players that didn't get a controller are disconnected, so the game doesn't see phantom controllers. Not while a
@@ -112,6 +124,13 @@ void HostControllers::SetupDefaults()
 	}
 	if (createOtherPlayers)
 		std::ofstream(marker) << "default controller profiles were created\n";
+	// earlier builds always added the keyboard to player 1, which left the controller without its buttons
+	const PlayerInfo player1 = GetPlayer(0);
+	if (player1.kind == Kind::GamePad && player1.hasKeyboard && player1.pad >= 0 && !_WantsKeyboard(player1.pad))
+	{
+		SetPlayer(0, Kind::GamePad, player1.pad);
+		cemuLog_log(LogType::Force, "Host: removed the keyboard from player 1, it overrode the controller's buttons");
+	}
 	cemuLog_log(LogType::Force, "Host: controllers: {} / {} / {} / {}", KindName(GetPlayer(0).kind), KindName(GetPlayer(1).kind), KindName(GetPlayer(2).kind), KindName(GetPlayer(3).kind));
 }
 
@@ -162,7 +181,7 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 			emulated->add_controller(xinput);
 			emulated->set_default_mapping(xinput);
 		}
-		if (player == 0 && kind == Kind::GamePad)
+		if (player == 0 && kind == Kind::GamePad && _WantsKeyboard(pad))
 			_AddKeyboard(emulated);
 		input.save(player);
 	}
