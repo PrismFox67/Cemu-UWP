@@ -64,6 +64,24 @@ bool D3D12_Checkpoint(ID3D12Device* device, const char* where)
 	return false;
 }
 
+HANDLE D3D12_CreateLargeStackThread(std::function<void()> func)
+{
+	// 256 MB of address space, committed on use. Driver shader compilers and FXC recurse deeply on large shaders; on Xbox
+	// a default sized stack overflowed (0xC00000FD) while Mario Kart 8 loaded its attract mode race
+	auto* arg = new std::function<void()>(std::move(func));
+	HANDLE thread = CreateThread(nullptr, 256ull * 1024 * 1024, [](LPVOID p) -> DWORD {
+		std::unique_ptr<std::function<void()>> f((std::function<void()>*)p);
+		(*f)();
+		return 0;
+	}, arg, STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);
+	if (!thread)
+	{
+		delete arg;
+		throw std::runtime_error("D3D12: CreateThread failed");
+	}
+	return thread;
+}
+
 void D3D12_SetDebugName(ID3D12Object* object, const std::string& name)
 {
 	if (!object)

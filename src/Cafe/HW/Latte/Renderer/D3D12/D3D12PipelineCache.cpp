@@ -451,7 +451,7 @@ public:
 		// half of the cores to emulation
 		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 4);
 		for (uint32 i = 0; i < threadCount; i++)
-			queue->m_threads.emplace_back([queue]() { queue->ThreadFunc(); }); // threads keep the queue alive if detached
+			queue->m_threads.emplace_back(D3D12_CreateLargeStackThread([queue]() { queue->ThreadFunc(); })); // threads keep the queue alive if detached
 		return queue;
 	}
 
@@ -481,12 +481,11 @@ public:
 		lock.unlock();
 		if (!idle)
 			cemuLog_log(LogType::Force, "D3D12: A pipeline is still being created by the driver, not waiting for it");
-		for (auto& t : m_threads)
+		for (HANDLE t : m_threads)
 		{
 			if (idle)
-				t.join();
-			else
-				t.detach();
+				WaitForSingleObject(t, INFINITE);
+			CloseHandle(t); // without waiting this detaches the thread
 		}
 		m_threads.clear();
 	}
@@ -517,7 +516,7 @@ private:
 	std::condition_variable m_jobAvailable;
 	std::condition_variable m_jobFinished;
 	std::deque<std::unique_ptr<D3D12PipelineCompileJob>> m_jobs;
-	std::vector<std::thread> m_threads;
+	std::vector<HANDLE> m_threads;
 	uint32 m_busyThreads = 0;
 	bool m_stop = false;
 };

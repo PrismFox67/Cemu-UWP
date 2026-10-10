@@ -24,6 +24,7 @@
 #include <array>
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -147,3 +148,5 @@ bool D3D12_EnableDeviceRemovedDiagnostics();
 // Checks whether the device is still alive after the named operation. The first failure is logged together with the last
 // checkpoint that passed, which brackets the call that made the driver remove the device. Costs one runtime query
 bool D3D12_Checkpoint(ID3D12Device* device, const char* where);
+// thread with an explicitly reserved large stack (doesn't depend on the executable's default stack size)
+HANDLE D3D12_CreateLargeStackThread(std::function<void()> func);

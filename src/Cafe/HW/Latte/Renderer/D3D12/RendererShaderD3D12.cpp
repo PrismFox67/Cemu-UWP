@@ -43,7 +43,7 @@ public:
 		// FXC is considerably more expensive than glslang alone, use a few more threads than the Vulkan backend
 		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 6);
 		for (uint32 i = 0; i < threadCount; ++i)
-			m_threads.emplace_back(&_ShaderD3D12ThreadPool::CompilerThreadFunc, this);
+			m_threads.emplace_back(D3D12_CreateLargeStackThread([this]() { CompilerThreadFunc(); })); // FXC recurses deeply on large shaders
 	}
 
 	void StopThreads()
@@ -52,8 +52,11 @@ public:
 			return;
 		for (size_t i = 0; i < m_threads.size(); ++i)
 			m_queueCount.increment();
-		for (auto& it : m_threads)
-			it.join();
+		for (HANDLE it : m_threads)
+		{
+			WaitForSingleObject(it, INFINITE);
+			CloseHandle(it);
+		}
 		m_threads.clear();
 	}
 
@@ -91,7 +94,7 @@ public:
 	std::mutex m_queueMutex;
 
 private:
-	std::vector<std::thread> m_threads;
+	std::vector<HANDLE> m_threads;
 	std::atomic<bool> m_threadsActive{ false };
 } s_shaderD3D12ThreadPool;
 
