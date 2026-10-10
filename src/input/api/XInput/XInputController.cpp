@@ -110,7 +110,16 @@ ControllerState XInputController::raw_state()
 {
 	ControllerState result{};
 	if (!m_connected)
-		return result;
+	{
+		// Retry about once a second. Only the wx frontend and SDL report device changes, without them a controller that
+		// wasn't there when the profile was loaded (on Xbox the controllers appear after the app starts) never connected
+		const auto now = std::chrono::steady_clock::now();
+		if (now - m_lastConnectAttempt < std::chrono::seconds(1))
+			return result;
+		m_lastConnectAttempt = now;
+		if (!connect())
+			return result;
+	}
 
 	XINPUT_STATE state;
 	if (m_provider->m_XInputGetState(m_index, &state) != ERROR_SUCCESS)

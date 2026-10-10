@@ -3,6 +3,8 @@
 #include "input/api/XInput/XInputControllerProvider.h"
 #include "input/api/Controller.h"
 
+#include <chrono>
+
 class XInputController : public Controller<XInputControllerProvider>
 {
 public:
@@ -33,6 +35,7 @@ protected:
 private:
 	uint32 m_index;
 	bool m_connected = false;
+	std::chrono::steady_clock::time_point m_lastConnectAttempt{};
 	bool m_has_battery = false;
 	bool m_has_rumble = false;
 };
