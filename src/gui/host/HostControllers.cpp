@@ -77,6 +77,17 @@ namespace
 #endif
 	}
 
+	// Cemu's default XInput mapping follows the button positions (Xbox B is where the Wii U's A is). On a console players
+	// expect the labels to match, so map A/B/X/Y to the Xbox buttons with the same name. The button ids are the same for
+	// the GamePad, Pro and Classic Controller (1-4), XInput reports A/B/X/Y as buttons 12-15
+	void _UseLabelLayout(const EmulatedControllerPtr& emulated, const std::shared_ptr<ControllerBase>& xinput)
+	{
+		emulated->set_mapping(1, xinput, 12); // A
+		emulated->set_mapping(2, xinput, 13); // B
+		emulated->set_mapping(3, xinput, 14); // X
+		emulated->set_mapping(4, xinput, 15); // Y
+	}
+
 	void _FinishPairing()
 	{
 		// players that didn't get a controller are disconnected, so the game doesn't see phantom controllers. Not while a
@@ -124,6 +135,23 @@ void HostControllers::SetupDefaults()
 	}
 	if (createOtherPlayers)
 		std::ofstream(marker) << "default controller profiles were created\n";
+	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels
+	for (int player = 0; player < kPlayerCount; player++)
+	{
+		const auto emulated = input.get_controller(player);
+		if (!emulated)
+			continue;
+		for (const auto& c : emulated->get_controllers())
+		{
+			if (c->api() == InputAPI::XInput && emulated->get_mapping_controller(1) == c && emulated->get_mapping_name(1) == "B")
+			{
+				_UseLabelLayout(emulated, c);
+				input.save(player);
+				cemuLog_log(LogType::Force, "Host: player {} now uses the Xbox button labels for A/B/X/Y", player + 1);
+				break;
+			}
+		}
+	}
 	// earlier builds always added the keyboard to player 1, which left the controller without its buttons
 	const PlayerInfo player1 = GetPlayer(0);
 	if (player1.kind == Kind::GamePad && player1.hasKeyboard && player1.pad >= 0 && !_WantsKeyboard(player1.pad))
@@ -180,6 +208,7 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 			auto xinput = std::make_shared<XInputController>((uint32)pad);
 			emulated->add_controller(xinput);
 			emulated->set_default_mapping(xinput);
+			_UseLabelLayout(emulated, xinput);
 		}
 		if (player == 0 && kind == Kind::GamePad && _WantsKeyboard(pad))
 			_AddKeyboard(emulated);
