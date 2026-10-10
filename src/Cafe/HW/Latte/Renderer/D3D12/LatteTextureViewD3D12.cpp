@@ -79,6 +79,67 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 				m_rtvFormat = rtv;
 		}
 	}
+	m_usesSliceCopy = (dim == Latte::E_DIM::DIM_2D || dim == Latte::E_DIM::DIM_2D_MSAA) && firstSlice > 0 && !texture->Is3DTexture() && !texture->isDepth;
+}
+
+void LatteTextureViewD3D12::UpdateSliceCopy()
+{
+	const uint64 version = std::max(m_baseTexture->lastUpdateEventCounter, m_baseTexture->lastWriteEventCounter);
+	if (m_sliceCopy && version == m_sliceCopyVersion)
+		return;
+	ID3D12Resource* baseResource = m_baseTexture->GetResource();
+	if (!baseResource)
+		return;
+	ID3D12Device* device = m_renderer->GetDevice();
+	if (!m_sliceCopy)
+	{
+		D3D12_RESOURCE_DESC desc = m_baseTexture->GetDesc();
+		desc.Width = (UINT64)std::max(1, m_baseTexture->GetMipWidth(firstMip));
+		desc.Height = (UINT)std::max(1, m_baseTexture->GetMipHeight(firstMip));
+		if (m_baseTexture->GetFormatInfo().isCompressed)
+		{
+			desc.Width = AlignUp<UINT64>(desc.Width, 4);
+			desc.Height = AlignUp<UINT>(desc.Height, 4);
+		}
+		desc.DepthOrArraySize = 1;
+		desc.MipLevels = (UINT16)std::max(1, numMip);
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+		if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_sliceCopy))))
+		{
+			cemuLog_logOnce(LogType::Force, "D3D12: Failed to create a texture slice copy, sampling the array view instead");
+			m_usesSliceCopy = false;
+			return;
+		}
+		D3D12_SetDebugName(m_sliceCopy.Get(), "TextureSliceCopy");
+		m_sliceCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+	}
+	m_renderer->TransitionResource(m_sliceCopy.Get(), m_sliceCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
+	m_renderer->TransitionTexture(m_baseTexture, firstMip, numMip, firstSlice, 1, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	m_renderer->FlushBarriers();
+	const D3D12_RESOURCE_DESC srcDesc = m_baseTexture->GetDesc();
+	const D3D12_RESOURCE_DESC dstDesc = m_sliceCopy->GetDesc();
+	for (sint32 m = 0; m < numMip; m++)
+	{
+		const UINT srcSub = m_baseTexture->GetSubresourceIndex(firstMip + m, firstSlice, 0);
+		D3D12_PLACED_SUBRESOURCE_FOOTPRINT srcFp, dstFp;
+		UINT rows;
+		UINT64 rowSize, total;
+		device->GetCopyableFootprints(&srcDesc, srcSub, 1, 0, &srcFp, &rows, &rowSize, &total);
+		device->GetCopyableFootprints(&dstDesc, (UINT)m, 1, 0, &dstFp, &rows, &rowSize, &total);
+		D3D12_BOX box{ 0, 0, 0, std::min(srcFp.Footprint.Width, dstFp.Footprint.Width), std::min(srcFp.Footprint.Height, dstFp.Footprint.Height), 1 };
+		D3D12_TEXTURE_COPY_LOCATION dst{}, src{};
+		dst.pResource = m_sliceCopy.Get();
+		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		dst.SubresourceIndex = (UINT)m;
+		src.pResource = baseResource;
+		src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		src.SubresourceIndex = srcSub;
+		m_renderer->GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
+	}
+	m_renderer->TransitionResource(m_sliceCopy.Get(), m_sliceCopyState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	m_renderer->m_hasRecordedWork = true;
+	m_sliceCopyVersion = version;
 }
 
 LatteTextureViewD3D12::~LatteTextureViewD3D12()
@@ -94,10 +155,14 @@ LatteTextureViewD3D12::~LatteTextureViewD3D12()
 		m_renderer->GetStagingRTVHeap().Free(m_rtv);
 	if (m_dsv.ptr)
 		m_renderer->GetStagingDSVHeap().Free(m_dsv);
+	if (m_sliceCopy)
+		m_renderer->ReleaseResourceDeferred(std::move(m_sliceCopy));
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetSRV(uint32 gpuSamplerSwizzle)
 {
+	if (m_usesSliceCopy)
+		UpdateSliceCopy();
 	gpuSamplerSwizzle &= 0x0FFF0000;
 	for (auto& e : m_srvCache)
 	{
@@ -133,6 +198,15 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateSRV(uint32 gpuSamplerSw
 	D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
 	desc.Format = m_srvFormat;
 	desc.Shader4ComponentMapping = D3D12Format::GetComponentMapping(_AdjustSwizzle(format, gpuSamplerSwizzle));
+	if (m_usesSliceCopy && m_sliceCopy)
+	{
+		desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		desc.Texture2D.MostDetailedMip = 0;
+		desc.Texture2D.MipLevels = (UINT)std::max(1, numMip);
+		D3D12_CPU_DESCRIPTOR_HANDLE h = m_renderer->GetStagingViewHeap().Allocate();
+		m_renderer->GetDevice()->CreateShaderResourceView(m_sliceCopy.Get(), &desc, h);
+		return h;
+	}
 	const bool baseIs3D = m_baseTexture->Is3DTexture();
 	if (baseIs3D)
 	{

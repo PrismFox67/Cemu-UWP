@@ -33,6 +33,15 @@ public:
 
 private:
 	D3D12_CPU_DESCRIPTOR_HANDLE CreateSRV(uint32 gpuSamplerSwizzle);
+	void UpdateSliceCopy();
+
+	// D3D12's Texture2D SRVs can't start at an array slice, and binding a Texture2DArray SRV to a Texture2D declaration
+	// is undefined: Intel honors the slice, the Xbox (AMD) reads slice 0 (Mario Kart 8's button icons showed glyphs of
+	// the first font sheet). 2D views of slice N>0 therefore sample a copy of that slice, refreshed when it changes
+	bool m_usesSliceCopy = false;
+	ComPtr<ID3D12Resource> m_sliceCopy;
+	D3D12_RESOURCE_STATES m_sliceCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+	uint64 m_sliceCopyVersion = 0;
 
 	D3D12Renderer* m_renderer;
 	LatteTextureD3D12* m_baseTexture;

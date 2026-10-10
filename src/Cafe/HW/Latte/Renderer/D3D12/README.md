@@ -121,8 +121,10 @@ Ordered by how likely they are to cause problems in games:
    back to the base format (logged). Texture copies between families go through a buffer.
 5. **Vertex attribute alignment.** D3D12 may reject 8/16-bit attributes at unaligned offsets; the robust fix is shader
    side fetching like the Metal backend.
-6. **2D views of array slices.** D3D12 `Texture2D` SRVs can't select a slice; slice views use the array SRV form, which
-   all major drivers accept but is technically a dimension mismatch.
+6. **2D views of array slices.** D3D12 `Texture2D` SRVs can't select a slice. Binding the array SRV form to a `Texture2D`
+   declaration worked on Intel but the Xbox (AMD) read slice 0 (Mario Kart 8's button icons came out as fragments of
+   the first font sheet). Color views of slice N>0 now sample a copy of that slice that is refreshed when the texture
+   changes; depth views still use the array form.
 
 ## Not implemented yet
 

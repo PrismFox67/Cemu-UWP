@@ -42,6 +42,7 @@ class D3D12Renderer : public Renderer, public D3D12SubmissionTracker
 	friend class LatteQueryObjectD3D12;
 	friend class LatteTextureReadbackInfoD3D12;
 	friend class D3D12ImGuiRenderer;
+	friend class LatteTextureViewD3D12;
 
 public:
 	// textures are uploaded through the shared upload ring; anything larger goes to a dedicated buffer
