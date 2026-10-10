@@ -2,12 +2,24 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 
+#include <mutex>
+#include <unordered_set>
+
 LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
 	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
 	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth), m_renderer(renderer)
 {
 	D3D12Format::GetTextureFormatInfo(renderer->GetFormatSupport(), format, isDepth, m_formatInfo);
 	cemu_assert_debug(hasStencil == m_formatInfo.hasStencil || !isDepth);
+	{
+		// which host format each guest format uses differs between GPUs (packed 16 bit formats are optional), log it once
+		static std::mutex s_loggedMutex;
+		static std::unordered_set<uint32> s_loggedFormats;
+		std::lock_guard _l(s_loggedMutex);
+		if (s_loggedFormats.insert((uint32)format | (isDepth ? 0x80000000u : 0)).second)
+			cemuLog_log(LogType::Force, "D3D12: texture format {:04x}{} -> DXGI resource {} view {}{}", (uint32)format, isDepth ? " (depth)" : "",
+				(uint32)m_formatInfo.resourceFormat, (uint32)m_formatInfo.srvFormat, m_formatInfo.isAlternateFormat ? " (converted)" : "");
+	}
 
 	sint32 effectiveBaseWidth = width;
 	sint32 effectiveBaseHeight = height;

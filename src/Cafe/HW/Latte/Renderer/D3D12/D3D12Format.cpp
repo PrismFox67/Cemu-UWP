@@ -20,6 +20,7 @@ void D3D12Format::InitFormatSupport(ID3D12Device* device, D3D12FormatSupport& su
 	D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
 	if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))))
 		support.logicOp = options.OutputMergerLogicOp != FALSE;
+	cemuLog_log(LogType::Force, "D3D12: Format support: B5G6R5 {}, B5G5R5A1 {}, B4G4R4A4 {}, D24S8 {}, logic ops {}", support.b5g6r5, support.b5g5r5a1, support.b4g4r4a4, support.d24s8, support.logicOp);
 }
 
 static void _SetColor(D3D12TextureFormatInfo& info, DXGI_FORMAT typeless, DXGI_FORMAT view, TextureDecoder* decoder, bool renderable = true)
