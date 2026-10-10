@@ -2,9 +2,11 @@
 #include "gui/host/HostPlatform.h"
 #include "gui/host/HostControllers.h"
 #include "gui/host/HostGamepad.h"
+#include "gui/host/HostGraphicPacks.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
+#include "Cafe/GraphicPack/GraphicPack2.h"
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "Common/version.h"
@@ -48,6 +50,7 @@ namespace
 	enum Tab
 	{
 		kTabGames,
+		kTabGraphicPacks,
 		kTabControllers,
 		kTabSettings,
 		kTabAbout,
@@ -217,6 +220,109 @@ namespace
 		ImGui::SameLine();
 		ImGui::TextDisabled("A: start   Y: settings");
 		return launch;
+	}
+
+	// enable state and presets of one pack. Changes are saved right away and apply when the game starts
+	void _DrawGraphicPack(const std::shared_ptr<GraphicPack2>& pack)
+	{
+		bool enabled = pack->IsEnabled();
+		if (ImGui::Checkbox(pack->GetVirtualPath().c_str(), &enabled))
+		{
+			pack->SetEnabled(enabled);
+			HostGraphicPacks::SaveToConfig();
+		}
+		if (ImGui::IsItemHovered() && !pack->GetDescription().empty())
+			ImGui::SetTooltip("%s", pack->GetDescription().c_str());
+		if (!enabled || pack->GetPresets().empty())
+			return;
+
+		ImGui::Indent(40.0f * s_scale);
+		std::vector<std::string> order;
+		auto categories = pack->GetCategorizedPresets(order);
+		for (const std::string& category : order)
+		{
+			const auto& presets = categories[category];
+			if (std::none_of(presets.begin(), presets.end(), [](const GraphicPack2::PresetPtr& p) { return p->visible; }))
+				continue;
+			const std::string active = pack->GetActivePreset(category);
+			ImGui::PushID(category.c_str());
+			ImGui::SetNextItemWidth(520.0f * s_scale);
+			const std::string label = category.empty() ? std::string("Preset") : category;
+			if (ImGui::BeginCombo(label.c_str(), active.c_str()))
+			{
+				for (const auto& preset : presets)
+				{
+					if (!preset->visible)
+						continue;
+					if (ImGui::Selectable(preset->name.c_str(), preset->name == active))
+					{
+						// presets can hide or show other presets, the combos are rebuilt next frame
+						pack->SetActivePreset(category, preset->name);
+						HostGraphicPacks::SaveToConfig();
+					}
+					if (preset->name == active)
+						ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::PopID();
+		}
+		ImGui::Unindent(40.0f * s_scale);
+	}
+
+	void _DrawGraphicPacksTab()
+	{
+		const auto status = HostGraphicPacks::GetStatus();
+		const bool busy = HostGraphicPacks::IsBusy();
+		const std::string installed = HostGraphicPacks::GetInstalledVersion();
+		ImGui::TextWrapped("Community graphic packs: %s", installed.empty() ? "not downloaded" : installed.c_str());
+		ImGui::BeginDisabled(busy);
+		if (ImGui::Button(installed.empty() ? "Download community graphic packs" : "Check for updates"))
+			HostGraphicPacks::StartUpdate();
+		ImGui::EndDisabled();
+		if (status.state != HostGraphicPacks::State::Idle)
+		{
+			ImGui::SameLine();
+			if (status.state == HostGraphicPacks::State::Failed)
+				ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", status.text.c_str());
+			else
+				ImGui::TextUnformatted(status.text.c_str());
+			if (busy && status.progress >= 0.0f)
+				ImGui::ProgressBar(status.progress, ImVec2(-1.0f, 0.0f));
+		}
+
+		if (s_games.empty())
+		{
+			ImGui::TextWrapped("Add a game first, the packs of the game selected under Games are listed here.");
+			return;
+		}
+		const GameEntry& game = s_games[std::clamp(s_selectedGame, 0, (int)s_games.size() - 1)];
+		std::vector<std::shared_ptr<GraphicPack2>> packs;
+		for (const auto& pack : GraphicPack2::GetGraphicPacks())
+		{
+			if (pack->ContainsTitleId(game.titleId))
+				packs.emplace_back(pack);
+		}
+		std::sort(packs.begin(), packs.end(), [](const auto& a, const auto& b) { return boost::algorithm::ilexicographical_compare(a->GetVirtualPath(), b->GetVirtualPath()); });
+
+		ImGui::SeparatorText(fmt::format("{} ({} packs)", game.name, packs.size()).c_str());
+		if (packs.empty())
+		{
+			ImGui::TextWrapped(installed.empty() ? "Download the community graphic packs to get resolution, FPS and mod packs for this game." : "There are no graphic packs for this game.");
+			ImGui::TextWrapped("Own packs go into: %s", _pathToUtf8(ActiveSettings::GetUserDataPath("graphicPacks")).c_str());
+			return;
+		}
+		ImGui::TextDisabled("Applied when the game starts. Resolution packs render the game at a higher resolution (e.g. 3840x2160 for 4K).");
+		if (ImGui::BeginChild("##packs", ImVec2(0.0f, 0.0f), true))
+		{
+			for (size_t i = 0; i < packs.size(); i++)
+			{
+				ImGui::PushID((int)i);
+				_DrawGraphicPack(packs[i]);
+				ImGui::PopID();
+			}
+		}
+		ImGui::EndChild();
 	}
 
 	void _DrawSettingsTab()
@@ -422,6 +528,7 @@ bool HostUI::SetScale(float uiScale)
 
 std::optional<fs::path> HostUI::DrawLauncher()
 {
+	HostGraphicPacks::Update();
 	{
 		std::unique_lock _l(s_mutex);
 		const bool scanning = CafeTitleList::IsScanning();
@@ -458,7 +565,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		if (pairing)
 			s_tab = kTabControllers;
 
-		const char* tabNames[kTabCount] = { "Games", "Controllers", "Settings", "About" };
+		const char* tabNames[kTabCount] = { "Games", "Graphic packs", "Controllers", "Settings", "About" };
 		for (int i = 0; i < kTabCount; i++)
 		{
 			if (i > 0)
@@ -477,6 +584,8 @@ std::optional<fs::path> HostUI::DrawLauncher()
 
 		if (s_tab == kTabGames)
 			launch = _DrawGamesTab();
+		else if (s_tab == kTabGraphicPacks)
+			_DrawGraphicPacksTab();
 		else if (s_tab == kTabControllers)
 			_DrawControllersTab();
 		else if (s_tab == kTabSettings)

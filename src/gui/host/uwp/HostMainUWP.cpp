@@ -30,6 +30,9 @@
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.ViewManagement.Core.h>
+#include <winrt/Windows.Storage.Streams.h>
+#include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Web.Http.Headers.h>
 
 using namespace winrt;
 using namespace winrt::Windows::ApplicationModel;
@@ -368,6 +371,51 @@ void HostPlatform::RequestQuit()
 const char* HostPlatform::GetName()
 {
 	return s_isXbox ? "Xbox (UWP)" : "UWP";
+}
+
+// WinRT's HttpClient instead of curl: it uses the system's certificate store and proxy settings, which curl+OpenSSL
+// can't reach from inside the UWP sandbox
+bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress)
+{
+	using namespace winrt::Windows::Web::Http;
+	using namespace winrt::Windows::Storage::Streams;
+	out.clear();
+	try
+	{
+		HttpClient client;
+		// GitHub's API rejects requests without a user agent, and the version string isn't a valid product token
+		client.DefaultRequestHeaders().UserAgent().TryParseAdd(L"Cemu-UWP/1.0");
+		HttpResponseMessage response = client.GetAsync(Uri(winrt::to_hstring(std::string_view(url))), HttpCompletionOption::ResponseHeadersRead).get();
+		if (!response.IsSuccessStatusCode())
+		{
+			error = fmt::format("HTTP {} {}", (int)response.StatusCode(), winrt::to_string(response.ReasonPhrase()));
+			return false;
+		}
+		uint64 total = 0;
+		if (auto length = response.Content().Headers().ContentLength())
+			total = length.Value();
+		if (total != 0)
+			out.reserve((size_t)total);
+		IInputStream stream = response.Content().ReadAsInputStreamAsync().get();
+		constexpr uint32 kChunkSize = 256 * 1024;
+		Buffer buffer(kChunkSize);
+		while (true)
+		{
+			IBuffer chunk = stream.ReadAsync(buffer, kChunkSize, InputStreamOptions::Partial).get();
+			const uint32 length = chunk.Length();
+			if (length == 0)
+				break;
+			out.insert(out.end(), chunk.data(), chunk.data() + length);
+			if (progress)
+				progress(out.size(), total);
+		}
+		return true;
+	}
+	catch (const winrt::hresult_error& e)
+	{
+		error = fmt::format("{} (0x{:08x})", winrt::to_string(e.message()), (uint32)e.code().value);
+		return false;
+	}
 }
 
 void WindowSystem::Create()

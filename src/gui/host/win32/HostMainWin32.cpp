@@ -6,6 +6,9 @@
 #include "gui/host/HostPlatform.h"
 #include "config/LaunchSettings.h"
 #include "util/helpers/helpers.h"
+#include "Common/version.h"
+
+#include <curl/curl.h>
 
 #include <Windows.h>
 #include <windowsx.h>
@@ -194,6 +197,62 @@ void HostPlatform::RequestQuit()
 const char* HostPlatform::GetName()
 {
 	return "Win32";
+}
+
+namespace
+{
+	struct HttpGetState
+	{
+		std::vector<uint8>* out;
+		const std::function<void(uint64, uint64)>* progress;
+	};
+
+	size_t _HttpGetWrite(char* data, size_t size, size_t count, void* user)
+	{
+		auto* state = (HttpGetState*)user;
+		state->out->insert(state->out->end(), (uint8*)data, (uint8*)data + size * count);
+		return size * count;
+	}
+
+	int _HttpGetProgress(void* user, curl_off_t total, curl_off_t received, curl_off_t, curl_off_t)
+	{
+		auto* state = (HttpGetState*)user;
+		if (*state->progress)
+			(*state->progress)((uint64)received, (uint64)total);
+		return 0;
+	}
+}
+
+bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress)
+{
+	out.clear();
+	CURL* curl = curl_easy_init();
+	if (!curl)
+	{
+		error = "curl_easy_init failed";
+		return false;
+	}
+	HttpGetState state{ &out, &progress };
+	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _HttpGetWrite);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &state);
+	curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, _HttpGetProgress);
+	curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &state);
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, BUILD_VERSION_WITH_NAME_STRING);
+	const CURLcode res = curl_easy_perform(curl);
+	curl_easy_cleanup(curl);
+	if (res != CURLE_OK)
+	{
+		error = curl_easy_strerror(res);
+		return false;
+	}
+	return true;
 }
 
 void WindowSystem::Create()

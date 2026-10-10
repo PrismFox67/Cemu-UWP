@@ -125,7 +125,12 @@ Settings → Game folders.
 2. Encrypted `.wud/.wux` dumps need `keys.txt` in the app's `LocalState`. Upload it with Device Portal's **File
    explorer** (`LocalAppData\CemuUWP.Unofficial_<id>\LocalState`). The same folder holds `log.txt`; download it
    after a crash.
-3. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
+3. Graphic packs (higher resolution, e.g. 4K): **Graphic packs** tab → **Download community graphic packs**
+   (downloads the latest release of github.com/cemu-project/cemu_graphic_packs into `LocalState/graphicPacks`). The
+   tab lists the packs of the game selected under **Games**; tick one and pick its presets, for example Mario Kart 8's
+   `Graphics` pack with resolution `3840x2160`. Changes apply at the next game start. Own packs can be uploaded to
+   `LocalState/graphicPacks` with Device Portal.
+4. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
    doesn't send the app to the background). Use the in-game menu → **Save and exit Cemu** to stop; this closes the
    app.
 
@@ -158,8 +163,11 @@ Settings → Game folders.
     compiles every shader again (Mario Kart 8 in the UWP build: about 12 minutes with it missing, 25 seconds with it)
 
   Don't copy `driver/`, it only works with the GPU driver that created it. Tested with the UWP build on Windows.
-- The UWP/Xbox frontend has no graphic pack, button remapping, online or account UI yet. Settings files from the
-  normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be copied into the user folder.
+- The UWP/Xbox frontend has no button remapping, online or account UI yet, and graphic packs can't be changed while
+  a game runs. Settings files from the normal Cemu (`settings.xml`, `controllerProfiles`, `graphicPacks`) can be
+  copied into the user folder.
+- Mario Kart 8 on the Xbox Series X: button icons inside text (the A in "Press A to start", the controller icons in
+  the player list) show parts of other icons. They render correctly on the PC.
 - No Vulkan/OpenGL, cubeb, SDL controllers, Wiimotes or DirectInput in the UWP build; audio uses XAudio2 and
   controllers use XInput.
 - The PowerPC recompiler needs memory that is executable. The UWP build first asks for read/write/execute memory

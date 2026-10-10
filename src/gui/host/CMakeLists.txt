@@ -8,6 +8,8 @@ add_library(CemuHostFrontend
 	HostControllers.h
 	HostGamepad.cpp
 	HostGamepad.h
+	HostGraphicPacks.cpp
+	HostGraphicPacks.h
 	HostPlatform.h
 	HostUI.cpp
 	HostUI.h
@@ -39,6 +41,7 @@ cemu_use_precompiled_header(CemuHostFrontend)
 target_include_directories(CemuHostFrontend PRIVATE
 	"${CMAKE_SOURCE_DIR}/src/gui"
 	"${CMAKE_SOURCE_DIR}/dependencies/imgui"
+	${RAPIDJSON_INCLUDE_DIRS}
 )
 
 target_link_libraries(CemuHostFrontend PRIVATE
@@ -50,6 +53,8 @@ target_link_libraries(CemuHostFrontend PRIVATE
 	CemuUtil
 	CemuResource
 	imguiImpl
+	libzip::zip
+	CURL::libcurl
 	d3d12
 	dxgi
 	d3dcompiler
