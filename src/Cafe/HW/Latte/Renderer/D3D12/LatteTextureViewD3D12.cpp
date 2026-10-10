@@ -2,6 +2,9 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 
+#include <mutex>
+#include <unordered_set>
+
 // identical to LatteTextureVk_AdjustTextureCompSel. GPU7 formats whose channel order differs from the host format
 static uint32 _AdjustTextureCompSel(Latte::E_GX2SURFFMT format, uint32 compSel)
 {
@@ -80,6 +83,19 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 		}
 	}
 	m_usesSliceCopy = (dim == Latte::E_DIM::DIM_2D || dim == Latte::E_DIM::DIM_2D_MSAA) && firstSlice > 0 && !texture->Is3DTexture() && !texture->isDepth;
+
+	// diagnostics for views that select array slices (MK8's button icons are still wrong on the Xbox): log each distinct
+	// layout once
+	if (firstSlice > 0 || sliceCount > 1 || texture->GetDesc().DepthOrArraySize > 1)
+	{
+		static std::mutex s_logMutex;
+		static std::unordered_set<uint64> s_logged;
+		const uint64 key = ((uint64)dim << 56) ^ ((uint64)format << 40) ^ ((uint64)std::min(firstSlice, 255) << 32) ^ ((uint64)std::min(sliceCount, 255) << 24) ^ ((uint64)texture->GetDesc().DepthOrArraySize << 8) ^ (uint64)texture->tileMode;
+		std::lock_guard lock(s_logMutex);
+		if (s_logged.size() < 64 && s_logged.insert(key).second)
+			cemuLog_log(LogType::Force, "D3D12: view dim {} fmt {:04x} slices {}+{} mips {}+{} of {}x{}x{} (dim {} tm {}){}", (uint32)dim, (uint32)format, firstSlice, sliceCount, firstMip, mipCount,
+				texture->width, texture->height, texture->depth, (uint32)texture->dim, (uint32)texture->tileMode, m_usesSliceCopy ? " slice copy" : "");
+	}
 }
 
 void LatteTextureViewD3D12::UpdateSliceCopy()
