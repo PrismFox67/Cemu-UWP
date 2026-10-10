@@ -66,15 +66,37 @@ public:
 		return cache;
 	}
 
+	// Without pipeline library support (Xbox) the pipelines are kept for the session only. That still lets the loading
+	// screen precompile everything the title used before, so gameplay doesn't wait for the driver
+	static std::shared_ptr<D3D12PipelineDiskCache> CreateInMemory()
+	{
+		auto cache = std::make_shared<D3D12PipelineDiskCache>();
+		cemuLog_log(LogType::Force, "D3D12: Pipelines are kept in memory for this session (no pipeline library)");
+		return cache;
+	}
+
 	bool Load(const std::wstring& name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc, ComPtr<ID3D12PipelineState>& pso)
 	{
 		std::lock_guard lock(m_mutex);
+		if (!m_library)
+		{
+			auto it = m_inMemory.find(name);
+			if (it == m_inMemory.end())
+				return false;
+			pso = it->second; // pipeline state objects are immutable and can be shared
+			return true;
+		}
 		return SUCCEEDED(m_library->LoadGraphicsPipeline(name.c_str(), &desc, IID_PPV_ARGS(&pso)));
 	}
 
 	void Store(const std::wstring& name, ID3D12PipelineState* pso)
 	{
 		std::lock_guard lock(m_mutex);
+		if (!m_library)
+		{
+			m_inMemory.emplace(name, pso);
+			return;
+		}
 		if (SUCCEEDED(m_library->StorePipeline(name.c_str(), pso)))
 			m_dirty = true;
 	}
@@ -95,7 +117,7 @@ public:
 		std::vector<uint8> data;
 		{
 			std::lock_guard lock(m_mutex);
-			if (!m_dirty)
+			if (!m_dirty || !m_library)
 				return;
 			data.resize(m_library->GetSerializedSize());
 			if (data.empty() || FAILED(m_library->Serialize(data.data(), data.size())))
@@ -122,7 +144,8 @@ private:
 	std::mutex m_fileMutex;
 	fs::path m_path;
 	std::vector<uint8> m_blob; // declared before m_library, which references it
-	ComPtr<ID3D12PipelineLibrary> m_library;
+	ComPtr<ID3D12PipelineLibrary> m_library; // null in memory only mode
+	std::unordered_map<std::wstring, ComPtr<ID3D12PipelineState>> m_inMemory;
 	bool m_dirty = false;
 	std::chrono::steady_clock::time_point m_lastSave;
 };
@@ -633,9 +656,10 @@ void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
 	if (m_diskCacheOpened)
 		return;
 	m_diskCacheOpened = true;
-	if (!m_renderer->IsPipelineLibrarySupported())
-		return; // see D3D12Renderer::CreateDevice. Pipelines are then only created on demand
-	m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
+	if (m_renderer->IsPipelineLibrarySupported())
+		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
+	if (!m_diskCache) // see D3D12Renderer::CreateDevice
+		m_diskCache = D3D12PipelineDiskCache::CreateInMemory();
 	if (m_diskCache) // recreating pipelines at launch only helps if they can be cached
 		m_recordFile = std::make_unique<D3D12PipelineRecordFile>(ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12pipelines.bin", titleId));
 }
