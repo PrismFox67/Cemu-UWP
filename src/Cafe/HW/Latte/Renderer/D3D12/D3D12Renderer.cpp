@@ -137,10 +137,27 @@ void D3D12Renderer::CreateDevice()
 	m_dredEnabled = D3D12_EnableDeviceRemovedDiagnostics();
 	cemuLog_log(LogType::Force, "D3D12: Device removed diagnostics (DRED) {}", m_dredEnabled ? "enabled" : "not available");
 
+	// CEMU_D3D12_WARP=1 uses WARP, Microsoft's software reference implementation. Drivers differ in how lenient they are
+	// (Intel rendered Mario Kart 8's button icons correctly, the Xbox didn't), WARP shows how the API is specified
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	{
+		char* envWarp = nullptr;
+		size_t envWarpLen = 0;
+		if (_dupenv_s(&envWarp, &envWarpLen, "CEMU_D3D12_WARP") == 0 && envWarp)
+		{
+			const bool useWarp = envWarp[0] == '1';
+			free(envWarp);
+			ComPtr<IDXGIAdapter> warp;
+			if (useWarp && SUCCEEDED(m_dxgiFactory->EnumWarpAdapter(IID_PPV_ARGS(&warp))) && SUCCEEDED(D3D12CreateDevice(warp.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device))))
+				m_selectedDeviceName = "WARP (software)";
+		}
+	}
+#endif
+
 	// pick the adapter. 0 means "default"
 	const uint64 requestedLuid = GetConfig().d3d12_adapter_luid;
 	ComPtr<IDXGIAdapter1> adapter;
-	for (UINT i = 0; m_dxgiFactory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++)
+	for (UINT i = 0; !m_device && m_dxgiFactory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++)
 	{
 		DXGI_ADAPTER_DESC1 desc;
 		adapter->GetDesc1(&desc);
