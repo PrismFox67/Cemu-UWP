@@ -90,9 +90,10 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 	{
 		static std::mutex s_logMutex;
 		static std::unordered_set<uint64> s_logged;
-		const uint64 key = ((uint64)dim << 56) ^ ((uint64)format << 40) ^ ((uint64)std::min(firstSlice, 255) << 32) ^ ((uint64)std::min(sliceCount, 255) << 24) ^ ((uint64)texture->GetDesc().DepthOrArraySize << 8) ^ (uint64)texture->tileMode;
+		// one line per view type of a texture shape (games create a view per slice and grow arrays one slice at a time)
+		const uint64 key = ((uint64)dim << 60) ^ ((uint64)format << 44) ^ ((uint64)texture->width << 30) ^ ((uint64)texture->height << 16) ^ ((uint64)texture->tileMode << 8) ^ (m_usesSliceCopy ? 1 : 0);
 		std::lock_guard lock(s_logMutex);
-		if (s_logged.size() < 64 && s_logged.insert(key).second)
+		if (s_logged.size() < 128 && s_logged.insert(key).second)
 			cemuLog_log(LogType::Force, "D3D12: view dim {} fmt {:04x} slices {}+{} mips {}+{} of {}x{}x{} (dim {} tm {}){}", (uint32)dim, (uint32)format, firstSlice, sliceCount, firstMip, mipCount,
 				texture->width, texture->height, texture->depth, (uint32)texture->dim, (uint32)texture->tileMode, m_usesSliceCopy ? " slice copy" : "");
 	}
