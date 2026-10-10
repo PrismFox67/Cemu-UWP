@@ -1039,7 +1039,13 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 		else if (logicOp == Latte::LATTE_CB_COLOR_CONTROL::E_LOGICOP::CLEAR)
 			clearViaBlend = true; // src*0 + dst*0
 		else
-			cemuLog_logDebugOnce(LogType::Force, "D3D12: Logic op {} is not supported for the bound render targets", (uint32)logicOp);
+		{
+			// logged in release builds too: GPUs without logic op support (Xbox) render these draws differently
+			static std::atomic<uint32> s_loggedOps{ 0 };
+			const uint32 bit = 1u << ((uint32)logicOp & 31);
+			if ((s_loggedOps.fetch_or(bit) & bit) == 0)
+				cemuLog_log(LogType::Force, "D3D12: Logic op {} is not supported for the bound render targets (GPU logic op support: {}), the draw ignores it", (uint32)logicOp, support.logicOp);
+		}
 	}
 
 	desc.BlendState.AlphaToCoverageEnable = FALSE;
