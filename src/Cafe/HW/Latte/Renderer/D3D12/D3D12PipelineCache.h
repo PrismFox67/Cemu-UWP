@@ -87,4 +87,7 @@ private:
 		std::chrono::steady_clock::time_point start;
 	} m_preload;
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
+	// how long draws waited for async pipelines in the current window (see GetOrCreate)
+	std::chrono::steady_clock::time_point m_waitWindowStart{};
+	std::chrono::milliseconds m_waitedInWindow{ 0 };
 };

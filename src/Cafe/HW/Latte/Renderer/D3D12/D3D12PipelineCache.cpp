@@ -851,9 +851,20 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	{
 		// Skipping draws is only a last resort: games render some things only once, and a skipped draw can leave them
 		// black for good (Mario Kart 8's race scene stayed black when draws were skipped right away). Wait like a synchronous compile would, but give up on the driver
-		// after a while so a pathological compile (minutes on Intel) can't freeze the game
+		// after a while so a pathological compile (minutes on Intel) can't freeze the game.
+		// The waits share a budget of 2 s per 4 s: the Xbox's driver takes ~2.5 s per pipeline, and with many new ones
+		// (a graphic pack, a game update) each draw waiting 2 s froze the game for minutes
 		m_compileQueue->Push(std::move(job));
-		if (!m_compileQueue->WaitForReady(result, std::chrono::milliseconds(2000)))
+		const auto now = std::chrono::steady_clock::now();
+		if (now - m_waitWindowStart >= std::chrono::seconds(4))
+		{
+			m_waitWindowStart = now;
+			m_waitedInWindow = std::chrono::milliseconds(0);
+		}
+		const auto timeout = std::max(std::chrono::milliseconds(0), std::chrono::milliseconds(2000) - m_waitedInWindow);
+		const bool ready = m_compileQueue->WaitForReady(result, timeout);
+		m_waitedInWindow += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+		if (!ready)
 			g_compiling_pipelines_async++;
 	}
 	else

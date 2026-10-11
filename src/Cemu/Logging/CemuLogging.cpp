@@ -161,6 +161,17 @@ void cemuLog_createLogFile(bool triggeredByCrash)
 		return;
 
 	const auto path = cemuLog_GetLogFilePath();
+#if BOOST_OS_WINDOWS
+	// keep the previous run's log: after a crash the user usually starts the app again before sending the log
+	if (!triggeredByCrash)
+	{
+		std::error_code ec;
+		fs::path previous = path;
+		previous.replace_filename("log_previous.txt");
+		fs::remove(previous, ec);
+		fs::rename(path, previous, ec);
+	}
+#endif
 	LogContext.file_stream.open(path, std::ios::out);
 	if (LogContext.file_stream.fail())
 	{
