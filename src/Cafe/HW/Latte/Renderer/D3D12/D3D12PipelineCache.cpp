@@ -750,9 +750,14 @@ private:
 		std::unique_lock lock(m_mutex);
 		while (true)
 		{
-			m_jobAvailable.wait(lock, [this]() { return m_stop || !m_jobs.empty(); });
+			// near the memory limit fewer pipelines are created at once: the Xbox driver needs a lot of memory per pipeline, and
+			// six at a time while loading a never played MK8 course at 4K went over the 5 GB budget. The pressure level isn't
+			// signalled, so waiting threads check again every 50 ms
+			m_jobAvailable.wait_for(lock, std::chrono::milliseconds(50), [this]() { return m_stop || (!m_jobs.empty() && _MayStartJob()); });
 			if (m_stop)
 				return;
+			if (m_jobs.empty() || !_MayStartJob())
+				continue;
 			std::unique_ptr<D3D12PipelineCompileJob> job = std::move(m_jobs.front());
 			m_jobs.pop_front();
 			m_busyThreads++;
@@ -763,6 +768,13 @@ private:
 			m_busyThreads--;
 			m_jobFinished.notify_all();
 		}
+	}
+
+	bool _MayStartJob() const
+	{
+		const int pressure = LatteTC_GetMemoryPressure();
+		const uint32 maxBusy = pressure >= 2 ? 1 : (pressure == 1 ? 2 : 0xFFFFFFFF);
+		return m_busyThreads < maxBusy;
 	}
 
 	std::mutex m_mutex;

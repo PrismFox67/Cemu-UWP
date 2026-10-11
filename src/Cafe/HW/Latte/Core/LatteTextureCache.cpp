@@ -403,6 +403,11 @@ void LatteTC_SetMemoryPressure(int level)
 	s_textureMemoryPressure = level;
 }
 
+int LatteTC_GetMemoryPressure()
+{
+	return s_textureMemoryPressure;
+}
+
 // under memory pressure: deletes textures not used in the last frames that can be recreated (from RAM or because the
 // GPU overwrote them), least recently used first
 static void LatteTC_ReleaseForMemoryPressure()
