@@ -553,9 +553,6 @@ void LatteShaderCache_Load()
 
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines)
 {
-	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
-	const auto textColor = 0xFF888888;
-
 	auto lastFrameUpdate = tick_cached();
 
 	while (true)
@@ -575,97 +572,61 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		WindowSystem::GetWindowPhysSize(w, h);
 		const Vector2f window_size{ (float)w,(float)h };
 
-		ImGui_GetFont(window_size.y / 32.0f); // = 24 by default
-		ImGui_GetFont(window_size.y / 48.0f); // = 16
+		ImGui_GetFont(window_size.y / 48.0f); // = 15 at 720p, created before the frame
 
 		g_renderer->BeginFrame(true);
 		if (g_renderer->ImguiBegin(true))
 		{
-			auto& io = ImGui::GetIO();
-
 			// render background texture
 			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
 
-			const auto progress_font = ImGui_GetFont(window_size.y / 32.0f); // = 24 by default
-			const auto shader_count_font = ImGui_GetFont(window_size.y / 48.0f); // = 16
+			// a slim bar along the bottom edge in Mario Kart 8's blue, the caption under it in a small font
+			const float uiScale = window_size.y / 720.0f;
+			const auto caption_font = ImGui_GetFont(window_size.y / 48.0f); // = 15 at 720p
+			const uint32 done = isPipelines ? g_shaderCacheLoaderState.loadedPipelines : g_shaderCacheLoaderState.loadedShaderFiles;
+			const uint32 total = isPipelines ? g_shaderCacheLoaderState.pipelineFileCount : g_shaderCacheLoaderState.shaderFileCount;
+			const float fraction = total ? std::clamp((float)done / (float)total, 0.0f, 1.0f) : 0.0f;
 
-			ImVec2 position = { window_size.x / 2.0f, window_size.y / 2.0f };
-			ImVec2 pivot = { 0.5f, 0.5f };
-			ImVec2 progress_size = { io.DisplaySize.x * 0.5f, 0 };
-			ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
-			ImGui::SetNextWindowSize(progress_size, ImGuiCond_Always);
-			ImGui::SetNextWindowBgAlpha(0.8f);
-			ImGui::PushStyleColor(ImGuiCol_PlotHistogram, textColor);
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
-			ImGui::PushFont(progress_font);
+			const char* label;
+			if (isPipelines)
+				label = "Loading pipelines";
+			else if (shaderCacheScreenStats.compiledShaderCount >= 3)
+				label = "Compiling shaders";
+			else
+				label = "Loading shaders";
+			const std::string caption = fmt::format("{} ({} / {})", label, done, total);
+			const std::string percent = fmt::format("{}%", (int)(fraction * 100.0f));
 
-			std::string titleText = "Shader progress";
-
-			if (ImGui::Begin(titleText.c_str(), nullptr, kPopupFlags))
+			ImDrawList* draw = ImGui::GetForegroundDrawList();
+			const float captionSize = caption_font ? caption_font->FontSize : ImGui::GetFontSize();
+			const float margin = 24.0f * uiScale;
+			const float barHeight = std::max(6.0f, 9.0f * uiScale);
+			const float barLeft = margin;
+			const float barRight = window_size.x - margin;
+			const float captionTop = window_size.y - margin * 0.5f - captionSize;
+			const float barBottom = captionTop - 6.0f * uiScale;
+			const float barTop = barBottom - barHeight;
+			const float rounding = barHeight * 0.5f;
+			// track: dark navy, thin light border
+			draw->AddRectFilled({ barLeft, barTop }, { barRight, barBottom }, IM_COL32(8, 22, 54, 200), rounding);
+			// fill: deep blue to sky blue with a glossy top half, like Mario Kart 8's menus
+			const float fillRight = barLeft + (barRight - barLeft) * fraction;
+			if (fillRight - barLeft >= 1.0f)
 			{
-				const float width = ImGui::GetWindowSize().x / 2.0f;
-
-				std::string text;
-				if (isPipelines)
-				{
-					text = "Loading cached pipelines...";
-				}
-				else
-				{
-					if (shaderCacheScreenStats.compiledShaderCount >= 3)
-						text = "Compiling cached shaders...";
-					else
-						text = "Loading cached shaders...";
-				}
-
-				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
-				ImGui::Text("%s", text.c_str());
-
-				float percentLoaded;
-				if(isPipelines)
-					percentLoaded = (float)g_shaderCacheLoaderState.loadedPipelines / (float)g_shaderCacheLoaderState.pipelineFileCount;
-				else
-					percentLoaded = (float)g_shaderCacheLoaderState.loadedShaderFiles / (float)g_shaderCacheLoaderState.shaderFileCount;
-				ImGui::ProgressBar(percentLoaded, { -1, 0 }, "");
-
-				if (isPipelines)
-					text = fmt::format("{}/{} ({}%)", g_shaderCacheLoaderState.loadedPipelines, g_shaderCacheLoaderState.pipelineFileCount, (int)(percentLoaded * 100));
-				else
-					text = fmt::format("{}/{} ({}%)", g_shaderCacheLoaderState.loadedShaderFiles, g_shaderCacheLoaderState.shaderFileCount, (int)(percentLoaded * 100));
-				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
-				ImGui::Text("%s", text.c_str());
+				draw->PushClipRect({ barLeft, barTop }, { fillRight, barBottom }, true);
+				draw->AddRectFilledMultiColor({ barLeft, barTop }, { barRight, barBottom }, IM_COL32(0, 92, 230, 255), IM_COL32(40, 200, 255, 255), IM_COL32(40, 200, 255, 255), IM_COL32(0, 92, 230, 255));
+				draw->AddRectFilled({ barLeft, barTop }, { barRight, barTop + barHeight * 0.45f }, IM_COL32(255, 255, 255, 60));
+				draw->PopClipRect();
 			}
-			ImGui::End();
-			ImGui::PopFont();
-			ImGui::PopStyleColor(2);
-
-			if (!isPipelines)
-			{
-				position = { 10, window_size.y - 10 };
-				pivot = { 0, 1 };
-				ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
-				ImGui::SetNextWindowBgAlpha(0.8f);
-				ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
-				ImGui::PushFont(shader_count_font);
-				if (ImGui::Begin("Shader count", nullptr, kPopupFlags))
-				{
-					const float offset = shader_count_font->FallbackAdvanceX * 25.f;
-					ImGui::Text("Vertex shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.vertexShaderCount);
-
-					ImGui::Text("Pixel shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.pixelShaderCount);
-
-					ImGui::Text("Geometry shaders");
-					ImGui::SameLine(offset);
-					ImGui::Text("%d", shaderCacheScreenStats.geometryShaderCount);
-				}
-				ImGui::End();
-				ImGui::PopStyleColor();
-				ImGui::PopFont();
-			}
+			draw->AddRect({ barLeft, barTop }, { barRight, barBottom }, IM_COL32(200, 230, 255, 140), rounding, 0, std::max(1.0f, uiScale));
+			// caption left, percentage right, with a shadow so it reads on the bright splash screen
+			auto shadowedText = [&](float x, const std::string& text) {
+				draw->AddText(caption_font, captionSize, { x + uiScale, captionTop + uiScale }, IM_COL32(0, 20, 60, 200), text.c_str());
+				draw->AddText(caption_font, captionSize, { x, captionTop }, IM_COL32(255, 255, 255, 235), text.c_str());
+			};
+			shadowedText(barLeft, caption);
+			const float percentWidth = caption_font ? caption_font->CalcTextSizeA(captionSize, FLT_MAX, 0.0f, percent.c_str()).x : ImGui::CalcTextSize(percent.c_str()).x;
+			shadowedText(barRight - percentWidth, percent);
 			g_renderer->ImguiEnd();
 			lastFrameUpdate = tick_cached();
 		}
