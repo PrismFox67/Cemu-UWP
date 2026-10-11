@@ -832,6 +832,73 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	D3D12_Checkpoint(m_device.Get(), "present");
 }
 
+// debugging aid: waits for the GPU and writes an RGBA8 texture as a 32 bit BMP
+void D3D12Renderer::DumpTextureBMP(ID3D12Resource* texture, D3D12_RESOURCE_STATES& state, const std::string& path)
+{
+	const D3D12_RESOURCE_DESC desc = texture->GetDesc();
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+	UINT numRows;
+	UINT64 rowSize, totalBytes;
+	m_device->GetCopyableFootprints(&desc, 0, 1, 0, &layout, &numRows, &rowSize, &totalBytes);
+	D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_READBACK);
+	D3D12_RESOURCE_DESC bufferDesc{};
+	bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	bufferDesc.Width = totalBytes;
+	bufferDesc.Height = 1;
+	bufferDesc.DepthOrArraySize = 1;
+	bufferDesc.MipLevels = 1;
+	bufferDesc.SampleDesc.Count = 1;
+	bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	ComPtr<ID3D12Resource> buffer;
+	if (FAILED(m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer))))
+		return;
+	TransitionResource(texture, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	FlushBarriers();
+	D3D12_TEXTURE_COPY_LOCATION dst{ buffer.Get(), D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT };
+	dst.PlacedFootprint = layout;
+	D3D12_TEXTURE_COPY_LOCATION src{ texture, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX };
+	src.SubresourceIndex = 0;
+	m_cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	SubmitCommandList(true);
+	const uint8* data = nullptr;
+	if (FAILED(buffer->Map(0, nullptr, (void**)&data)))
+		return;
+	const uint32 width = (uint32)desc.Width, height = desc.Height;
+	std::vector<uint8> file(54 + (size_t)width * height * 4);
+	auto put32 = [&](size_t offset, uint32 v) { memcpy(file.data() + offset, &v, 4); };
+	file[0] = 'B';
+	file[1] = 'M';
+	put32(2, (uint32)file.size());
+	put32(10, 54);
+	put32(14, 40);
+	put32(18, width);
+	put32(22, (uint32)-(sint32)height); // top-down
+	file[26] = 1;
+	file[28] = 32;
+	for (uint32 y = 0; y < height; y++)
+	{
+		const uint8* row = data + layout.Offset + (size_t)y * layout.Footprint.RowPitch;
+		uint8* out = file.data() + 54 + (size_t)y * width * 4;
+		for (uint32 x = 0; x < width; x++)
+		{
+			out[x * 4 + 0] = row[x * 4 + 2];
+			out[x * 4 + 1] = row[x * 4 + 1];
+			out[x * 4 + 2] = row[x * 4 + 0];
+			out[x * 4 + 3] = 255;
+		}
+	}
+	buffer->Unmap(0, nullptr);
+	std::error_code ec;
+	fs::create_directories(fs::path(path).parent_path(), ec);
+	FileStream* stream = FileStream::createFile2(_utf8ToPath(path));
+	if (stream)
+	{
+		stream->writeData(file.data(), (sint32)file.size());
+		delete stream;
+	}
+	cemuLog_log(LogType::Force, "D3D12: wrote {}", path);
+}
+
 // Frame interpolation: presents the frame halfway between the previous game frame and this one, then this one, each for
 // one refresh. At 120 Hz the game keeps its 60 FPS while the screen shows 120. Returns false if interpolation isn't
 // available, the caller then presents normally
@@ -859,7 +926,18 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 	m_cmdList->CopyResource(fi.GetCurrentFrame(), backbuffer);
 	if (fi.HasPreviousFrame())
 	{
+		// CEMU_INTERPOLATION_DUMP=1 writes every 120th frame pair to interpolation_dump\ (for tuning the interpolation offline)
+		static const bool s_dump = getenv("CEMU_INTERPOLATION_DUMP") != nullptr;
+		static uint32 s_dumpCounter = 0;
+		if (s_dump && (s_dumpCounter++ % 120) == 60)
+		{
+			const uint32 index = s_dumpCounter / 120;
+			DumpTextureBMP(fi.GetPreviousFrame(), fi.GetPreviousFrameState(), fmt::format("interpolation_dump/{:03}_a.bmp", index));
+			DumpTextureBMP(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), fmt::format("interpolation_dump/{:03}_b.bmp", index));
+		}
 		fi.Interpolate(m_cmdList.Get(), transition, flushBarriers);
+		if (s_dump && (s_dumpCounter % 120) == 61)
+			DumpTextureBMP(fi.GetOutput(), fi.GetOutputState(), fmt::format("interpolation_dump/{:03}_mid.bmp", s_dumpCounter / 120));
 		TransitionResource(fi.GetOutput(), fi.GetOutputState(), D3D12_RESOURCE_STATE_COPY_SOURCE);
 		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_DEST);
 		FlushBarriers();

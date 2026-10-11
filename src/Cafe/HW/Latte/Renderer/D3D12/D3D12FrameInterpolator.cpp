@@ -72,26 +72,58 @@ void MotionCS(uint3 id : SV_DispatchThreadID)
 	MotionOut[id.xy] = bestMv;
 }
 
+// how well the previous frame half a vector ahead matches the current frame half a vector back, around this pixel
+float CandidateCost(float2 uv, float2 texel, float2 mv)
+{
+	const float2 halfMv = mv * 0.5 * texel;
+	const float2 offsets[5] = { float2(0, 0), float2(-2, 0), float2(2, 0), float2(0, -2), float2(0, 2) };
+	float cost = 0;
+	[unroll] for (int i = 0; i < 5; i++)
+	{
+		const float2 p = uv + offsets[i] * texel;
+		const float3 a = Prev.SampleLevel(LinearClamp, p + halfMv, 0).rgb;
+		const float3 b = Cur.SampleLevel(LinearClamp, p - halfMv, 0).rgb;
+		const float3 d = abs(a - b);
+		cost += d.r + d.g + d.b;
+	}
+	return cost;
+}
+
 [numthreads(8, 8, 1)]
 void InterpolateCS(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= size.x || id.y >= size.y)
 		return;
+	const float2 texel = 1.0 / float2(size);
+	const float2 uv = (float2(id.xy) + 0.5) * texel;
+	// candidates: the smooth (bilinear) field, the vectors of this block and its eight neighbors, and no motion. Each pixel
+	// takes the one under which both frames agree, so objects keep their own motion up to their edges instead of being
+	// cut into blocks
 	const float2 bp = (float2(id.xy) + 0.5) / float(blockSize) - 0.5;
 	const int2 b0 = clamp(int2(floor(bp)), int2(0, 0), int2(blocks) - 1);
 	const int2 b1 = clamp(b0 + 1, int2(0, 0), int2(blocks) - 1);
 	const float2 f = saturate(bp - floor(bp));
 	const float2 m00 = float2(MotionIn.Load(int3(b0, 0))), m10 = float2(MotionIn.Load(int3(b1.x, b0.y, 0)));
 	const float2 m01 = float2(MotionIn.Load(int3(b0.x, b1.y, 0))), m11 = float2(MotionIn.Load(int3(b1, 0)));
-	const float2 mv = lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
-	const float2 uv = (float2(id.xy) + 0.5) / float2(size);
-	const float2 halfMv = mv * 0.5 / float2(size);
+	float2 bestMv = lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
+	float best = CandidateCost(uv, texel, bestMv) * 0.9; // slight preference for the smooth field
+	const float zeroCost = CandidateCost(uv, texel, float2(0, 0)) * 0.95;
+	if (zeroCost < best) { best = zeroCost; bestMv = float2(0, 0); }
+	const int2 home = clamp(int2(id.xy) / int(blockSize), int2(0, 0), int2(blocks) - 1);
+	[loop] for (int i = 0; i < 9; i++)
+	{
+		const int2 b = clamp(home + int2(i % 3 - 1, i / 3 - 1), int2(0, 0), int2(blocks) - 1);
+		const float2 mv = float2(MotionIn.Load(int3(b, 0)));
+		const float cost = CandidateCost(uv, texel, mv);
+		if (cost < best) { best = cost; bestMv = mv; }
+	}
 	// current pixel x came from previous x + mv: halfway, the content at q was at q + mv/2 before and is at q - mv/2 now
+	const float2 halfMv = bestMv * 0.5 * texel;
 	const float4 a = Prev.SampleLevel(LinearClamp, uv + halfMv, 0);
 	const float4 b = Cur.SampleLevel(LinearClamp, uv - halfMv, 0);
-	const float disagreement = abs(Luma(a.rgb) - Luma(b.rgb));
+	// nothing fits (occlusion, effects, a scene cut): show the current frame there, which judders but doesn't ghost
 	const float4 current = Cur.Load(int3(id.xy, 0));
-	Output[id.xy] = lerp(0.5 * (a + b), current, saturate((disagreement - 0.06) * 10.0));
+	Output[id.xy] = lerp(0.5 * (a + b), current, saturate((best / 15.0 - 0.06) * 10.0));
 }
 )";
 

@@ -229,6 +229,7 @@ private:
 	bool AcquireBackbuffer(bool mainWindow);
 	void PresentSwapChain(bool mainWindow);
 	bool PresentInterpolated(D3D12SwapChain* swapChain);
+	void DumpTextureBMP(ID3D12Resource* texture, D3D12_RESOURCE_STATES& state, const std::string& path);
 
 	// draw path (D3D12RendererCore.cpp)
 	void draw_handleSpecialState5();
