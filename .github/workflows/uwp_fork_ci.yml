@@ -278,6 +278,14 @@ jobs:
         Export-PfxCertificate -Cert $cert -FilePath "$env:GITHUB_WORKSPACE\CemuUWP_TemporaryKey.pfx" -Password $pw | Out-Null
         Export-Certificate -Cert $cert -FilePath "$env:GITHUB_WORKSPACE\CemuUWP.cer" | Out-Null
 
+    - name: "Package version"
+      shell: bash
+      run: |
+        # every build gets a higher version, so the Xbox Device Portal can install it as an update over the previous one.
+        # An uninstall and reinstall would reset the app's data and its Dev Home "App type" (Game) setting
+        sed -i 's/Version="0\.1\.0\.0"/Version="0.1.${{ github.run_number }}.0"/' src/gui/host/uwp/Package.appxmanifest
+        grep -n 'Version="0\.1\.' src/gui/host/uwp/Package.appxmanifest
+
     - name: "cmake"
       shell: bash
       run: |
