@@ -1082,6 +1082,24 @@ uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, co
 	return h;
 }
 
+// render targets that are probably drawn once (see GetOrCreate): cube maps, texture arrays, and anything up to 256x256
+static bool IsLikelyOneOffTarget(CachedFBOD3D12* fbo)
+{
+	if (!fbo)
+		return false;
+	if ((sint64)fbo->m_size.x * fbo->m_size.y <= 256 * 256)
+		return true;
+	for (auto& color : fbo->colorBuffer)
+	{
+		if (!color.texture)
+			continue;
+		const Latte::E_DIM dim = color.texture->baseTexture->dim;
+		if (dim == Latte::E_DIM::DIM_CUBEMAP || dim == Latte::E_DIM::DIM_2D_ARRAY || dim == Latte::E_DIM::DIM_3D)
+			return true;
+	}
+	return false;
+}
+
 D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
 	CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType)
 {
@@ -1128,11 +1146,14 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 			m_waitWindowStart = now;
 			m_waitedInWindow = std::chrono::milliseconds(0);
 		}
-		// Settings → "Shader compiling": smooth never waits (a draw is skipped until its pipeline is ready, effects can
-		// pop in or stay missing if the game draws them only once), accurate always waits (stutters, never skips)
+		// Settings → "New shaders": smooth doesn't wait for draws to the screen sized targets the game redraws every frame
+		// (they pop in), accurate always waits (stutters, never skips), balanced waits within the budget.
+		// Smooth still waits like balanced for small and cube map targets: games render lighting probes, environment
+		// maps and portraits into those once (skipping that left the tops of Mario Kart 8's character select heads
+		// black for good, as the probe was never drawn again)
 		auto timeout = std::max(std::chrono::milliseconds(0), std::chrono::milliseconds(2000) - m_waitedInWindow);
 		const int waitMode = GetConfig().pipeline_wait.GetValue();
-		if (waitMode == 0)
+		if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
 			timeout = std::chrono::milliseconds(0);
 		else if (waitMode == 2)
 			timeout = std::chrono::hours(1);
