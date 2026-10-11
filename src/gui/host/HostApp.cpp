@@ -455,6 +455,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	}
 	fs::create_directories(ActiveSettings::GetConfigPath("controllerProfiles"), ec);
 	fs::create_directories(ActiveSettings::GetUserDataPath("memorySearcher"), ec);
+	// write the log from the start instead of only once a game starts: on Xbox it's read through the Device Portal, and
+	// a session that never starts a game or gets terminated would otherwise leave no log at all
+	cemuLog_createLogFile(false);
 
 	const fs::path settingsPath = ActiveSettings::GetConfigPath("settings.xml");
 	GetConfigHandle().SetFilename(settingsPath.generic_wstring());
