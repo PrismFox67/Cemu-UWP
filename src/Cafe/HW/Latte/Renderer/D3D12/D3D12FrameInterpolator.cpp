@@ -5,88 +5,170 @@
 
 namespace
 {
-	constexpr uint32 kDescriptorsPerSet = 5; // t0 previous, t1 current, t2 motion, u0 motion, u1 output
+	constexpr DXGI_FORMAT kMotionFormat = DXGI_FORMAT_R16G16_FLOAT; // pixels, one vector per block
+	constexpr DXGI_FORMAT kTileFormat = DXGI_FORMAT_R16G16B16A16_FLOAT; // vector, misfit
+	constexpr DXGI_FORMAT kLumaFormat = DXGI_FORMAT_R16_FLOAT;
+	constexpr uint32 kSRVs = 6;
+	constexpr uint32 kUAVs = 5;
 
-	// Block matching: each thread takes one block of the current frame (32x32 pixels at 1080p, scaled with the output
-	// height so the search covers the same part of the screen at 4K), samples its luma on an 8x8 grid and searches the
-	// previous frame for the best match, up to about two blocks in each direction.
-	// Interpolation: for each output pixel the motion of the surrounding blocks is blended bilinearly; the halfway frame
-	// takes the previous frame half a vector ahead and the current frame half a vector back. Where they disagree (an
-	// occlusion or a wrong vector) it uses the current frame instead of a blend, which judders but doesn't ghost
+	// Four passes. Sizes scale with the output height so the work and the covered part of the screen stay the same at 4K:
+	// tiles are 4x4 pixels at 1080p, blocks 8x8 tiles.
+	// LumaCS: average luma of both frames per tile.
+	// MotionCS: block matching on the tile luma, one vector per block.
+	// SelectCS: per tile, picks the best fitting block vector from the neighborhood, kept close to the neighborhood median.
+	// InterpolateCS: per pixel, the previous frame half a vector ahead blended with the current frame half a vector back,
+	// with fallbacks where they don't agree.
 	const char* kShaderSource = R"(
-cbuffer Params : register(b0) { uint2 size; uint2 blocks; uint blockSize; };
+cbuffer Params : register(b0) { uint2 size; uint2 blocks; uint blockSize; uint tileSize; uint2 tiles; };
 Texture2D<float4> Prev : register(t0);
 Texture2D<float4> Cur : register(t1);
-Texture2D<int2> MotionIn : register(t2);
-RWTexture2D<int2> MotionOut : register(u0);
+Texture2D<float2> MotionIn : register(t2);
+Texture2D<float4> TilesIn : register(t3);
+Texture2D<float> PrevLuma : register(t4);
+Texture2D<float> CurLuma : register(t5);
+RWTexture2D<float2> MotionOut : register(u0);
 RWTexture2D<unorm float4> Output : register(u1);
+RWTexture2D<float4> TilesOut : register(u2);
+RWTexture2D<float> PrevLumaOut : register(u3);
+RWTexture2D<float> CurLumaOut : register(u4);
 SamplerState LinearClamp : register(s0);
 
 float Luma(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }
-float CurL(int2 p) { return Luma(Cur.Load(int3(clamp(p, int2(0, 0), int2(size) - 1), 0)).rgb); }
-float PrevL(int2 p) { return Luma(Prev.Load(int3(clamp(p, int2(0, 0), int2(size) - 1), 0)).rgb); }
 
-float BlockSad(float c[64], int2 origin, int spacing, int2 mv)
+// luma of both frames averaged over each tile (4x4 pixels at 1080p): block matching on this doesn't alias on fine,
+// noisy textures (asphalt, grass) like point samples of the full frame do
+[numthreads(8, 8, 1)]
+void LumaCS(uint3 id : SV_DispatchThreadID)
 {
-	// small penalty per pixel of motion: flat areas and static overlays (HUD) prefer zero motion
-	float sad = 0.004 * float(abs(mv.x) + abs(mv.y)) / float(spacing);
+	if (id.x >= tiles.x || id.y >= tiles.y)
+		return;
+	const int2 origin = int2(id.xy) * int(tileSize);
+	float p = 0, c = 0;
+	[loop] for (uint y = 0; y < tileSize; y++)
+	{
+		[loop] for (uint x = 0; x < tileSize; x++)
+		{
+			const int3 q = int3(min(origin + int2(x, y), int2(size) - 1), 0);
+			p += Luma(Prev.Load(q).rgb);
+			c += Luma(Cur.Load(q).rgb);
+		}
+	}
+	const float n = float(tileSize * tileSize);
+	PrevLumaOut[id.xy] = p / n;
+	CurLumaOut[id.xy] = c / n;
+}
+
+// in tile units; mv can be fractional (the previous frame's luma is sampled bilinearly)
+float BlockSad(float c[64], int2 origin, float2 mv)
+{
+	// small penalty per tile of motion: flat areas and static overlays (HUD) prefer zero motion
+	float sad = 0.02 * (abs(mv.x) + abs(mv.y));
+	const float2 invTiles = 1.0 / float2(tiles);
 	[unroll] for (int i = 0; i < 64; i++)
-		sad += abs(c[i] - PrevL(origin + int2(i % 8, i / 8) * spacing + mv));
+		sad += abs(c[i] - PrevLuma.SampleLevel(LinearClamp, (float2(origin + int2(i % 8, i / 8)) + 0.5 + mv) * invTiles, 0));
 	return sad;
 }
 
-void Search(float c[64], int2 origin, int spacing, int2 center, int step, int radius, inout float best, inout int2 bestMv)
+void Search(float c[64], int2 origin, float2 center, float step, int radius, inout float best, inout float2 bestMv)
 {
 	[loop] for (int dy = -radius; dy <= radius; dy++)
 	{
 		[loop] for (int dx = -radius; dx <= radius; dx++)
 		{
-			const int2 mv = center + int2(dx, dy) * step;
-			const float sad = BlockSad(c, origin, spacing, mv);
+			const float2 mv = center + float2(dx, dy) * step;
+			const float sad = BlockSad(c, origin, mv);
 			if (sad < best) { best = sad; bestMv = mv; }
 		}
 	}
 }
 
+// one thread per block (8x8 tiles, 32x32 pixels at 1080p): search the previous frame's tile luma for the best match,
+// +-16 tiles in steps of 4, +-3 around the best, then half and quarter tiles
 [numthreads(8, 8, 1)]
 void MotionCS(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= blocks.x || id.y >= blocks.y)
 		return;
-	const int spacing = int(blockSize) / 8;
-	const int2 origin = int2(id.xy) * int(blockSize) + spacing / 2;
+	const int2 origin = int2(id.xy) * 8;
 	float c[64];
 	[unroll] for (int i = 0; i < 64; i++)
-		c[i] = CurL(origin + int2(i % 8, i / 8) * spacing);
-	const float zeroSad = BlockSad(c, origin, spacing, int2(0, 0));
+		c[i] = CurLuma.Load(int3(min(origin + int2(i % 8, i / 8), int2(tiles) - 1), 0));
+	const float zeroSad = BlockSad(c, origin, float2(0, 0));
 	float best = zeroSad;
-	int2 bestMv = int2(0, 0);
-	// three step search: +-16 samples in steps of 4, +-3 samples around the best, then half a sample
-	Search(c, origin, spacing, int2(0, 0), spacing * 4, 4, best, bestMv);
-	Search(c, origin, spacing, bestMv, spacing, 3, best, bestMv);
-	if (spacing > 1)
-		Search(c, origin, spacing, bestMv, max(spacing / 2, 1), 1, best, bestMv);
+	float2 bestMv = float2(0, 0);
+	Search(c, origin, float2(0, 0), 4.0, 4, best, bestMv);
+	Search(c, origin, bestMv, 1.0, 3, best, bestMv);
+	Search(c, origin, bestMv, 0.5, 1, best, bestMv);
+	Search(c, origin, bestMv, 0.25, 1, best, bestMv);
 	// only move if it is clearly better than standing still
 	if (best > zeroSad * 0.85)
-		bestMv = int2(0, 0);
-	MotionOut[id.xy] = bestMv;
+		bestMv = float2(0, 0);
+	MotionOut[id.xy] = bestMv * float(tileSize);
 }
 
-// how well the previous frame half a vector ahead matches the current frame half a vector back, around this pixel
-float CandidateCost(float2 uv, float2 texel, float2 mv)
+// how well the previous frame half a vector ahead matches the current frame half a vector back, on a 4x4 grid around
+// center (pixel coordinates). Average absolute difference per color channel
+float TileCost(float2 center, float step, float2 texel, float2 mv)
 {
-	const float2 halfMv = mv * 0.5 * texel;
-	const float2 offsets[5] = { float2(0, 0), float2(-2, 0), float2(2, 0), float2(0, -2), float2(0, 2) };
+	const float2 halfMv = mv * 0.5;
 	float cost = 0;
-	[unroll] for (int i = 0; i < 5; i++)
+	[unroll] for (int i = 0; i < 16; i++)
 	{
-		const float2 p = uv + offsets[i] * texel;
-		const float3 a = Prev.SampleLevel(LinearClamp, p + halfMv, 0).rgb;
-		const float3 b = Cur.SampleLevel(LinearClamp, p - halfMv, 0).rgb;
+		const float2 p = center + (float2(i % 4, i / 4) - 1.5) * step;
+		const float3 a = Prev.SampleLevel(LinearClamp, (p + halfMv) * texel, 0).rgb;
+		const float3 b = Cur.SampleLevel(LinearClamp, (p - halfMv) * texel, 0).rgb;
 		const float3 d = abs(a - b);
 		cost += d.r + d.g + d.b;
 	}
-	return cost;
+	return cost / 48.0;
+}
+
+// one thread per tile (4x4 pixels at 1080p). Candidates: the vectors of the tile's block and its eight neighbors, their
+// median, the smooth (bilinear) block field and no motion. The tile takes the one under which both frames agree best on
+// a patch twice its size, plus a penalty for straying from the median: on dark, low contrast or repetitive surfaces many
+// vectors fit about equally and block matching alone picks noise. Objects still keep their own motion up to their edges
+// instead of being cut into blocks. Stores the vector and how badly it fits
+[numthreads(8, 8, 1)]
+void SelectCS(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= tiles.x || id.y >= tiles.y)
+		return;
+	const float2 texel = 1.0 / float2(size);
+	const float2 center = (float2(id.xy) + 0.5) * float(tileSize);
+	const float step = float(tileSize) * 0.5;
+	const int2 home = clamp(int2(center) / int(blockSize), int2(0, 0), int2(blocks) - 1);
+	float2 cand[12];
+	[unroll] for (int i = 0; i < 9; i++)
+		cand[i] = MotionIn.Load(int3(clamp(home + int2(i % 3 - 1, i / 3 - 1), int2(0, 0), int2(blocks) - 1), 0));
+	// vector median: the neighbor vector closest to all others
+	float bestSum = 1e30;
+	float2 median = cand[4];
+	[unroll] for (int k = 0; k < 9; k++)
+	{
+		float sum = 0;
+		[unroll] for (int j = 0; j < 9; j++)
+			sum += abs(cand[k].x - cand[j].x) + abs(cand[k].y - cand[j].y);
+		if (sum < bestSum) { bestSum = sum; median = cand[k]; }
+	}
+	const float2 bp = center / float(blockSize) - 0.5;
+	const int2 b0 = clamp(int2(floor(bp)), int2(0, 0), int2(blocks) - 1);
+	const int2 b1 = clamp(b0 + 1, int2(0, 0), int2(blocks) - 1);
+	const float2 f = saturate(bp - floor(bp));
+	const float2 m00 = MotionIn.Load(int3(b0, 0)), m10 = MotionIn.Load(int3(b1.x, b0.y, 0));
+	const float2 m01 = MotionIn.Load(int3(b0.x, b1.y, 0)), m11 = MotionIn.Load(int3(b1, 0));
+	cand[9] = median;
+	cand[10] = lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
+	cand[11] = float2(0, 0);
+	const float lambda = 0.0015 / float(tileSize) * 4.0; // per pixel of deviation from the median (1080p)
+	float best = 1e30, bestFit = 0;
+	float2 bestMv = median;
+	[loop] for (int n = 0; n < 12; n++)
+	{
+		const float fit = TileCost(center, step, texel, cand[n]);
+		const float cost = fit + lambda * (abs(cand[n].x - median.x) + abs(cand[n].y - median.y));
+		if (cost < best) { best = cost; bestFit = fit; bestMv = cand[n]; }
+	}
+	TilesOut[id.xy] = float4(bestMv, bestFit, 0);
 }
 
 [numthreads(8, 8, 1)]
@@ -96,34 +178,18 @@ void InterpolateCS(uint3 id : SV_DispatchThreadID)
 		return;
 	const float2 texel = 1.0 / float2(size);
 	const float2 uv = (float2(id.xy) + 0.5) * texel;
-	// candidates: the smooth (bilinear) field, the vectors of this block and its eight neighbors, and no motion. Each pixel
-	// takes the one under which both frames agree, so objects keep their own motion up to their edges instead of being
-	// cut into blocks
-	const float2 bp = (float2(id.xy) + 0.5) / float(blockSize) - 0.5;
-	const int2 b0 = clamp(int2(floor(bp)), int2(0, 0), int2(blocks) - 1);
-	const int2 b1 = clamp(b0 + 1, int2(0, 0), int2(blocks) - 1);
-	const float2 f = saturate(bp - floor(bp));
-	const float2 m00 = float2(MotionIn.Load(int3(b0, 0))), m10 = float2(MotionIn.Load(int3(b1.x, b0.y, 0)));
-	const float2 m01 = float2(MotionIn.Load(int3(b0.x, b1.y, 0))), m11 = float2(MotionIn.Load(int3(b1, 0)));
-	float2 bestMv = lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
-	float best = CandidateCost(uv, texel, bestMv) * 0.9; // slight preference for the smooth field
-	const float zeroCost = CandidateCost(uv, texel, float2(0, 0)) * 0.95;
-	if (zeroCost < best) { best = zeroCost; bestMv = float2(0, 0); }
-	const int2 home = clamp(int2(id.xy) / int(blockSize), int2(0, 0), int2(blocks) - 1);
-	[loop] for (int i = 0; i < 9; i++)
-	{
-		const int2 b = clamp(home + int2(i % 3 - 1, i / 3 - 1), int2(0, 0), int2(blocks) - 1);
-		const float2 mv = float2(MotionIn.Load(int3(b, 0)));
-		const float cost = CandidateCost(uv, texel, mv);
-		if (cost < best) { best = cost; bestMv = mv; }
-	}
+	const float4 tile = TilesIn.SampleLevel(LinearClamp, (float2(id.xy) + 0.5) / (float2(tiles) * float(tileSize)), 0);
 	// current pixel x came from previous x + mv: halfway, the content at q was at q + mv/2 before and is at q - mv/2 now
-	const float2 halfMv = bestMv * 0.5 * texel;
+	const float2 halfMv = tile.xy * 0.5 * texel;
 	const float4 a = Prev.SampleLevel(LinearClamp, uv + halfMv, 0);
 	const float4 b = Cur.SampleLevel(LinearClamp, uv - halfMv, 0);
 	// nothing fits (occlusion, effects, a scene cut): show the current frame there, which judders but doesn't ghost
 	const float4 current = Cur.Load(int3(id.xy, 0));
-	Output[id.xy] = lerp(0.5 * (a + b), current, saturate((best / 15.0 - 0.06) * 10.0));
+	// per pixel, where the two warped frames still disagree (text or thin edges a pixel or two off) a blend would show both
+	// copies: take only the current frame's side there, which stays in place with its surroundings
+	const float3 d = abs(a.rgb - b.rgb);
+	const float4 warped = lerp(0.5 * (a + b), b, saturate(((d.r + d.g + d.b) * (1.0 / 3.0) - 0.08) * 8.0));
+	Output[id.xy] = lerp(warped, current, saturate((tile.z - 0.06) * 10.0));
 }
 )";
 
@@ -146,14 +212,14 @@ D3D12FrameInterpolator::D3D12FrameInterpolator(ID3D12Device* device) : m_device(
 {
 	D3D12_DESCRIPTOR_RANGE ranges[2]{};
 	ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	ranges[0].NumDescriptors = 3;
+	ranges[0].NumDescriptors = kSRVs;
 	ranges[0].OffsetInDescriptorsFromTableStart = 0;
 	ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
-	ranges[1].NumDescriptors = 2;
-	ranges[1].OffsetInDescriptorsFromTableStart = 3;
+	ranges[1].NumDescriptors = kUAVs;
+	ranges[1].OffsetInDescriptorsFromTableStart = kSRVs;
 	D3D12_ROOT_PARAMETER params[2]{};
 	params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
-	params[0].Constants.Num32BitValues = 5;
+	params[0].Constants.Num32BitValues = 8;
 	params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 	params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	params[1].DescriptorTable.NumDescriptorRanges = 2;
@@ -176,29 +242,25 @@ D3D12FrameInterpolator::D3D12FrameInterpolator(ID3D12Device* device) : m_device(
 		cemuLog_log(LogType::Force, "D3D12: Frame interpolation root signature failed");
 		return;
 	}
-	ComPtr<ID3DBlob> motion = _Compile("MotionCS"), interpolate = _Compile("InterpolateCS");
-	if (!motion || !interpolate)
-		return;
-	D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
-	pso.pRootSignature = m_rootSignature.Get();
-	pso.CS = { interpolate->GetBufferPointer(), interpolate->GetBufferSize() };
-	if (FAILED(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_pipelineInterpolate))))
-		return;
-	pso.CS = { motion->GetBufferPointer(), motion->GetBufferSize() };
-	if (FAILED(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_pipelineMotion))))
+	const char* entries[kPassCount] = { "LumaCS", "MotionCS", "SelectCS", "InterpolateCS" };
+	for (uint32 i = 0; i < kPassCount; i++)
 	{
-		m_pipelineMotion.Reset();
-		return;
+		ComPtr<ID3DBlob> code = _Compile(entries[i]);
+		if (!code)
+			return;
+		D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
+		pso.pRootSignature = m_rootSignature.Get();
+		pso.CS = { code->GetBufferPointer(), code->GetBufferSize() };
+		if (FAILED(device->CreateComputePipelineState(&pso, IID_PPV_ARGS(&m_pipelines[i]))))
+			return;
 	}
 	D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
 	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	heapDesc.NumDescriptors = kDescriptorsPerSet * 2;
+	heapDesc.NumDescriptors = (kSRVs + kUAVs) * 2;
 	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	if (FAILED(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_heap))))
-	{
-		m_pipelineMotion.Reset();
 		return;
-	}
+	m_valid = true;
 	cemuLog_log(LogType::Force, "D3D12: Frame interpolation ready");
 }
 
@@ -206,15 +268,18 @@ D3D12FrameInterpolator::~D3D12FrameInterpolator() = default;
 
 bool D3D12FrameInterpolator::EnsureSize(uint32 width, uint32 height)
 {
-	if (width == m_width && height == m_height && m_output)
+	if (HasSize(width, height))
 		return true;
 	m_width = width;
 	m_height = height;
 	m_blockSize = 32 * std::max<uint32>(1, (height + 540) / 1080);
+	m_tileSize = m_blockSize / 8;
 	m_blocksX = (width + m_blockSize - 1) / m_blockSize;
 	m_blocksY = (height + m_blockSize - 1) / m_blockSize;
+	m_tilesX = (width + m_tileSize - 1) / m_tileSize;
+	m_tilesY = (height + m_tileSize - 1) / m_tileSize;
 	m_hasPrevious = false;
-	auto create = [this](uint32 w, uint32 h, DXGI_FORMAT format, bool uav, ComPtr<ID3D12Resource>& out) {
+	auto create = [this](uint32 w, uint32 h, DXGI_FORMAT format, bool uav, Texture& out) {
 		D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
 		D3D12_RESOURCE_DESC desc{};
 		desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -225,16 +290,18 @@ bool D3D12FrameInterpolator::EnsureSize(uint32 width, uint32 height)
 		desc.Format = format;
 		desc.SampleDesc.Count = 1;
 		desc.Flags = uav ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE;
-		out.Reset();
-		return SUCCEEDED(m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&out)));
+		out.resource.Reset();
+		out.state = D3D12_RESOURCE_STATE_COMMON;
+		return SUCCEEDED(m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&out.resource)));
 	};
 	const bool ok = create(width, height, D3D12SwapChain::kFormat, false, m_frames[0]) && create(width, height, D3D12SwapChain::kFormat, false, m_frames[1]) &&
-		create(m_blocksX, m_blocksY, DXGI_FORMAT_R16G16_SINT, true, m_motion) && create(width, height, D3D12SwapChain::kFormat, true, m_output);
-	m_frameStates[0] = m_frameStates[1] = m_motionState = m_outputState = D3D12_RESOURCE_STATE_COMMON;
+		create(m_blocksX, m_blocksY, kMotionFormat, true, m_motion) && create(m_tilesX, m_tilesY, kTileFormat, true, m_tiles) &&
+		create(m_tilesX, m_tilesY, kLumaFormat, true, m_luma[0]) && create(m_tilesX, m_tilesY, kLumaFormat, true, m_luma[1]) &&
+		create(width, height, D3D12SwapChain::kFormat, true, m_output);
 	if (!ok)
 	{
 		cemuLog_log(LogType::Force, "D3D12: Frame interpolation can't create its {}x{} textures", width, height);
-		m_output.Reset();
+		m_output.resource.Reset();
 		m_width = m_height = 0;
 		return false;
 	}
@@ -247,28 +314,37 @@ void D3D12FrameInterpolator::CreateDescriptors()
 	const uint32 increment = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	for (uint32 set = 0; set < 2; set++)
 	{
-		// set N is used while frame N is the current one
+		// set N is used while frame N is the current one. Layout matches the shader registers: t0 previous frame, t1 current
+		// frame, t2 motion, t3 tiles, t4/t5 previous/current luma, then u0 motion, u1 output, u2 tiles, u3/u4 luma
 		D3D12_CPU_DESCRIPTOR_HANDLE h = m_heap->GetCPUDescriptorHandleForHeapStart();
-		h.ptr += (SIZE_T)set * kDescriptorsPerSet * increment;
-		D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-		srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srv.Texture2D.MipLevels = 1;
-		srv.Format = D3D12SwapChain::kFormat;
-		m_device->CreateShaderResourceView(m_frames[1 - set].Get(), &srv, h);
-		h.ptr += increment;
-		m_device->CreateShaderResourceView(m_frames[set].Get(), &srv, h);
-		h.ptr += increment;
-		srv.Format = DXGI_FORMAT_R16G16_SINT;
-		m_device->CreateShaderResourceView(m_motion.Get(), &srv, h);
-		h.ptr += increment;
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
-		uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		uav.Format = DXGI_FORMAT_R16G16_SINT;
-		m_device->CreateUnorderedAccessView(m_motion.Get(), nullptr, &uav, h);
-		h.ptr += increment;
-		uav.Format = D3D12SwapChain::kFormat;
-		m_device->CreateUnorderedAccessView(m_output.Get(), nullptr, &uav, h);
+		h.ptr += (SIZE_T)set * (kSRVs + kUAVs) * increment;
+		auto srv = [&](ID3D12Resource* resource, DXGI_FORMAT format) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+			desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			desc.Texture2D.MipLevels = 1;
+			desc.Format = format;
+			m_device->CreateShaderResourceView(resource, &desc, h);
+			h.ptr += increment;
+		};
+		auto uav = [&](ID3D12Resource* resource, DXGI_FORMAT format) {
+			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+			desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+			desc.Format = format;
+			m_device->CreateUnorderedAccessView(resource, nullptr, &desc, h);
+			h.ptr += increment;
+		};
+		srv(m_frames[1 - set].resource.Get(), D3D12SwapChain::kFormat);
+		srv(m_frames[set].resource.Get(), D3D12SwapChain::kFormat);
+		srv(m_motion.resource.Get(), kMotionFormat);
+		srv(m_tiles.resource.Get(), kTileFormat);
+		srv(m_luma[0].resource.Get(), kLumaFormat);
+		srv(m_luma[1].resource.Get(), kLumaFormat);
+		uav(m_motion.resource.Get(), kMotionFormat);
+		uav(m_output.resource.Get(), D3D12SwapChain::kFormat);
+		uav(m_tiles.resource.Get(), kTileFormat);
+		uav(m_luma[0].resource.Get(), kLumaFormat);
+		uav(m_luma[1].resource.Get(), kLumaFormat);
 	}
 }
 
@@ -276,27 +352,38 @@ void D3D12FrameInterpolator::Interpolate(ID3D12GraphicsCommandList* cmdList, con
 	const std::function<void()>& flushBarriers)
 {
 	const D3D12_RESOURCE_STATES read = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-	transition(GetPreviousFrame(), GetPreviousFrameState(), read);
-	transition(GetCurrentFrame(), GetCurrentFrameState(), read);
-	transition(m_motion.Get(), m_motionState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	transition(m_output.Get(), m_outputState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	flushBarriers();
+	const D3D12_RESOURCE_STATES write = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	auto to = [&](Texture& texture, D3D12_RESOURCE_STATES state) { transition(texture.resource.Get(), texture.state, state); };
 
 	ID3D12DescriptorHeap* heaps[] = { m_heap.Get() };
 	cmdList->SetDescriptorHeaps(1, heaps);
 	cmdList->SetComputeRootSignature(m_rootSignature.Get());
-	const uint32 constants[5] = { m_width, m_height, m_blocksX, m_blocksY, m_blockSize };
-	cmdList->SetComputeRoot32BitConstants(0, 5, constants, 0);
+	const uint32 constants[8] = { m_width, m_height, m_blocksX, m_blocksY, m_blockSize, m_tileSize, m_tilesX, m_tilesY };
+	cmdList->SetComputeRoot32BitConstants(0, 8, constants, 0);
 	D3D12_GPU_DESCRIPTOR_HANDLE table = m_heap->GetGPUDescriptorHandleForHeapStart();
-	table.ptr += (UINT64)m_current * kDescriptorsPerSet * m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	table.ptr += (UINT64)m_current * (kSRVs + kUAVs) * m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cmdList->SetComputeRootDescriptorTable(1, table);
+	auto dispatch = [&](uint32 pass, uint32 threadsX, uint32 threadsY) {
+		flushBarriers();
+		cmdList->SetPipelineState(m_pipelines[pass].Get());
+		cmdList->Dispatch((threadsX + 7) / 8, (threadsY + 7) / 8, 1);
+	};
 
-	cmdList->SetPipelineState(m_pipelineMotion.Get());
-	cmdList->Dispatch((m_blocksX + 7) / 8, (m_blocksY + 7) / 8, 1);
-	transition(m_motion.Get(), m_motionState, read);
-	flushBarriers();
-	cmdList->SetPipelineState(m_pipelineInterpolate.Get());
-	cmdList->Dispatch((m_width + 7) / 8, (m_height + 7) / 8, 1);
+	to(m_frames[0], read);
+	to(m_frames[1], read);
+	to(m_luma[0], write);
+	to(m_luma[1], write);
+	dispatch(0, m_tilesX, m_tilesY); // luma of both frames per tile
+	to(m_luma[0], read);
+	to(m_luma[1], read);
+	to(m_motion, write);
+	dispatch(1, m_blocksX, m_blocksY); // block motion
+	to(m_motion, read);
+	to(m_tiles, write);
+	dispatch(2, m_tilesX, m_tilesY); // motion per tile
+	to(m_tiles, read);
+	to(m_output, write);
+	dispatch(3, m_width, m_height); // the halfway frame
 }
 
 void D3D12FrameInterpolator::Advance()

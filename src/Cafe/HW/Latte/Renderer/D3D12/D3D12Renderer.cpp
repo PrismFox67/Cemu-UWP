@@ -926,18 +926,22 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 	m_cmdList->CopyResource(fi.GetCurrentFrame(), backbuffer);
 	if (fi.HasPreviousFrame())
 	{
-		// CEMU_INTERPOLATION_DUMP=1 writes every 120th frame pair to interpolation_dump\ (for tuning the interpolation offline)
+		// CEMU_INTERPOLATION_DUMP=1 writes three consecutive frames every 120 frames to interpolation_dump\ (a, b, c), plus the
+		// frame interpolated between a and b. For tuning the interpolation offline: interpolating a and c can be compared to b
 		static const bool s_dump = getenv("CEMU_INTERPOLATION_DUMP") != nullptr;
 		static uint32 s_dumpCounter = 0;
-		if (s_dump && (s_dumpCounter++ % 120) == 60)
+		const uint32 dumpPhase = s_dumpCounter % 120, dumpIndex = s_dumpCounter / 120;
+		s_dumpCounter++;
+		if (s_dump && dumpPhase == 60)
 		{
-			const uint32 index = s_dumpCounter / 120;
-			DumpTextureBMP(fi.GetPreviousFrame(), fi.GetPreviousFrameState(), fmt::format("interpolation_dump/{:03}_a.bmp", index));
-			DumpTextureBMP(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), fmt::format("interpolation_dump/{:03}_b.bmp", index));
+			DumpTextureBMP(fi.GetPreviousFrame(), fi.GetPreviousFrameState(), fmt::format("interpolation_dump/{:03}_a.bmp", dumpIndex));
+			DumpTextureBMP(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), fmt::format("interpolation_dump/{:03}_b.bmp", dumpIndex));
 		}
+		else if (s_dump && dumpPhase == 61)
+			DumpTextureBMP(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), fmt::format("interpolation_dump/{:03}_c.bmp", dumpIndex));
 		fi.Interpolate(m_cmdList.Get(), transition, flushBarriers);
-		if (s_dump && (s_dumpCounter % 120) == 61)
-			DumpTextureBMP(fi.GetOutput(), fi.GetOutputState(), fmt::format("interpolation_dump/{:03}_mid.bmp", s_dumpCounter / 120));
+		if (s_dump && dumpPhase == 60)
+			DumpTextureBMP(fi.GetOutput(), fi.GetOutputState(), fmt::format("interpolation_dump/{:03}_mid.bmp", dumpIndex));
 		TransitionResource(fi.GetOutput(), fi.GetOutputState(), D3D12_RESOURCE_STATE_COPY_SOURCE);
 		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_DEST);
 		FlushBarriers();
