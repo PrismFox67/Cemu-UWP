@@ -188,6 +188,25 @@ bool LauncherRenderer::Render(ImDrawData* drawData, const float clearColor[4])
 	ID3D12CommandList* lists[] = { d.cmdList.Get() };
 	d.queue->ExecuteCommandLists(1, lists);
 	const bool presented = d.swapChain->Present(1);
+	// log the refresh rate presentation actually runs at a few times after startup (DXGI frame statistics, and presents
+	// per second: the launcher presents every refresh). On Xbox this shows whether a 120 Hz HDMI mode reaches the app
+	{
+		static auto s_start = std::chrono::steady_clock::now();
+		static auto s_windowStart = s_start;
+		static int s_reports = 0;
+		const auto now = std::chrono::steady_clock::now();
+		const double window = std::chrono::duration<double>(now - s_windowStart).count();
+		if (s_reports < 6 && window >= 5.0)
+		{
+			const D3D12SwapChain::PresentStats stats = d.swapChain->TakePresentStats();
+			const double hz = d.swapChain->MeasureRefreshRate();
+			if (s_reports > 0) // the first window only primes the measurement
+				cemuLog_log(LogType::Force, "Launcher: display {:.2f} Hz (DXGI frame statistics), {:.1f} presents/s, Present blocks {:.1f} ms average",
+					hz, stats.presents / window, stats.presents ? stats.blockedMs / stats.presents : 0.0);
+			s_windowStart = now;
+			s_reports++;
+		}
+	}
 	d.fenceValue++;
 	d.queue->Signal(d.fence.Get(), d.fenceValue);
 	d.allocatorFence[slot] = d.fenceValue;
