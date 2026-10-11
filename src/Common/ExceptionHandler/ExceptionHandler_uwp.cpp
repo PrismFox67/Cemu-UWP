@@ -22,6 +22,7 @@ static std::string _DescribeAddress(uint64 address)
 
 static LONG WINAPI _CemuUnhandledExceptionFilter(EXCEPTION_POINTERS* e)
 {
+	ExceptionHandler_RunCrashCallback();
 	if (!CrashLog_Create())
 		return EXCEPTION_CONTINUE_SEARCH;
 	cemuLog_writePlainToLog(fmt::format("\nCrashlog for {}\n", BUILD_VERSION_WITH_NAME_STRING));

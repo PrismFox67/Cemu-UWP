@@ -8,6 +8,19 @@
 
 bool crashLogCreated = false;
 
+static void (*s_crashCallback)() = nullptr;
+
+void ExceptionHandler_SetCrashCallback(void (*callback)())
+{
+	s_crashCallback = callback;
+}
+
+void ExceptionHandler_RunCrashCallback()
+{
+	if (s_crashCallback)
+		s_crashCallback();
+}
+
 bool CrashLog_Create()
 {
     if (crashLogCreated)

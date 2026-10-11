@@ -12,8 +12,10 @@
 #include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
 #include "util/helpers/helpers.h"
+#include "Common/ExceptionHandler/ExceptionHandler.h"
 
 #include <chrono>
+#include <cstdio>
 #include <condition_variable>
 #include <deque>
 #include <fstream>
@@ -22,6 +24,55 @@
 
 extern std::atomic_int g_compiling_pipelines;
 extern std::atomic_int g_compiling_pipelines_async;
+
+// Pipelines that crashed the driver. The Xbox Series X's shader compiler (newbe_xs.dll) recursed until it overflowed a
+// 256 MB stack on a Mario Kart 8 pipeline (v81 update with graphic packs). A crash during CreateGraphicsPipelineState
+// writes the pipeline's key to <titleId>_blocked.txt from the crash handler, and later runs skip that pipeline (its
+// draws are skipped) instead of crashing again. Delete the file to retry them, e.g. after a system update
+namespace D3D12PipelineQuarantine
+{
+	thread_local uint64 t_creatingKey = 0; // pipeline the thread is handing to the driver
+	wchar_t s_path[MAX_PATH]{};
+	std::unordered_set<uint64> s_blocked; // written before any pipeline is created, read-only afterwards
+
+	void OnCrash()
+	{
+		const uint64 key = t_creatingKey;
+		if (key == 0 || s_path[0] == L'\0')
+			return;
+		char line[24];
+		const int length = snprintf(line, sizeof(line), "%016llx\n", (unsigned long long)key);
+		HANDLE file = CreateFile2(s_path, FILE_APPEND_DATA, FILE_SHARE_READ, OPEN_ALWAYS, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+			return;
+		DWORD written = 0;
+		WriteFile(file, line, (DWORD)length, &written, nullptr);
+		FlushFileBuffers(file);
+		CloseHandle(file);
+	}
+
+	void Open(uint64 titleId)
+	{
+		const fs::path path = ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}_blocked.txt", titleId);
+		std::error_code ec;
+		fs::create_directories(path.parent_path(), ec);
+		const std::wstring wpath = path.wstring();
+		if (wpath.size() >= MAX_PATH)
+			return;
+		wcscpy_s(s_path, wpath.c_str());
+		std::ifstream file(path);
+		std::string line;
+		while (std::getline(file, line))
+		{
+			uint64 key = 0;
+			if (std::sscanf(line.c_str(), "%llx", (unsigned long long*)&key) == 1 && key != 0)
+				s_blocked.insert(key);
+		}
+		if (!s_blocked.empty())
+			cemuLog_log(LogType::Force, "D3D12: Skipping {} pipeline(s) that crashed the driver before ({})", s_blocked.size(), _pathToUtf8(path));
+		ExceptionHandler_SetCrashCallback(OnCrash);
+	}
+}
 
 // Driver compiled pipelines of one title, stored with ID3D12PipelineLibrary. Creating a pipeline can take the driver
 // seconds (Intel), which leaves the scene black while draws are skipped; loading it from the library takes milliseconds.
@@ -298,16 +349,25 @@ private:
 
 	void CreatePipeline()
 	{
+		const uint64 cacheKey = CalculateCacheKey();
+		if (D3D12PipelineQuarantine::s_blocked.count(cacheKey) != 0)
+		{
+			cemuLog_log(LogType::Force, "D3D12: Skipped pipeline {:016x} for VS {:016x} PS {:016x}, it crashed the driver before", cacheKey, vsHash, psHash);
+			info->pso.Reset();
+			return;
+		}
 		std::wstring cacheName;
 		if (diskCache)
 		{
-			const std::string key = fmt::format("{:016x}", CalculateCacheKey());
+			const std::string key = fmt::format("{:016x}", cacheKey);
 			cacheName.assign(key.begin(), key.end());
 			if (diskCache->Load(cacheName, desc, info->pso))
 				return;
 		}
 		const auto start = std::chrono::steady_clock::now();
+		D3D12PipelineQuarantine::t_creatingKey = cacheKey;
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
+		D3D12PipelineQuarantine::t_creatingKey = 0;
 		D3D12_Checkpoint(device.Get(), "game pipeline created");
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 		if (FAILED(hr))
@@ -655,6 +715,7 @@ void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
 	if (m_diskCacheOpened)
 		return;
 	m_diskCacheOpened = true;
+	D3D12PipelineQuarantine::Open(titleId);
 	if (m_renderer->IsPipelineLibrarySupported())
 		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
 	if (!m_diskCache) // see D3D12Renderer::CreateDevice

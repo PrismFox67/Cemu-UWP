@@ -275,6 +275,7 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
 
 LONG WINAPI cemu_unhandledExceptionFilter(EXCEPTION_POINTERS* pExceptionInfo)
 {
+	ExceptionHandler_RunCrashCallback();
 	createCrashlog(pExceptionInfo, pExceptionInfo->ContextRecord);
 	return EXCEPTION_NONCONTINUABLE_EXCEPTION;
 }
