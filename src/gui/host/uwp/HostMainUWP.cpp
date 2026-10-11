@@ -116,15 +116,26 @@ namespace
 				return;
 			}
 			auto current = hdmi.GetCurrentDisplayMode();
+			// the 120 Hz mode at the current resolution, preferably with the same color space and depth (a different one can
+			// switch HDR or chroma subsampling)
 			winrt::Windows::Graphics::Display::Core::HdmiDisplayMode best{ nullptr };
+			int bestScore = -1;
+			std::string offered;
 			for (const auto& mode : hdmi.GetSupportedDisplayModes())
 			{
+				offered += fmt::format(" {}x{}@{:.2f}/{}bpp/cs{}", mode.ResolutionWidthInRawPixels(), mode.ResolutionHeightInRawPixels(), mode.RefreshRate(), mode.BitsPerPixel(), (int)mode.ColorSpace());
 				if (mode.ResolutionWidthInRawPixels() != current.ResolutionWidthInRawPixels() || mode.ResolutionHeightInRawPixels() != current.ResolutionHeightInRawPixels() ||
-					mode.ColorSpace() != current.ColorSpace() || mode.BitsPerPixel() != current.BitsPerPixel() || mode.StereoEnabled() || mode.RefreshRate() < 100.0)
+					mode.StereoEnabled() || mode.RefreshRate() < 100.0)
 					continue;
-				if (!best || std::abs(mode.RefreshRate() - 120.0) < std::abs(best.RefreshRate() - 120.0))
+				const int score = (mode.ColorSpace() == current.ColorSpace() ? 2 : 0) + (mode.BitsPerPixel() == current.BitsPerPixel() ? 1 : 0);
+				if (score > bestScore || (score == bestScore && std::abs(mode.RefreshRate() - 120.0) < std::abs(best.RefreshRate() - 120.0)))
+				{
 					best = mode;
+					bestScore = score;
+				}
 			}
+			cemuLog_log(LogType::Force, "Host: current display mode {}x{}@{:.2f}/{}bpp/cs{}, offered:{}", current.ResolutionWidthInRawPixels(), current.ResolutionHeightInRawPixels(),
+				current.RefreshRate(), current.BitsPerPixel(), (int)current.ColorSpace(), offered);
 			if (!best)
 			{
 				cemuLog_log(LogType::Force, "Host: frame interpolation needs 120 Hz, but the TV offers no {}x{} 120 Hz mode (current {:.2f} Hz). Allow 120 Hz in the console's video settings",
