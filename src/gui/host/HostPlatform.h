@@ -36,4 +36,7 @@ namespace HostPlatform
 	// downloads a URL (https, follows redirects) into memory. Blocks, call it from a worker thread. progress gets the
 	// received and total byte count (total is 0 if unknown). On failure returns false and describes the problem in error
 	bool HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress = {});
+
+	// memory the app uses and the most it may use (UWP/Xbox: the app's memory budget, 0 if there is no fixed limit)
+	void GetMemoryUsage(uint64& usage, uint64& limit);
 }

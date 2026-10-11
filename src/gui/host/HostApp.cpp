@@ -326,6 +326,30 @@ namespace
 		}
 	}
 
+	// the Xbox ends apps that go over their memory budget without an exception (Mario Kart 8 at 4K died after a race with
+	// nothing in the log), so log the usage every 30 s and whenever it reaches a new high in 256 MB steps
+	void _LogMemoryUsage()
+	{
+		static auto s_next = std::chrono::steady_clock::now();
+		static uint64 s_highest = 0;
+		const auto now = std::chrono::steady_clock::now();
+		if (now < s_next)
+			return;
+		s_next = now + std::chrono::seconds(5);
+		uint64 usage, limit;
+		HostPlatform::GetMemoryUsage(usage, limit);
+		static auto s_lastLog = now - std::chrono::seconds(30);
+		const bool newHigh = usage >= s_highest + 256 * 1024 * 1024;
+		if (!newHigh && now - s_lastLog < std::chrono::seconds(30))
+			return;
+		s_lastLog = now;
+		s_highest = std::max(s_highest, usage);
+		if (limit)
+			cemuLog_log(LogType::Force, "Host: memory {} MB of {} MB ({}%)", usage >> 20, limit >> 20, usage * 100 / limit);
+		else
+			cemuLog_log(LogType::Force, "Host: memory {} MB", usage >> 20);
+	}
+
 	// stops the title (the GPU thread destroys the renderer and its swap chain on the way out) and shows the launcher
 	// again, which recreates its own swap chain for the window
 	void _ExitToLauncher()
@@ -477,6 +501,7 @@ bool HostApp::RunFrame()
 			break;
 		}
 		_UpdateInGame();
+		_LogMemoryUsage();
 		std::this_thread::sleep_for(std::chrono::milliseconds(4));
 		break;
 	case State::Quitting:

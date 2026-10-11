@@ -13,6 +13,7 @@
 #include <Windows.h>
 #include <windowsx.h>
 #include <shobjidl.h>
+#include <psapi.h>
 
 namespace
 {
@@ -197,6 +198,13 @@ void HostPlatform::RequestQuit()
 const char* HostPlatform::GetName()
 {
 	return "Win32";
+}
+
+void HostPlatform::GetMemoryUsage(uint64& usage, uint64& limit)
+{
+	PROCESS_MEMORY_COUNTERS_EX counters{};
+	usage = GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&counters, sizeof(counters)) ? counters.PrivateUsage : 0;
+	limit = 0;
 }
 
 namespace

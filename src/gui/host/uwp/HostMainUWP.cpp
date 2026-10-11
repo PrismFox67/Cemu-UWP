@@ -373,6 +373,20 @@ const char* HostPlatform::GetName()
 	return s_isXbox ? "Xbox (UWP)" : "UWP";
 }
 
+void HostPlatform::GetMemoryUsage(uint64& usage, uint64& limit)
+{
+	usage = 0;
+	limit = 0;
+	try
+	{
+		usage = winrt::Windows::System::MemoryManager::AppMemoryUsage();
+		limit = winrt::Windows::System::MemoryManager::AppMemoryUsageLimit();
+	}
+	catch (...)
+	{
+	}
+}
+
 // WinRT's HttpClient instead of curl: it uses the system's certificate store and proxy settings, which curl+OpenSSL
 // can't reach from inside the UWP sandbox
 bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress)
