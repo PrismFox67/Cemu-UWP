@@ -231,9 +231,15 @@ void D3D12Renderer::CreateDevice()
 	D3D12_FEATURE_DATA_SHADER_CACHE shaderCache{};
 	m_pipelineLibrarySupported = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_SHADER_CACHE, &shaderCache, sizeof(shaderCache))) &&
 		(shaderCache.SupportFlags & D3D12_SHADER_CACHE_SUPPORT_LIBRARY) != 0;
+	// single pipeline blobs (GetCachedBlob / CachedPSO): the same driver also removes the device on GetCachedBlob
+	m_pipelineBlobsSupported = (shaderCache.SupportFlags & D3D12_SHADER_CACHE_SUPPORT_SINGLE_PSO) != 0;
 	if (m_selectedDeviceName.rfind("SraKmd", 0) == 0)
+	{
 		m_pipelineLibrarySupported = false;
-	cemuLog_log(LogType::Force, "D3D12: Pipeline cache (pipeline libraries): {}", m_pipelineLibrarySupported ? "supported" : "not supported");
+		m_pipelineBlobsSupported = false;
+	}
+	cemuLog_log(LogType::Force, "D3D12: Pipeline cache: libraries {}, single pipeline blobs {} (shader cache flags 0x{:x})", m_pipelineLibrarySupported ? "supported" : "not supported",
+		m_pipelineBlobsSupported ? "supported" : "not supported", (uint32)shaderCache.SupportFlags);
 
 	// queue + fence
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};

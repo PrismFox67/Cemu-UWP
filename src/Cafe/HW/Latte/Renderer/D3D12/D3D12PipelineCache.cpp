@@ -209,14 +209,25 @@ public:
 			m_inMemory.emplace(name, pso);
 			if (!m_blobMode || m_blobIndex.count(name) != 0)
 				return;
+			// the test starts before GetCachedBlob: on the Xbox that call already removed the device
+			if (m_probePending)
+				std::ofstream(m_probeMarker, std::ios::trunc) << "testing";
 			ComPtr<ID3DBlob> blob;
 			if (FAILED(pso->GetCachedBlob(&blob)) || !blob || blob->GetBufferSize() == 0)
+			{
+				if (m_probePending)
+				{
+					m_probePending = false;
+					m_blobMode = false;
+					std::ofstream(m_probeMarker, std::ios::trunc) << "failed";
+					cemuLog_log(LogType::Force, "D3D12: Pipeline blob cache test: GetCachedBlob failed, pipelines are kept for this session");
+				}
 				return;
+			}
 			if (m_probePending)
 			{
 				// first pipeline of this device: check that the driver recreates it from the blob
 				m_probePending = false;
-				std::ofstream(m_probeMarker, std::ios::trunc) << "testing";
 				D3D12_GRAPHICS_PIPELINE_STATE_DESC cachedDesc = desc;
 				cachedDesc.CachedPSO = { blob->GetBufferPointer(), blob->GetBufferSize() };
 				ComPtr<ID3D12PipelineState> test;
@@ -677,11 +688,19 @@ public:
 	static std::shared_ptr<D3D12PipelineCompileQueue> Create()
 	{
 		auto queue = std::make_shared<D3D12PipelineCompileQueue>();
-		// pipeline creation is mostly the driver's single threaded shader compiler, so it scales with threads. Leave
-		// half of the cores to emulation
-		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() / 2, 2, 4);
+		// pipeline creation is mostly the driver's single threaded shader compiler, so it scales with threads. Where the
+		// driver can't cache pipelines (Xbox: ~2.5 s each, all of them recreated every session) the loading screen's
+		// precompile is bound by this. The threads run below normal priority, so emulation keeps its cores when both
+		// want them
+		const uint32 threadCount = std::clamp<uint32>(std::thread::hardware_concurrency() - 2, 2, 6);
 		for (uint32 i = 0; i < threadCount; i++)
-			queue->m_threads.emplace_back(D3D12_CreateLargeStackThread([queue]() { queue->ThreadFunc(); })); // threads keep the queue alive if detached
+		{
+			HANDLE thread = D3D12_CreateLargeStackThread([queue]() { queue->ThreadFunc(); }); // threads keep the queue alive if detached
+			if (thread)
+				SetThreadPriority(thread, THREAD_PRIORITY_BELOW_NORMAL);
+			queue->m_threads.emplace_back(thread);
+		}
+		cemuLog_log(LogType::Force, "D3D12: {} pipeline compile threads", threadCount);
 		return queue;
 	}
 
@@ -898,7 +917,9 @@ void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
 #endif
 	if (m_renderer->IsPipelineLibrarySupported() && !forceBlobs)
 		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
-	if (!m_diskCache) // see D3D12Renderer::CreateDevice
+	if (!m_diskCache && !m_renderer->IsPipelineBlobCacheSupported() && !forceBlobs) // see D3D12Renderer::CreateDevice
+		m_diskCache = D3D12PipelineDiskCache::CreateInMemory();
+	if (!m_diskCache)
 	{
 		const fs::path probeMarker = ActiveSettings::GetCachePath("shaderCache/driver/d3d12/pipeline_blob_test.txt");
 		std::error_code ec;

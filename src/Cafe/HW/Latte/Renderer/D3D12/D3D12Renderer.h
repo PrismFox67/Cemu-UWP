@@ -178,6 +178,7 @@ public:
 	ID3D12RootSignature* GetRootSignature() const { return m_rootSignature.Get(); }
 	D3D12PipelineCache* GetPipelineCache() const { return m_pipelineCache.get(); }
 	bool IsPipelineLibrarySupported() const { return m_pipelineLibrarySupported; }
+	bool IsPipelineBlobCacheSupported() const { return m_pipelineBlobsSupported; }
 
 	D3D12UploadAllocation AllocateUpload(uint64 size, uint64 alignment) { return m_uploadRing->Allocate(size, alignment); }
 	void ReleaseResourceDeferred(ComPtr<ID3D12Resource> resource);
@@ -269,6 +270,7 @@ private:
 	bool m_debugMode = false;
 	bool m_dredEnabled = false;
 	bool m_pipelineLibrarySupported = false;
+	bool m_pipelineBlobsSupported = false;
 	uint64 m_uniqueIdCounter = 0;
 	D3D12FormatSupport m_formatSupport;
 	D3D_SHADER_MODEL m_highestShaderModel = D3D_SHADER_MODEL_5_1;
