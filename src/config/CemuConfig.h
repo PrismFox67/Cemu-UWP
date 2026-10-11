@@ -451,7 +451,9 @@ struct CemuConfig
 	ConfigValue<bool> render_upside_down{ false };
 	ConfigValue<bool> async_compile{ true };
 	ConfigValue<bool> precompile_pipelines{ true }; // D3D12: create all previously used pipelines while the game loads
+	ConfigValue<bool> precompile_in_background{ false }; // D3D12: create them while the game runs instead of on the loading screen
 	ConfigValue<int> pipeline_wait{ 1 }; // D3D12: how long draws wait for a new pipeline: 0 never (smooth, skips the draw), 1 balanced (2 s per 4 s), 2 always (accurate)
+	ConfigValue<int> d3d12_shader_compiler{ 0 }; // D3D12: 0 FXC (DXBC), 1 DXC (DXIL); CEMU_D3D12_SHADER_COMPILER overrides it
 #ifdef ENABLE_METAL
 	ConfigValue<bool> force_mesh_shaders{ false };
 #endif

@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderTranslate.h"
+#include "config/CemuConfig.h"
 
 #include <d3dcompiler.h>
 #include <dxcapi.h>
@@ -335,7 +336,10 @@ bool D3D12ShaderCompiler::Initialize(D3D_SHADER_MODEL highestShaderModel, std::s
 	s_compiler.highestShaderModel = highestShaderModel;
 	D3D12ShaderTranslate::Initialize();
 
-	const std::string requested = _GetEnv("CEMU_D3D12_SHADER_COMPILER");
+	// the environment variable (desktop testing) wins over the setting (Settings → Graphics → "Shader compiler")
+	std::string requested = _GetEnv("CEMU_D3D12_SHADER_COMPILER");
+	if (requested.empty() && GetConfig().d3d12_shader_compiler.GetValue() == 1)
+		requested = "dxc";
 	s_compiler.backend = Backend::FXC;
 	if (requested == "dxc")
 	{

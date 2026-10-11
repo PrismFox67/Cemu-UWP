@@ -704,10 +704,14 @@ public:
 		return queue;
 	}
 
-	void Push(std::unique_ptr<D3D12PipelineCompileJob> job)
+	// urgent jobs (a draw is waiting for the pipeline) go ahead of the speculative preload jobs
+	void Push(std::unique_ptr<D3D12PipelineCompileJob> job, bool urgent = false)
 	{
 		std::lock_guard lock(m_mutex);
-		m_jobs.push_back(std::move(job));
+		if (urgent)
+			m_jobs.push_front(std::move(job));
+		else
+			m_jobs.push_back(std::move(job));
 		m_jobAvailable.notify_one();
 	}
 
@@ -967,13 +971,14 @@ uint32 D3D12PipelineCache::BeginPreload(uint64 titleId)
 	return m_recordFile ? (uint32)m_recordFile->GetRecords().size() : 0;
 }
 
-bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount)
+bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 {
 	static const std::vector<std::vector<uint8>> s_noRecords;
 	const std::vector<std::vector<uint8>>& records = m_recordFile ? m_recordFile->GetRecords() : s_noRecords;
-	// keep the compile threads busy, but don't queue everything at once: every job holds copies of its bytecode
-	constexpr uint32 kMaxInFlight = 32;
-	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(20);
+	// keep the compile threads busy, but don't queue everything at once: every job holds copies of its bytecode. In the
+	// background (once per game frame) keep the queue short so a pipeline a draw waits for isn't stuck behind it
+	const uint32 kMaxInFlight = blocking ? 32 : 8;
+	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(blocking ? 20 : 2);
 	while (m_preload.next < records.size() && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
 	{
 		auto job = std::make_unique<D3D12PipelineCompileJob>();
@@ -992,10 +997,31 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount)
 	finishedCount = *m_preload.finished + m_preload.skipped;
 	if (m_preload.next < records.size() || *m_preload.finished < m_preload.submitted)
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1)); // the loading screen calls this in a loop
+		if (blocking)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1)); // the loading screen calls this in a loop
 		return true;
 	}
 	return false;
+}
+
+void D3D12PipelineCache::StartBackgroundPreload(uint64 titleId)
+{
+	const uint32 count = BeginPreload(titleId);
+	m_backgroundPreload = count > 0;
+	if (m_backgroundPreload)
+		cemuLog_log(LogType::Force, "D3D12: Creating {} recorded pipelines in the background", count);
+}
+
+void D3D12PipelineCache::TickBackgroundPreload()
+{
+	if (!m_backgroundPreload)
+		return;
+	uint32 finished = 0;
+	if (!UpdatePreload(finished, false))
+	{
+		m_backgroundPreload = false;
+		EndPreload();
+	}
 }
 
 void D3D12PipelineCache::EndPreload()
@@ -1139,7 +1165,7 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		// after a while so a pathological compile (minutes on Intel) can't freeze the game.
 		// The waits share a budget of 2 s per 4 s: the Xbox's driver takes ~2.5 s per pipeline, and with many new ones
 		// (a graphic pack, a game update) each draw waiting 2 s froze the game for minutes
-		m_compileQueue->Push(std::move(job));
+		m_compileQueue->Push(std::move(job), true);
 		const auto now = std::chrono::steady_clock::now();
 		if (now - m_waitWindowStart >= std::chrono::seconds(4))
 		{

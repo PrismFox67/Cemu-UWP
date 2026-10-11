@@ -645,6 +645,15 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 {
+#ifdef ENABLE_D3D12
+	// "in the background": no loading screen, the recorded pipelines are created while the game runs (see
+	// D3D12PipelineCache::TickBackgroundPreload)
+	if (g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_in_background.GetValue())
+	{
+		D3D12Renderer::GetInstance()->GetPipelineCache()->StartBackgroundPreload(cacheTitleId);
+		return;
+	}
+#endif
 	switch(g_renderer->GetType())
 	{
 	#ifdef ENABLE_VULKAN

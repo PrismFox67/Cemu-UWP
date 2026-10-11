@@ -861,6 +861,8 @@ void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 		PresentSwapChain(false);
 	if (!swapTV && !swapDRC)
 		SubmitCommandList(false);
+	if (swapTV && m_pipelineCache)
+		m_pipelineCache->TickBackgroundPreload();
 	m_statDrawsPerFrame = 0;
 	m_statSubmitsPerFrame = 0;
 	m_statBarriersPerFrame = 0;

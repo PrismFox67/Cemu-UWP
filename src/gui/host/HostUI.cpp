@@ -393,6 +393,17 @@ namespace
 			config.precompile_pipelines = precompile;
 			changed = true;
 		}
+		if (precompile)
+		{
+			bool background = config.precompile_in_background.GetValue();
+			ImGui::Indent(40.0f * s_scale);
+			if (ImGui::Checkbox("In the background instead: start right away, effects pop in until it's done", &background))
+			{
+				config.precompile_in_background = background;
+				changed = true;
+			}
+			ImGui::Unindent(40.0f * s_scale);
+		}
 		if (asyncCompile)
 		{
 			const char* waitModes[] = { "Smooth: never wait, new effects can pop in", "Balanced: short waits, rarely misses an effect", "Accurate: always wait, stutters" };
@@ -403,6 +414,16 @@ namespace
 				config.pipeline_wait = waitMode;
 				changed = true;
 			}
+		}
+		// DXIL (DXC) skips the driver's DXBC translation, which may make the Xbox's per session pipeline creation faster.
+		// Each compiler has its own shader cache, so switching recompiles every shader once
+		const char* compilers[] = { "FXC (default)", "DXC (experimental)" };
+		int compiler = std::clamp<int>(config.d3d12_shader_compiler.GetValue(), 0, 1);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo("Shader compiler (next game start)", &compiler, compilers, 2))
+		{
+			config.d3d12_shader_compiler = compiler;
+			changed = true;
 		}
 		const char* filters[] = { "Bilinear", "Bicubic", "Hermite", "Nearest neighbor" };
 		int upscale = std::clamp<int>(config.upscale_filter.GetValue(), 0, 3);

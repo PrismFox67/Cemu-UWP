@@ -58,8 +58,14 @@ public:
 	// thread after the shader cache was loaded: BeginPreload returns the number of pipelines, UpdatePreload is called
 	// repeatedly and returns false once all are done
 	uint32 BeginPreload(uint64 titleId);
-	bool UpdatePreload(uint32& finishedCount);
+	bool UpdatePreload(uint32& finishedCount, bool blocking = true);
 	void EndPreload();
+
+	// the same, but spread over the frames of the running game instead of a loading screen (Settings → "in the
+	// background"): StartBackgroundPreload replaces the loading screen, TickBackgroundPreload runs once per frame
+	void StartBackgroundPreload(uint64 titleId);
+	void TickBackgroundPreload();
+	bool IsBackgroundPreloading() const { return m_backgroundPreload; }
 
 	static uint64 CalculateHash(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader,
 		const CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
@@ -86,6 +92,7 @@ private:
 		std::shared_ptr<std::atomic<uint32>> finished;
 		std::chrono::steady_clock::time_point start;
 	} m_preload;
+	bool m_backgroundPreload = false;
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
 	// how long draws waited for async pipelines in the current window (see GetOrCreate)
 	std::chrono::steady_clock::time_point m_waitWindowStart{};
