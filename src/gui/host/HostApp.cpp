@@ -44,6 +44,7 @@ namespace
 		kMenuPairControllers,
 		kMenuGamePadScreen,
 		kMenuShowFPS,
+		kMenuExitGame,
 		kMenuExit,
 		kMenuCount,
 	};
@@ -62,6 +63,8 @@ namespace
 	std::chrono::steady_clock::time_point s_comboStart{};
 	bool s_comboActive = false;
 	bool s_comboConsumed = false;
+	bool s_exitGameRequested = false; // "Exit to game list", done at the start of the next frame
+	bool s_launcherIgnoresPad = false; // until all buttons are released, so the A that picked "Exit" doesn't start the game again
 
 	WindowSystem::WindowInfo& _WindowInfo()
 	{
@@ -261,7 +264,15 @@ namespace
 		io.DeltaTime = std::clamp(std::chrono::duration<float>(now - s_lastFrame).count(), 1.0f / 1000.0f, 0.25f);
 		s_lastFrame = now;
 		HostControllers::UpdatePairing();
-		HostGamepad::FeedImGui(HostGamepad::Poll());
+		HostGamepad::State pad = HostGamepad::Poll();
+		if (s_launcherIgnoresPad)
+		{
+			if (pad.buttons == 0)
+				s_launcherIgnoresPad = false;
+			else
+				pad = HostGamepad::State{ pad.connected };
+		}
+		HostGamepad::FeedImGui(pad);
 
 		s_launcher->NewFrame();
 		ImGui::NewFrame();
@@ -301,11 +312,30 @@ namespace
 			GetConfigHandle().Save();
 			break;
 		}
+		case kMenuExitGame:
+			s_menuOpen = false;
+			s_exitGameRequested = true;
+			break;
 		case kMenuExit:
 			s_menuOpen = false;
 			s_state = State::Quitting;
 			break;
 		}
+	}
+
+	// stops the title (the GPU thread destroys the renderer and its swap chain on the way out) and shows the launcher
+	// again, which recreates its own swap chain for the window
+	void _ExitToLauncher()
+	{
+		cemuLog_log(LogType::Force, "Host: stopping the title, back to the game list");
+		s_menuOpen = false;
+		s_comboActive = false;
+		CafeSystem::ShutdownTitle();
+		GetConfigHandle().Save();
+		InputManager::instance().save();
+		s_launcherIgnoresPad = true;
+		s_state = State::Launcher;
+		HostUI::RequestGameListRefresh();
 	}
 
 	void _UpdateInGame()
@@ -339,6 +369,13 @@ namespace
 		}
 		else
 			s_comboActive = false;
+		// or click both sticks (like Dolphin's UWP port)
+		constexpr uint32 kSticks = HostGamepad::kL3 | HostGamepad::kR3;
+		if ((pad.buttons & kSticks) == kSticks && (pressed & kSticks) != 0)
+		{
+			s_menuOpen = !s_menuOpen;
+			s_menuSelection = kMenuResume;
+		}
 
 		if (!s_menuOpen)
 			return;
@@ -430,6 +467,12 @@ bool HostApp::RunFrame()
 		_RenderLauncherFrame();
 		break;
 	case State::Running:
+		if (s_exitGameRequested)
+		{
+			s_exitGameRequested = false;
+			_ExitToLauncher();
+			break;
+		}
 		_UpdateInGame();
 		std::this_thread::sleep_for(std::chrono::milliseconds(4));
 		break;
@@ -683,7 +726,8 @@ void HostApp::DrawInGameMenu()
 			"Pair controllers",
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
-			"Save and exit Cemu",
+			"Exit to game list",
+			"Quit Cemu",
 		};
 		ImGui::TextDisabled("Cemu");
 		ImGui::Separator();

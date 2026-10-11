@@ -46,10 +46,10 @@ Set them in a command prompt before starting: `set CEMU_D3D12_DEBUG=1` then `Cem
 3. Controls:
    - Launcher: D-pad/left stick to move, A to select, B to go back, LB/RB to switch tabs, Y for settings.
      Mouse and keyboard work too.
-   - In game: **hold View + Menu (Back + Start) for one second** to open the menu (Resume, Pair controllers, show TV
-     or GamePad screen, FPS counter, Save and exit Cemu). On a keyboard, F1 opens it, arrows and Enter select, Esc
-     closes it. **Save and exit Cemu** saves the settings and closes the program; start it again to play something
-     else.
+   - In game: **click both sticks** (L3 + R3) or **hold View + Menu (Back + Start) for one second** to open the menu
+     (Resume, Pair controllers, show TV or GamePad screen, FPS counter, Exit to game list, Quit Cemu). On a keyboard,
+     F1 opens it, arrows and Enter select, Esc closes it. **Exit to game list** stops the game (progress the game
+     didn't save is lost) and returns to the launcher; **Quit Cemu** closes the program.
    - Players: controller 1 (plus the keyboard) is the Wii U GamePad for player 1, controllers 2-4 are Pro Controllers
      for players 2-4. Turning on a second controller is enough for a second player.
    - **Controllers** tab in the launcher: pick the controller type (Wii U GamePad, Pro Controller, Classic
@@ -131,8 +131,8 @@ Settings → Game folders.
    `Graphics` pack with resolution `3840x2160`. Changes apply at the next game start. Own packs can be uploaded to
    `LocalState/graphicPacks` with Device Portal.
 4. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
-   doesn't send the app to the background). Use the in-game menu → **Save and exit Cemu** to stop; this closes the
-   app.
+   doesn't send the app to the background). Click both sticks for the in-game menu → **Exit to game list** to stop
+   the game, or **Quit Cemu** to close the app.
 
 ### If it doesn't start or crashes
 
