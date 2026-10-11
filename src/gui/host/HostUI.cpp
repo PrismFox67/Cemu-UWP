@@ -21,7 +21,9 @@ namespace
 	{
 		std::string name;
 		TitleId titleId;
-		uint16 version;
+		uint16 version; // of the update if one is installed
+		bool hasUpdate = false;
+		bool hasDLC = false;
 		fs::path path;
 		std::string location;
 	};
@@ -131,6 +133,15 @@ namespace
 				games.emplace_back(std::move(e));
 		}
 		CafeTitleList::ReleaseInternalList();
+		// the update and DLC are found separately (GetGameInfo locks the list, so after releasing it)
+		for (GameEntry& e : games)
+		{
+			GameInfo2 info = CafeTitleList::GetGameInfo(e.titleId);
+			e.hasUpdate = info.HasUpdate();
+			e.hasDLC = info.HasAOC();
+			if (e.hasUpdate)
+				e.version = info.GetVersion();
+		}
 		std::sort(games.begin(), games.end(), [](const GameEntry& a, const GameEntry& b) { return boost::algorithm::ilexicographical_compare(a.name, b.name); });
 		s_games = std::move(games);
 		s_selectedGame = std::clamp(s_selectedGame, 0, std::max(0, (int)s_games.size() - 1));
@@ -189,7 +200,7 @@ namespace
 					const GameEntry& game = s_games[i];
 					ImGui::PushID(i);
 					const bool selected = i == s_selectedGame;
-					const std::string label = fmt::format("{}\n{:016x}  v{}", game.name, game.titleId, game.version);
+					const std::string label = fmt::format("{}\n{:016x}  v{}{}{}", game.name, game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "");
 					if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, ImGui::GetTextLineHeight() * 2.4f)))
 					{
 						s_selectedGame = i;
