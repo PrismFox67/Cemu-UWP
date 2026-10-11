@@ -146,6 +146,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	precompile_pipelines = graphic.get("PrecompilePipelines", precompile_pipelines);
 	precompile_in_background = graphic.get("PrecompileInBackground", precompile_in_background);
+	frame_interpolation = graphic.get("FrameInterpolation", frame_interpolation);
 	pipeline_wait = graphic.get("PipelineWait", pipeline_wait);
 	d3d12_shader_compiler = graphic.get("ShaderCompiler", d3d12_shader_compiler);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
@@ -385,6 +386,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("PrecompilePipelines", precompile_pipelines.GetValue());
 	graphic.set("PrecompileInBackground", precompile_in_background.GetValue());
+	graphic.set("FrameInterpolation", frame_interpolation.GetValue());
 	graphic.set("PipelineWait", pipeline_wait.GetValue());
 	graphic.set("ShaderCompiler", d3d12_shader_compiler.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);

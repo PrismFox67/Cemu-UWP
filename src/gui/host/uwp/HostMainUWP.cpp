@@ -94,6 +94,62 @@ namespace
 		}
 	}
 
+	// Frame interpolation presents twice per game frame, so on Xbox it needs the TV in a 120 Hz mode (only offered when the
+	// console's video settings allow 120 Hz). Asks for the 120 Hz version of the current mode when it's turned on and for the
+	// default mode when it's turned off
+	void _UpdateRefreshRate()
+	{
+		static int s_applied = -1;
+		const int wanted = GetConfig().frame_interpolation.GetValue() && GetConfig().vsync.GetValue() != 0 ? 1 : 0;
+		if (!s_isXbox || wanted == s_applied)
+			return;
+		s_applied = wanted;
+		try
+		{
+			auto hdmi = winrt::Windows::Graphics::Display::Core::HdmiDisplayInformation::GetForCurrentView();
+			if (!hdmi)
+				return;
+			if (!wanted)
+			{
+				hdmi.SetDefaultDisplayModeAsync();
+				cemuLog_log(LogType::Force, "Host: frame interpolation off, back to the default display mode");
+				return;
+			}
+			auto current = hdmi.GetCurrentDisplayMode();
+			winrt::Windows::Graphics::Display::Core::HdmiDisplayMode best{ nullptr };
+			for (const auto& mode : hdmi.GetSupportedDisplayModes())
+			{
+				if (mode.ResolutionWidthInRawPixels() != current.ResolutionWidthInRawPixels() || mode.ResolutionHeightInRawPixels() != current.ResolutionHeightInRawPixels() ||
+					mode.ColorSpace() != current.ColorSpace() || mode.BitsPerPixel() != current.BitsPerPixel() || mode.StereoEnabled() || mode.RefreshRate() < 100.0)
+					continue;
+				if (!best || std::abs(mode.RefreshRate() - 120.0) < std::abs(best.RefreshRate() - 120.0))
+					best = mode;
+			}
+			if (!best)
+			{
+				cemuLog_log(LogType::Force, "Host: frame interpolation needs 120 Hz, but the TV offers no {}x{} 120 Hz mode (current {:.2f} Hz). Allow 120 Hz in the console's video settings",
+					current.ResolutionWidthInRawPixels(), current.ResolutionHeightInRawPixels(), current.RefreshRate());
+				return;
+			}
+			const double refresh = best.RefreshRate();
+			hdmi.RequestSetCurrentDisplayModeAsync(best).Completed([refresh](const IAsyncOperation<bool>& op, AsyncStatus) {
+				bool ok = false;
+				try
+				{
+					ok = op.GetResults();
+				}
+				catch (...)
+				{
+				}
+				cemuLog_log(LogType::Force, "Host: switching to {:.2f} Hz for frame interpolation: {}", refresh, ok ? "ok" : "refused");
+			});
+		}
+		catch (const winrt::hresult_error& e)
+		{
+			cemuLog_log(LogType::Force, "Host: display mode change failed: {:#x}", (uint32)e.code());
+		}
+	}
+
 	void _NotifySize()
 	{
 		int w, h;
@@ -233,6 +289,7 @@ namespace
 				if (s_visible)
 				{
 					dispatcher.ProcessEvents(CoreProcessEventsOption::ProcessAllIfPresent);
+					_UpdateRefreshRate();
 					if (s_quit || !HostApp::RunFrame())
 						break;
 				}

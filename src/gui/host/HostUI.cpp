@@ -381,6 +381,17 @@ namespace
 			config.vsync = vsync ? 1 : 0;
 			changed = true;
 		}
+		if (vsync)
+		{
+			bool interpolation = config.frame_interpolation.GetValue();
+			ImGui::Indent(40.0f * s_scale);
+			if (ImGui::Checkbox("Frame interpolation: 120 FPS from 60 (needs a 120 Hz TV, adds a little lag, can smear)", &interpolation))
+			{
+				config.frame_interpolation = interpolation;
+				changed = true;
+			}
+			ImGui::Unindent(40.0f * s_scale);
+		}
 		bool asyncCompile = config.async_compile.GetValue();
 		if (ImGui::Checkbox("Compile shaders asynchronously (less stutter, brief glitches)", &asyncCompile))
 		{

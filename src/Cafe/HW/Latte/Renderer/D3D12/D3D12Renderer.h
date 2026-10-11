@@ -19,6 +19,7 @@ class D3D12SwapChain;
 class D3D12PipelineCache;
 struct D3D12PipelineInfo;
 class D3D12ImGuiRenderer;
+class D3D12FrameInterpolator;
 class LatteQueryObjectD3D12;
 struct LatteDecompilerShader;
 
@@ -227,6 +228,7 @@ private:
 	D3D12SwapChain* GetSwapChainObj(bool mainWindow) { return mainWindow ? m_swapChainMain.get() : m_swapChainPad.get(); }
 	bool AcquireBackbuffer(bool mainWindow);
 	void PresentSwapChain(bool mainWindow);
+	bool PresentInterpolated(D3D12SwapChain* swapChain);
 
 	// draw path (D3D12RendererCore.cpp)
 	void draw_handleSpecialState5();
@@ -328,6 +330,7 @@ private:
 	// swap chains
 	std::unique_ptr<D3D12SwapChain> m_swapChainMain;
 	std::unique_ptr<D3D12SwapChain> m_swapChainPad;
+	std::unique_ptr<D3D12FrameInterpolator> m_frameInterpolator; // created when frame interpolation is first used
 	// the pad window is closed from the UI thread while the render thread may still be using its swap chain
 	std::atomic<bool> m_padShutdownRequested{ false };
 	std::mutex m_padSwapChainMutex;

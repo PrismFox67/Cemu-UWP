@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12SwapChain.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12FrameInterpolator.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12RootSignature.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ImGui.h"
@@ -810,6 +811,12 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	D3D12SwapChain* swapChain = GetSwapChainObj(mainWindow);
 	if (!swapChain || !swapChain->IsValid())
 		return;
+	const int vsync = GetConfig().vsync.GetValue();
+	const bool interpolate = mainWindow && vsync != 0 && GetConfig().frame_interpolation.GetValue();
+	if (interpolate && swapChain->HasDefinedContent() && PresentInterpolated(swapChain))
+		return;
+	if (m_frameInterpolator && mainWindow)
+		m_frameInterpolator->Reset();
 	if (!swapChain->HasDefinedContent())
 	{
 		// make sure the backbuffer content is defined
@@ -820,10 +827,66 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	}
 	TransitionResource(swapChain->GetCurrentBackbuffer(), swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_PRESENT);
 	SubmitCommandList(false);
-	const int vsync = GetConfig().vsync.GetValue();
 	if (!swapChain->Present(vsync != 0 ? 1 : 0))
 		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
 	D3D12_Checkpoint(m_device.Get(), "present");
+}
+
+// Frame interpolation: presents the frame halfway between the previous game frame and this one, then this one, each for
+// one refresh. At 120 Hz the game keeps its 60 FPS while the screen shows 120. Returns false if interpolation isn't
+// available, the caller then presents normally
+bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
+{
+	if (!m_frameInterpolator)
+		m_frameInterpolator = std::make_unique<D3D12FrameInterpolator>(m_device.Get());
+	D3D12FrameInterpolator& fi = *m_frameInterpolator;
+	if (!fi.IsValid())
+		return false;
+	ID3D12Resource* backbuffer = swapChain->GetCurrentBackbuffer();
+	const D3D12_RESOURCE_DESC desc = backbuffer->GetDesc();
+	if (!fi.HasSize((uint32)desc.Width, desc.Height))
+	{
+		WaitForIdle(); // the old frames may still be in use by submitted work
+		if (!fi.EnsureSize((uint32)desc.Width, desc.Height))
+			return false;
+	}
+	auto transition = [this](ID3D12Resource* resource, D3D12_RESOURCE_STATES& state, D3D12_RESOURCE_STATES newState) { TransitionResource(resource, state, newState); };
+	auto flushBarriers = [this]() { FlushBarriers(); };
+
+	TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+	TransitionResource(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), D3D12_RESOURCE_STATE_COPY_DEST);
+	FlushBarriers();
+	m_cmdList->CopyResource(fi.GetCurrentFrame(), backbuffer);
+	if (fi.HasPreviousFrame())
+	{
+		fi.Interpolate(m_cmdList.Get(), transition, flushBarriers);
+		TransitionResource(fi.GetOutput(), fi.GetOutputState(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_DEST);
+		FlushBarriers();
+		m_cmdList->CopyResource(backbuffer, fi.GetOutput());
+		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_PRESENT);
+		SubmitCommandList(false);
+		if (!swapChain->Present(1))
+		{
+			HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
+			return true;
+		}
+		// the real frame goes to the next backbuffer. Not through AcquireBackbuffer: a pending resize has to wait until
+		// the next frame, the frame copy needs the current size
+		ID3D12Resource* next = swapChain->GetCurrentBackbuffer();
+		TransitionResource(fi.GetCurrentFrame(), fi.GetCurrentFrameState(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+		TransitionResource(next, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_DEST);
+		FlushBarriers();
+		m_cmdList->CopyResource(next, fi.GetCurrentFrame());
+		swapChain->SetDefinedContent();
+	}
+	TransitionResource(swapChain->GetCurrentBackbuffer(), swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_PRESENT);
+	SubmitCommandList(false);
+	fi.Advance();
+	if (!swapChain->Present(1))
+		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
+	D3D12_Checkpoint(m_device.Get(), "present (interpolated)");
+	return true;
 }
 
 void D3D12Renderer::ClearColorbuffer(bool padView)

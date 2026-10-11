@@ -555,6 +555,8 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12BindingModel.h
     HW/Latte/Renderer/D3D12/D3D12Common.cpp
     HW/Latte/Renderer/D3D12/D3D12Common.h
+    HW/Latte/Renderer/D3D12/D3D12FrameInterpolator.cpp
+    HW/Latte/Renderer/D3D12/D3D12FrameInterpolator.h
     HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.cpp
     HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.h
     HW/Latte/Renderer/D3D12/D3D12Format.cpp
