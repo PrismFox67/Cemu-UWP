@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12SwapChain.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12FrameInterpolator.h"
+#include "Cafe/HW/Latte/Renderer/DisplayInfo.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12RootSignature.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ImGui.h"
@@ -789,6 +790,7 @@ bool D3D12Renderer::IsPadWindowActive()
 
 bool D3D12Renderer::AcquireBackbuffer(bool mainWindow)
 {
+	ServicePendingPresent(true);
 	if (!mainWindow)
 		ProcessPadSwapChainShutdown();
 	D3D12SwapChain* swapChain = GetSwapChainObj(mainWindow);
@@ -808,6 +810,7 @@ bool D3D12Renderer::AcquireBackbuffer(bool mainWindow)
 
 void D3D12Renderer::PresentSwapChain(bool mainWindow)
 {
+	ServicePendingPresent(true);
 	D3D12SwapChain* swapChain = GetSwapChainObj(mainWindow);
 	if (!swapChain || !swapChain->IsValid())
 		return;
@@ -833,6 +836,19 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	if (!swapChain->Present(vsync != 0 ? 1 : 0))
 		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
 	D3D12_Checkpoint(m_device.Get(), "present");
+}
+
+void D3D12Renderer::ServicePendingPresent(bool force)
+{
+	if (!m_pendingPresentSwapChain)
+		return;
+	if (!force && std::chrono::steady_clock::now() < m_pendingPresentAt)
+		return;
+	D3D12SwapChain* swapChain = m_pendingPresentSwapChain;
+	m_pendingPresentSwapChain = nullptr;
+	if (!swapChain->Present(0))
+		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
+	D3D12_Checkpoint(m_device.Get(), "present (pending real frame)");
 }
 
 void D3D12Renderer::UpdatePresentDiagnostics(D3D12SwapChain* swapChain, bool interpolationWanted)
@@ -868,6 +884,18 @@ void D3D12Renderer::UpdatePresentDiagnostics(D3D12SwapChain* swapChain, bool int
 	static const bool s_debugView = getenv("CEMU_INTERPOLATION_DEBUG") != nullptr; // presents once per frame on purpose
 	if (s_debugView)
 		slowDisplay = false;
+	// the output itself runs at 100+ Hz (Xbox: HDMI 120 Hz, but vsync paces apps at 60 Hz): present both frames without
+	// vsync and pace them here instead
+	const double modeHz = g_hostDisplayModeRefreshHz.load();
+	const bool unsynced = slowDisplay && modeHz >= 100.0;
+	if (unsynced != m_interpolationUnsynced)
+	{
+		m_interpolationUnsynced = unsynced;
+		cemuLog_log(LogType::Force, "D3D12: frame interpolation {} (vsync {:.2f} Hz, display mode {:.2f} Hz)",
+			unsynced ? "presents without vsync, paced half a game frame apart" : "presents with vsync again", hz, modeHz);
+	}
+	if (unsynced)
+		slowDisplay = false;
 	if (slowDisplay != m_interpolationPaused)
 	{
 		m_interpolationPaused = slowDisplay;
@@ -876,7 +904,7 @@ void D3D12Renderer::UpdatePresentDiagnostics(D3D12SwapChain* swapChain, bool int
 	}
 	if ((m_presentLogCounter++ % 15) == 0)
 		cemuLog_log(LogType::Force, "D3D12: display {:.2f} Hz (DXGI frame statistics), {:.1f} presents/s, Present blocks {:.1f} ms average, {:.1f} ms max, frame interpolation {}",
-			hz, stats.presents / seconds, avgBlockedMs, stats.maxBlockedMs, m_interpolationPaused ? "paused" : "active");
+			hz, stats.presents / seconds, avgBlockedMs, stats.maxBlockedMs, m_interpolationPaused ? "paused" : (m_interpolationUnsynced ? "active without vsync" : "active"));
 }
 
 // debugging aid: waits for the GPU and writes an RGBA8 texture as a 32 bit BMP
@@ -956,6 +984,17 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 	D3D12FrameInterpolator& fi = *m_frameInterpolator;
 	if (!fi.IsValid())
 		return false;
+	// game frame interval (smoothed), to pace the presents when they aren't vsynced
+	const auto frameStart = std::chrono::steady_clock::now();
+	if (m_lastGameFramePresent != std::chrono::steady_clock::time_point{})
+	{
+		const double ms = std::chrono::duration<double, std::milli>(frameStart - m_lastGameFramePresent).count();
+		if (ms > 5.0 && ms < 50.0)
+			m_gameFrameIntervalMs = m_gameFrameIntervalMs * 0.9 + ms * 0.1;
+	}
+	m_lastGameFramePresent = frameStart;
+	const uint32 syncInterval = m_interpolationUnsynced ? 0 : 1;
+	std::chrono::steady_clock::time_point interpolatedPresentedAt{};
 	ID3D12Resource* backbuffer = swapChain->GetCurrentBackbuffer();
 	const D3D12_RESOURCE_DESC desc = backbuffer->GetDesc();
 	if (!fi.HasSize((uint32)desc.Width, desc.Height))
@@ -1005,11 +1044,12 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 			return true;
 		}
 		SubmitCommandList(false);
-		if (!swapChain->Present(1))
+		if (!swapChain->Present(syncInterval))
 		{
 			HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
 			return true;
 		}
+		interpolatedPresentedAt = std::chrono::steady_clock::now();
 		// the real frame goes to the next backbuffer. Not through AcquireBackbuffer: a pending resize has to wait until
 		// the next frame, the frame copy needs the current size
 		ID3D12Resource* next = swapChain->GetCurrentBackbuffer();
@@ -1022,7 +1062,17 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 	TransitionResource(swapChain->GetCurrentBackbuffer(), swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_PRESENT);
 	SubmitCommandList(false);
 	fi.Advance();
-	if (!swapChain->Present(1))
+	if (syncInterval == 0 && interpolatedPresentedAt != std::chrono::steady_clock::time_point{})
+	{
+		// without vsync nothing spaces the two presents: the real frame is due half a game frame after the halfway one.
+		// Waiting here would stall the GPU thread, which goes on with the next frame, so its present is done from the
+		// next draws (or the next use of the backbuffer) once it's due
+		m_pendingPresentSwapChain = swapChain;
+		m_pendingPresentAt = interpolatedPresentedAt + std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double, std::milli>(m_gameFrameIntervalMs * 0.5));
+		D3D12_Checkpoint(m_device.Get(), "present (interpolated, real frame pending)");
+		return true;
+	}
+	if (!swapChain->Present(syncInterval))
 		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
 	D3D12_Checkpoint(m_device.Get(), "present (interpolated)");
 	return true;

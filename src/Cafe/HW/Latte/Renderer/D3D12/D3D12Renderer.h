@@ -336,6 +336,15 @@ private:
 	// interpolation presents twice per game frame, which halves the game's speed on a display under 100 Hz: measured every
 	// 2 s from the main swap chain (UpdatePresentDiagnostics), interpolation is paused while the display is that slow
 	bool m_interpolationPaused = false;
+	// Xbox: vsynced presents run at 60 Hz while the HDMI mode is 120 Hz. Then both frames are presented without vsync and
+	// paced by Cemu, half a game frame apart (relies on VRR or tolerates tearing)
+	bool m_interpolationUnsynced = false;
+	std::chrono::steady_clock::time_point m_lastGameFramePresent{};
+	double m_gameFrameIntervalMs = 1000.0 / 60.0;
+	// the real frame's present while unsynced, due half a game frame after the halfway frame's (ServicePendingPresent)
+	D3D12SwapChain* m_pendingPresentSwapChain = nullptr;
+	std::chrono::steady_clock::time_point m_pendingPresentAt{};
+	void ServicePendingPresent(bool force);
 	std::chrono::steady_clock::time_point m_presentWindowStart{};
 	uint32 m_presentLogCounter = 0;
 	// the pad window is closed from the UI thread while the render thread may still be using its swap chain

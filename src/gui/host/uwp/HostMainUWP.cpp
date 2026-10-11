@@ -13,6 +13,7 @@
 #include "config/CemuConfig.h"
 #include "config/LaunchSettings.h"
 #include "util/helpers/helpers.h"
+#include "Cafe/HW/Latte/Renderer/DisplayInfo.h"
 
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.ApplicationModel.Activation.h>
@@ -112,6 +113,7 @@ namespace
 			if (!wanted)
 			{
 				hdmi.SetDefaultDisplayModeAsync();
+				g_hostDisplayModeRefreshHz = 0.0;
 				cemuLog_log(LogType::Force, "Host: frame interpolation off, back to the default display mode");
 				return;
 			}
@@ -153,6 +155,8 @@ namespace
 				{
 				}
 				cemuLog_log(LogType::Force, "Host: switching to {:.2f} Hz for frame interpolation: {}", refresh, ok ? "ok" : "refused");
+				if (ok)
+					g_hostDisplayModeRefreshHz = refresh;
 			});
 		}
 		catch (const winrt::hresult_error& e)
