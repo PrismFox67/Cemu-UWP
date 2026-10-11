@@ -42,18 +42,20 @@ void LumaCS(uint3 id : SV_DispatchThreadID)
 {
 	if (id.x >= tiles.x || id.y >= tiles.y)
 		return;
-	const int2 origin = int2(id.xy) * int(tileSize);
+	// each bilinear fetch between four pixel centers averages a 2x2 quad
+	const float2 origin = float2(id.xy) * float(tileSize);
+	const float2 texel = 1.0 / float2(size);
 	float p = 0, c = 0;
-	[loop] for (uint y = 0; y < tileSize; y++)
+	[loop] for (uint y = 0; y < tileSize; y += 2)
 	{
-		[loop] for (uint x = 0; x < tileSize; x++)
+		[loop] for (uint x = 0; x < tileSize; x += 2)
 		{
-			const int3 q = int3(min(origin + int2(x, y), int2(size) - 1), 0);
-			p += Luma(Prev.Load(q).rgb);
-			c += Luma(Cur.Load(q).rgb);
+			const float2 uv = (origin + float2(x, y) + 1.0) * texel;
+			p += Luma(Prev.SampleLevel(LinearClamp, uv, 0).rgb);
+			c += Luma(Cur.SampleLevel(LinearClamp, uv, 0).rgb);
 		}
 	}
-	const float n = float(tileSize * tileSize);
+	const float n = float(tileSize * tileSize) * 0.25;
 	PrevLumaOut[id.xy] = p / n;
 	CurLumaOut[id.xy] = c / n;
 }
@@ -112,15 +114,16 @@ float TileCost(float2 center, float step, float2 texel, float2 mv)
 {
 	const float2 halfMv = mv * 0.5;
 	float cost = 0;
-	[unroll] for (int i = 0; i < 16; i++)
+	// 8 of the 4x4 grid in a checkerboard
+	[unroll] for (int i = 0; i < 8; i++)
 	{
-		const float2 p = center + (float2(i % 4, i / 4) - 1.5) * step;
+		const float2 p = center + (float2((i % 2) * 2 + (i / 2) % 2, i / 2) - 1.5) * step;
 		const float3 a = Prev.SampleLevel(LinearClamp, (p + halfMv) * texel, 0).rgb;
 		const float3 b = Cur.SampleLevel(LinearClamp, (p - halfMv) * texel, 0).rgb;
 		const float3 d = abs(a - b);
 		cost += d.r + d.g + d.b;
 	}
-	return cost / 48.0;
+	return cost / 24.0;
 }
 
 // one thread per tile (4x4 pixels at 1080p). Candidates: the vectors of the tile's block and its eight neighbors, their
@@ -160,12 +163,19 @@ void SelectCS(uint3 id : SV_DispatchThreadID)
 	cand[10] = lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
 	cand[11] = float2(0, 0);
 	const float lambda = 0.0015 / float(tileSize) * 4.0; // per pixel of deviation from the median (1080p)
+	const float shortness = 0.005 / float(tileSize) * 4.0; // per pixel of motion: on ambiguous content (fine stripes, flat areas) prefer standing still
 	float best = 1e30, bestFit = 0;
 	float2 bestMv = median;
-	[loop] for (int n = 0; n < 12; n++)
+	[unroll] for (int n = 0; n < 12; n++)
 	{
+		// neighbors mostly share their vector: test each distinct one once
+		bool seen = false;
+		[unroll] for (int m = 0; m < n; m++)
+			seen = seen || all(cand[m] == cand[n]);
+		if (seen)
+			continue;
 		const float fit = TileCost(center, step, texel, cand[n]);
-		const float cost = fit + lambda * (abs(cand[n].x - median.x) + abs(cand[n].y - median.y));
+		const float cost = fit + lambda * (abs(cand[n].x - median.x) + abs(cand[n].y - median.y)) + shortness * (abs(cand[n].x) + abs(cand[n].y));
 		if (cost < best) { best = cost; bestFit = fit; bestMv = cand[n]; }
 	}
 	TilesOut[id.xy] = float4(bestMv, bestFit, 0);
@@ -183,13 +193,10 @@ void InterpolateCS(uint3 id : SV_DispatchThreadID)
 	const float2 halfMv = tile.xy * 0.5 * texel;
 	const float4 a = Prev.SampleLevel(LinearClamp, uv + halfMv, 0);
 	const float4 b = Cur.SampleLevel(LinearClamp, uv - halfMv, 0);
-	// nothing fits (occlusion, effects, a scene cut): show the current frame there, which judders but doesn't ghost
-	const float4 current = Cur.Load(int3(id.xy, 0));
-	// per pixel, where the two warped frames still disagree (text or thin edges a pixel or two off) a blend would show both
-	// copies: take only the current frame's side there, which stays in place with its surroundings
-	const float3 d = abs(a.rgb - b.rgb);
-	const float4 warped = lerp(0.5 * (a + b), b, saturate(((d.r + d.g + d.b) * (1.0 / 3.0) - 0.08) * 8.0));
-	Output[id.xy] = lerp(warped, current, saturate((tile.z - 0.06) * 10.0));
+	// where no vector fits (occlusion, effects, fades, a scene cut) a plain blend of the two frames. Measured against real
+	// middle frames (dumped triplets) this beat showing the current frame, and warping only one side per pixel
+	const float4 plain = 0.5 * (Prev.Load(int3(id.xy, 0)) + Cur.Load(int3(id.xy, 0)));
+	Output[id.xy] = lerp(0.5 * (a + b), plain, saturate((tile.z - 0.06) * 10.0));
 }
 )";
 
