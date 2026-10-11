@@ -229,6 +229,7 @@ private:
 	bool AcquireBackbuffer(bool mainWindow);
 	void PresentSwapChain(bool mainWindow);
 	bool PresentInterpolated(D3D12SwapChain* swapChain);
+	void UpdatePresentDiagnostics(D3D12SwapChain* swapChain, bool interpolationWanted);
 	void DumpTextureBMP(ID3D12Resource* texture, D3D12_RESOURCE_STATES& state, const std::string& path);
 
 	// draw path (D3D12RendererCore.cpp)
@@ -332,6 +333,11 @@ private:
 	std::unique_ptr<D3D12SwapChain> m_swapChainMain;
 	std::unique_ptr<D3D12SwapChain> m_swapChainPad;
 	std::unique_ptr<D3D12FrameInterpolator> m_frameInterpolator; // created when frame interpolation is first used
+	// interpolation presents twice per game frame, which halves the game's speed on a display under 100 Hz: measured every
+	// 2 s from the main swap chain (UpdatePresentDiagnostics), interpolation is paused while the display is that slow
+	bool m_interpolationPaused = false;
+	std::chrono::steady_clock::time_point m_presentWindowStart{};
+	uint32 m_presentLogCounter = 0;
 	// the pad window is closed from the UI thread while the render thread may still be using its swap chain
 	std::atomic<bool> m_padShutdownRequested{ false };
 	std::mutex m_padSwapChainMutex;

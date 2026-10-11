@@ -43,6 +43,18 @@ public:
 	// returns false if presentation failed because the device was removed
 	bool Present(uint32 syncInterval);
 
+	// presents since the last call and the time the CPU spent blocked in them
+	struct PresentStats
+	{
+		uint32 presents = 0;
+		double blockedMs = 0.0;
+		double maxBlockedMs = 0.0;
+	};
+	PresentStats TakePresentStats();
+	// refresh rate of the display the swap chain presents to, measured from DXGI frame statistics (vblank counter and its
+	// timestamp) since the previous call. 0 if the statistics aren't available
+	double MeasureRefreshRate();
+
 	// non-zero if a resize was requested by the UI thread and has to be applied on the render thread
 	void RequestResize(uint32 width, uint32 height);
 	bool ConsumeResizeRequest(uint32& width, uint32& height);
@@ -68,6 +80,10 @@ private:
 		D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_PRESENT;
 	};
 	Buffer m_buffers[D3D12Const::kSwapChainBufferCount];
+
+	PresentStats m_presentStats;
+	UINT m_lastSyncRefreshCount = 0;
+	LARGE_INTEGER m_lastSyncQPCTime{};
 
 	std::mutex m_resizeMutex;
 	bool m_resizePending = false;

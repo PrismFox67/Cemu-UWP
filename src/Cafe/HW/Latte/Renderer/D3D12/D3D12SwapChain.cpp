@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12SwapChain.h"
 
 #include <dxgi1_5.h>
+#include <chrono>
 
 D3D12SwapChain::D3D12SwapChain(ID3D12Device* device, IDXGIFactory4* factory, ID3D12CommandQueue* queue, D3D12StagingDescriptorHeap* rtvHeap, TargetType type, void* nativeHandle, uint32 width, uint32 height)
 	: m_device(device), m_rtvHeap(rtvHeap), m_type(type), m_width(std::max<uint32>(width, 1)), m_height(std::max<uint32>(height, 1))
@@ -116,7 +117,12 @@ bool D3D12SwapChain::Present(uint32 syncInterval)
 	UINT flags = 0;
 	if (syncInterval == 0 && m_allowTearing)
 		flags |= DXGI_PRESENT_ALLOW_TEARING;
+	const auto start = std::chrono::steady_clock::now();
 	HRESULT hr = m_swapChain->Present(syncInterval, flags);
+	const double blockedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+	m_presentStats.presents++;
+	m_presentStats.blockedMs += blockedMs;
+	m_presentStats.maxBlockedMs = std::max(m_presentStats.maxBlockedMs, blockedMs);
 	m_currentIndex = m_swapChain->GetCurrentBackBufferIndex();
 	m_hasDefinedContent = false;
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
@@ -124,6 +130,32 @@ bool D3D12SwapChain::Present(uint32 syncInterval)
 	if (FAILED(hr))
 		cemuLog_logDebug(LogType::Force, "D3D12: Present returned {}", D3D12_HResultToString(hr));
 	return true;
+}
+
+D3D12SwapChain::PresentStats D3D12SwapChain::TakePresentStats()
+{
+	const PresentStats stats = m_presentStats;
+	m_presentStats = {};
+	return stats;
+}
+
+double D3D12SwapChain::MeasureRefreshRate()
+{
+	DXGI_FRAME_STATISTICS stats{};
+	if (!m_swapChain || FAILED(m_swapChain->GetFrameStatistics(&stats)) || stats.SyncQPCTime.QuadPart == 0)
+		return 0.0;
+	double hz = 0.0;
+	if (m_lastSyncQPCTime.QuadPart != 0 && stats.SyncQPCTime.QuadPart > m_lastSyncQPCTime.QuadPart && stats.SyncRefreshCount > m_lastSyncRefreshCount)
+	{
+		LARGE_INTEGER frequency;
+		QueryPerformanceFrequency(&frequency);
+		const double seconds = double(stats.SyncQPCTime.QuadPart - m_lastSyncQPCTime.QuadPart) / double(frequency.QuadPart);
+		if (seconds > 0.25)
+			hz = double(stats.SyncRefreshCount - m_lastSyncRefreshCount) / seconds;
+	}
+	m_lastSyncRefreshCount = stats.SyncRefreshCount;
+	m_lastSyncQPCTime = stats.SyncQPCTime;
+	return hz;
 }
 
 void D3D12SwapChain::RequestResize(uint32 width, uint32 height)

@@ -812,7 +812,10 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	if (!swapChain || !swapChain->IsValid())
 		return;
 	const int vsync = GetConfig().vsync.GetValue();
-	const bool interpolate = mainWindow && vsync != 0 && GetConfig().frame_interpolation.GetValue();
+	const bool interpolationWanted = mainWindow && vsync != 0 && GetConfig().frame_interpolation.GetValue();
+	if (mainWindow)
+		UpdatePresentDiagnostics(swapChain, interpolationWanted);
+	const bool interpolate = interpolationWanted && !m_interpolationPaused;
 	if (interpolate && swapChain->HasDefinedContent() && PresentInterpolated(swapChain))
 		return;
 	if (m_frameInterpolator && mainWindow)
@@ -830,6 +833,50 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	if (!swapChain->Present(vsync != 0 ? 1 : 0))
 		HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
 	D3D12_Checkpoint(m_device.Get(), "present");
+}
+
+void D3D12Renderer::UpdatePresentDiagnostics(D3D12SwapChain* swapChain, bool interpolationWanted)
+{
+	const auto now = std::chrono::steady_clock::now();
+	if (m_presentWindowStart == std::chrono::steady_clock::time_point{})
+	{
+		m_presentWindowStart = now;
+		swapChain->TakePresentStats();
+		swapChain->MeasureRefreshRate();
+		return;
+	}
+	const double seconds = std::chrono::duration<double>(now - m_presentWindowStart).count();
+	if (seconds < 2.0)
+		return;
+	m_presentWindowStart = now;
+	const D3D12SwapChain::PresentStats stats = swapChain->TakePresentStats();
+	const double hz = swapChain->MeasureRefreshRate();
+	if (!interpolationWanted)
+	{
+		m_interpolationPaused = false;
+		return;
+	}
+	const double avgBlockedMs = stats.presents ? stats.blockedMs / stats.presents : 0.0;
+	// with frame statistics the refresh rate decides. Without them, Present() blocking about a 60 Hz refresh each time
+	// while interpolating means the same (only judged while interpolating: one present per game frame blocks that long
+	// on a 120 Hz display too)
+	bool slowDisplay = m_interpolationPaused;
+	if (hz > 0.0)
+		slowDisplay = hz < 100.0;
+	else if (!m_interpolationPaused && stats.presents > 30)
+		slowDisplay = avgBlockedMs > 12.0;
+	static const bool s_debugView = getenv("CEMU_INTERPOLATION_DEBUG") != nullptr; // presents once per frame on purpose
+	if (s_debugView)
+		slowDisplay = false;
+	if (slowDisplay != m_interpolationPaused)
+	{
+		m_interpolationPaused = slowDisplay;
+		cemuLog_log(LogType::Force, "D3D12: frame interpolation {} (display {:.2f} Hz, Present blocks {:.1f} ms on average)",
+			slowDisplay ? "paused, the display runs under 100 Hz and two presents per game frame would halve the game's speed" : "resumed", hz, avgBlockedMs);
+	}
+	if ((m_presentLogCounter++ % 15) == 0)
+		cemuLog_log(LogType::Force, "D3D12: display {:.2f} Hz (DXGI frame statistics), {:.1f} presents/s, Present blocks {:.1f} ms average, {:.1f} ms max, frame interpolation {}",
+			hz, stats.presents / seconds, avgBlockedMs, stats.maxBlockedMs, m_interpolationPaused ? "paused" : "active");
 }
 
 // debugging aid: waits for the GPU and writes an RGBA8 texture as a 32 bit BMP
