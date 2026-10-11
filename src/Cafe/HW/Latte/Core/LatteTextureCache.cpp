@@ -4,6 +4,9 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
 
+#include <algorithm>
+#include <atomic>
+
 std::unordered_set<LatteTexture*> g_allTextures;
 
 void LatteTC_Init()
@@ -390,12 +393,43 @@ bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 
 void LatteTexture_RefreshInfoCache();
 
+// Set by the frontend when the process gets close to its memory limit (Xbox: 5 GB for the app) and by renderers when a
+// texture can't be created. RAM-backed textures normally stay cached for two minutes after their last use, so loading
+// the next Mario Kart 8 track at 4K kept the previous track's textures and went over the limit
+static std::atomic_bool s_textureMemoryPressure = false;
+
+void LatteTC_SetMemoryPressure(bool pressure)
+{
+	s_textureMemoryPressure = pressure;
+}
+
+// under memory pressure: deletes textures not used in the last frames that can be recreated (from RAM or because the
+// GPU overwrote them), least recently used first
+static void LatteTC_ReleaseForMemoryPressure()
+{
+	std::vector<LatteTexture*> deletable = LatteTC_GetDeleteableTextures();
+	if (deletable.empty())
+		return;
+	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
+	const size_t count = std::min<size_t>(deletable.size(), 48);
+	for (size_t i = 0; i < count; i++)
+		LatteTexture_Delete(deletable[i]);
+	static uint32 s_lastLogFrame = 0;
+	if (LatteGPUState.frameCounter - s_lastLogFrame >= 120)
+	{
+		s_lastLogFrame = LatteGPUState.frameCounter;
+		cemuLog_log(LogType::Force, "Memory pressure: released {} unused textures ({} could be released)", count, deletable.size());
+	}
+}
+
 /*
  * Scans for unused textures and deletes them
  * Called at the end of every frame
  */
 void LatteTC_CleanupUnusedTextures()
 {
+	if (s_textureMemoryPressure)
+		LatteTC_ReleaseForMemoryPressure();
 	static size_t currentScanIndex = 0;
 	uint32 currentTick = GetTickCount();
 	sint32 maxDelete = 10;

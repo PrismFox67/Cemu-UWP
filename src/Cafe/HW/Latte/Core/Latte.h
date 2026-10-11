@@ -128,6 +128,7 @@ void LatteTC_FlagSliceAsGPUUpdated(LatteTexture* hostTexture, uint32 sliceIndex,
 
 void LatteTC_MarkTextureStillInUse(LatteTexture* texture); // lets the texture garbage collector know the texture is still in use at the time of this function call
 void LatteTC_CleanupUnusedTextures();
+void LatteTC_SetMemoryPressure(bool pressure); // release unused textures early (process near its memory limit)
 
 std::vector<LatteTexture*> LatteTC_GetDeleteableTextures();
 

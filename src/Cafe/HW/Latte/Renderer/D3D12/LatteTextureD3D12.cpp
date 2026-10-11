@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 
 #include <mutex>
 #include <unordered_set>
@@ -90,6 +91,8 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 		cemuLog_log(LogType::Force, "D3D12: Failed to create texture {}x{}x{} fmt {:04x} ({}): {}", m_desc.Width, m_desc.Height, m_desc.DepthOrArraySize, (uint32)format, (uint32)m_desc.Format, D3D12_HResultToString(hr));
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 			renderer->HandleDeviceError(hr, "CreateCommittedResource (texture)");
+		else if (hr == E_OUTOFMEMORY)
+			LatteTC_SetMemoryPressure(true); // the frontend clears it again once memory use is back down
 		// otherwise keep going without a host resource. All users check GetResource() and views become null descriptors
 	}
 	else if (renderer->IsDebugNamingEnabled())

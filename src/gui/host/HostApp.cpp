@@ -332,12 +332,24 @@ namespace
 	{
 		static auto s_next = std::chrono::steady_clock::now();
 		static uint64 s_highest = 0;
+		static bool s_pressure = false;
 		const auto now = std::chrono::steady_clock::now();
 		if (now < s_next)
 			return;
-		s_next = now + std::chrono::seconds(5);
+		s_next = now + std::chrono::milliseconds(250);
 		uint64 usage, limit;
 		HostPlatform::GetMemoryUsage(usage, limit);
+		// above 80% of the budget the texture cache releases unused textures early, below 70% it goes back to normal
+		if (limit)
+		{
+			const bool pressure = s_pressure ? usage * 100 >= limit * 70 : usage * 100 >= limit * 80;
+			if (pressure != s_pressure)
+			{
+				s_pressure = pressure;
+				LatteTC_SetMemoryPressure(pressure);
+				cemuLog_log(LogType::Force, "Host: memory {} MB of {} MB, texture memory pressure {}", usage >> 20, limit >> 20, pressure ? "on" : "off");
+			}
+		}
 		static auto s_lastLog = now - std::chrono::seconds(30);
 		const bool newHigh = usage >= s_highest + 256 * 1024 * 1024;
 		if (!newHigh && now - s_lastLog < std::chrono::seconds(30))

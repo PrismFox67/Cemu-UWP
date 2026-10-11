@@ -204,7 +204,19 @@ void HostPlatform::GetMemoryUsage(uint64& usage, uint64& limit)
 {
 	PROCESS_MEMORY_COUNTERS_EX counters{};
 	usage = GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&counters, sizeof(counters)) ? counters.PrivateUsage : 0;
-	limit = 0;
+	// CEMU_MEMORY_LIMIT_MB simulates the Xbox's per app budget (for testing the texture memory pressure handling)
+	static const uint64 s_limit = []() -> uint64 {
+		char* value = nullptr;
+		size_t length = 0;
+		uint64 mb = 0;
+		if (_dupenv_s(&value, &length, "CEMU_MEMORY_LIMIT_MB") == 0 && value)
+		{
+			mb = strtoull(value, nullptr, 10);
+			free(value);
+		}
+		return mb << 20;
+	}();
+	limit = s_limit;
 }
 
 namespace
