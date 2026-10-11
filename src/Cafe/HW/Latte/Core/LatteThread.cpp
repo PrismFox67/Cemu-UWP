@@ -9,6 +9,7 @@
 #include "WindowSystem.h"
 
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
+#include "Cafe/HW/Latte/Core/LatteIndices.h"
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
@@ -248,8 +249,13 @@ bool Latte_GetStopSignal()
 
 void LatteThread_Exit()
 {
+	// the index cache is global and holds allocations of the renderer: release them while it exists, otherwise the next
+	// title reuses or frees allocations of the destroyed renderer (crashed when a game was started a second time)
 	if (g_renderer)
+	{
+		LatteIndices_invalidateAll();
 		g_renderer->Shutdown();
+	}
     // clean up vertex/uniform cache
     LatteBufferCache_UnloadAll();
 	// clean up texture cache
