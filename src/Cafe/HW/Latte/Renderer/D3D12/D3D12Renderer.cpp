@@ -864,7 +864,17 @@ bool D3D12Renderer::PresentInterpolated(D3D12SwapChain* swapChain)
 		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_COPY_DEST);
 		FlushBarriers();
 		m_cmdList->CopyResource(backbuffer, fi.GetOutput());
+		// CEMU_INTERPOLATION_DEBUG=1 shows only the interpolated frames, to judge their quality on a 60 Hz screen
+		static const bool s_onlyInterpolated = getenv("CEMU_INTERPOLATION_DEBUG") != nullptr;
 		TransitionResource(backbuffer, swapChain->GetCurrentBackbufferState(), D3D12_RESOURCE_STATE_PRESENT);
+		if (s_onlyInterpolated)
+		{
+			SubmitCommandList(false);
+			fi.Advance();
+			if (!swapChain->Present(1))
+				HandleDeviceError(m_device->GetDeviceRemovedReason(), "Present");
+			return true;
+		}
 		SubmitCommandList(false);
 		if (!swapChain->Present(1))
 		{
