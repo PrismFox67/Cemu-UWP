@@ -125,12 +125,15 @@ Settings → Game folders.
 2. Encrypted `.wud/.wux` dumps need `keys.txt` in the app's `LocalState`. Upload it with Device Portal's **File
    explorer** (`LocalAppData\CemuUWP.Unofficial_<id>\LocalState`). The same folder holds `log.txt`; download it
    after a crash.
-3. Graphic packs (higher resolution, e.g. 4K): **Graphic packs** tab → **Download community graphic packs**
+3. Sound: **Settings → Audio → Sound output: 5.1 surround** (new installs default to it) makes games that support
+   surround, like Mario Kart 8, mix 5.1. What reaches the TV or receiver depends on the Xbox's own setting (Settings
+   → General → Volume & audio output); `log.txt` shows the "XAudio2: … channel output" the app got.
+4. Graphic packs (higher resolution, e.g. 4K): **Graphic packs** tab → **Download community graphic packs**
    (downloads the latest release of github.com/cemu-project/cemu_graphic_packs into `LocalState/graphicPacks`). The
    tab lists the packs of the game selected under **Games**; tick one and pick its presets, for example Mario Kart 8's
    `Graphics` pack with resolution `3840x2160`. Changes apply at the next game start. Own packs can be uploaded to
    `LocalState/graphicPacks` with Device Portal.
-4. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
+5. In the launcher B goes back; in a game B belongs to the game (the system's back action is suppressed, so it
    doesn't send the app to the background). Click both sticks for the in-game menu → **Exit to game list** to stop
    the game, or **Quit Cemu** to close the app.
 

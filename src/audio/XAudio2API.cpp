@@ -54,6 +54,14 @@ XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channel
 		throw std::runtime_error(fmt::format("can't create xaudio mastering voice (hres: {:#x})", hres));
 
 	m_mastering_voice.reset(mastering_voice);
+	{
+		// what the output device takes (on Xbox: the console's audio setting), to tell why 5.1 sounds like stereo
+		DWORD deviceMask = 0;
+		mastering_voice->GetChannelMask(&deviceMask);
+		XAUDIO2_VOICE_DETAILS details{};
+		mastering_voice->GetVoiceDetails(&details);
+		cemuLog_log(LogType::Force, "XAudio2: {} channel output at {} Hz (device speaker mask 0x{:x})", details.InputChannels, details.InputSampleRate, (uint32)deviceMask);
+	}
 
 	m_wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
 	m_wfx.Format.nChannels = channels;

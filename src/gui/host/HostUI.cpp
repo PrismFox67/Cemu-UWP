@@ -417,6 +417,25 @@ namespace
 			changed = true;
 		}
 
+		ImGui::SeparatorText("Audio");
+		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
+		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
+		const char* channelNames[] = { "Mono", "Stereo", "5.1 surround" };
+		int channels = std::clamp<int>(config.tv_channels, 0, 2);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo("Sound output (applies when a game starts)", &channels, channelNames, 3))
+		{
+			config.tv_channels = (AudioChannels)channels;
+			changed = true;
+		}
+		int volume = std::clamp<int>(config.tv_volume, 0, 100);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::SliderInt("Volume", &volume, 0, 100, "%d%%"))
+		{
+			config.tv_volume = volume;
+			changed = true;
+		}
+
 		ImGui::SeparatorText("Folders");
 		ImGui::TextWrapped("Data (settings, mlc01, shader caches, keys.txt): %s", _pathToUtf8(ActiveSettings::GetUserDataPath()).c_str());
 		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());

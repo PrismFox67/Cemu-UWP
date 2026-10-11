@@ -146,6 +146,9 @@ namespace
 		{
 			config.async_compile = true;
 			config.vsync = 1;
+			// a console's output: full volume, 5.1 (XAudio2 downmixes for stereo devices)
+			config.tv_channels = kSurround;
+			config.tv_volume = 100;
 		}
 		// XAudio2 is the audio API that exists everywhere this frontend runs (Windows, UWP, Xbox)
 		if (!IAudioAPI::IsAudioAPIAvailable((IAudioAPI::AudioAPI)config.audio_api) && IAudioAPI::IsAudioAPIAvailable(IAudioAPI::XAudio2))
