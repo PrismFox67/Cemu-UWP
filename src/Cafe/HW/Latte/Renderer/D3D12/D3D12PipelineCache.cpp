@@ -126,26 +126,113 @@ public:
 		return cache;
 	}
 
+	// The Xbox driver removes the device when a pipeline library is created, and takes ~2.5 s per pipeline, so every
+	// session recompiled everything. This mode stores each pipeline's cached blob (ID3D12PipelineState::GetCachedBlob),
+	// appended to a file, and recreates pipelines from it with CachedPSO. Whether the driver handles that is tested once
+	// per device (probeMarker): "testing" is written before the first test, so a test that takes the app down leaves
+	// it behind and the mode stays off from then on
+	static std::shared_ptr<D3D12PipelineDiskCache> OpenBlobs(ID3D12Device* device, const fs::path& path, const fs::path& probeMarker)
+	{
+		std::string probe;
+		{
+			std::ifstream marker(probeMarker);
+			std::getline(marker, probe);
+		}
+		if (probe == "testing" || probe == "failed")
+		{
+			if (probe == "testing")
+			{
+				std::ofstream(probeMarker, std::ios::trunc) << "failed";
+				cemuLog_log(LogType::Force, "D3D12: The pipeline blob cache test didn't finish last time, the cache stays off");
+			}
+			return CreateInMemory();
+		}
+		auto cache = std::make_shared<D3D12PipelineDiskCache>();
+		cache->m_device = device;
+		cache->m_path = path;
+		cache->m_probeMarker = probeMarker;
+		cache->m_blobMode = true;
+		cache->m_probePending = probe != "ok";
+		if (!cache->m_probePending)
+			cache->ReadBlobIndex();
+		cemuLog_log(LogType::Force, "D3D12: Pipeline blob cache: {} pipelines{}", cache->m_blobIndex.size(), cache->m_probePending ? " (testing whether the driver supports it)" : "");
+		return cache;
+	}
+
 	bool Load(const std::wstring& name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc, ComPtr<ID3D12PipelineState>& pso)
 	{
-		std::lock_guard lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		if (!m_library)
 		{
 			auto it = m_inMemory.find(name);
-			if (it == m_inMemory.end())
+			if (it != m_inMemory.end())
+			{
+				pso = it->second; // pipeline state objects are immutable and can be shared
+				return true;
+			}
+			if (!m_blobMode || m_probePending)
 				return false;
-			pso = it->second; // pipeline state objects are immutable and can be shared
+			auto blob = m_blobIndex.find(name);
+			if (blob == m_blobIndex.end())
+				return false;
+			std::vector<uint8> data;
+			if (!ReadBlob(blob->second, data))
+			{
+				m_blobIndex.erase(blob);
+				return false;
+			}
+			lock.unlock();
+			D3D12_GRAPHICS_PIPELINE_STATE_DESC cachedDesc = desc;
+			cachedDesc.CachedPSO = { data.data(), data.size() };
+			const HRESULT hr = m_device->CreateGraphicsPipelineState(&cachedDesc, IID_PPV_ARGS(&pso));
+			lock.lock();
+			if (FAILED(hr))
+			{
+				// another driver version, or the description changed: compile it again, which stores a new blob
+				m_blobIndex.erase(name);
+				if (m_blobFailures++ == 0)
+					cemuLog_log(LogType::Force, "D3D12: A cached pipeline blob was rejected ({}), recompiling", D3D12_HResultToString(hr));
+				pso.Reset();
+				return false;
+			}
+			m_inMemory.emplace(name, pso);
 			return true;
 		}
 		return SUCCEEDED(m_library->LoadGraphicsPipeline(name.c_str(), &desc, IID_PPV_ARGS(&pso)));
 	}
 
-	void Store(const std::wstring& name, ID3D12PipelineState* pso)
+	void Store(const std::wstring& name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc, ID3D12PipelineState* pso)
 	{
-		std::lock_guard lock(m_mutex);
+		std::unique_lock lock(m_mutex);
 		if (!m_library)
 		{
 			m_inMemory.emplace(name, pso);
+			if (!m_blobMode || m_blobIndex.count(name) != 0)
+				return;
+			ComPtr<ID3DBlob> blob;
+			if (FAILED(pso->GetCachedBlob(&blob)) || !blob || blob->GetBufferSize() == 0)
+				return;
+			if (m_probePending)
+			{
+				// first pipeline of this device: check that the driver recreates it from the blob
+				m_probePending = false;
+				std::ofstream(m_probeMarker, std::ios::trunc) << "testing";
+				D3D12_GRAPHICS_PIPELINE_STATE_DESC cachedDesc = desc;
+				cachedDesc.CachedPSO = { blob->GetBufferPointer(), blob->GetBufferSize() };
+				ComPtr<ID3D12PipelineState> test;
+				const HRESULT hr = m_device->CreateGraphicsPipelineState(&cachedDesc, IID_PPV_ARGS(&test));
+				const HRESULT removed = m_device->GetDeviceRemovedReason();
+				const bool ok = SUCCEEDED(hr) && removed == S_OK;
+				std::ofstream(m_probeMarker, std::ios::trunc) << (ok ? "ok" : "failed");
+				cemuLog_log(LogType::Force, "D3D12: Pipeline blob cache test: {} ({}, device {})", ok ? "works, pipelines are cached on disk" : "not supported, pipelines are kept for this session", D3D12_HResultToString(hr), D3D12_HResultToString(removed));
+				if (!ok)
+				{
+					m_blobMode = false;
+					return;
+				}
+				ReadBlobIndex();
+			}
+			AppendBlob(name, blob->GetBufferPointer(), (uint32)blob->GetBufferSize());
 			return;
 		}
 		if (SUCCEEDED(m_library->StorePipeline(name.c_str(), pso)))
@@ -191,6 +278,74 @@ public:
 	}
 
 private:
+	// blob file: "CPSB", version, then entries of name length (uint16, in wchar_t), name, blob size (uint32), blob.
+	// Entries are only appended; a later entry of the same name wins. Blobs are read from the file when needed
+	static constexpr uint32 kBlobFileMagic = 0x42535043; // "CPSB"
+	static constexpr uint32 kBlobFileVersion = 1;
+	struct BlobLocation
+	{
+		uint64 offset;
+		uint32 size;
+	};
+
+	void ReadBlobIndex()
+	{
+		m_blobIndex.clear();
+		std::ifstream file(m_path, std::ios::binary);
+		uint32 header[2]{};
+		if (!file.read((char*)header, sizeof(header)) || header[0] != kBlobFileMagic || header[1] != kBlobFileVersion)
+			return;
+		while (true)
+		{
+			uint16 nameLength = 0;
+			if (!file.read((char*)&nameLength, sizeof(nameLength)) || nameLength == 0 || nameLength > 64)
+				break;
+			std::wstring name(nameLength, L'\0');
+			uint32 size = 0;
+			if (!file.read((char*)name.data(), nameLength * sizeof(wchar_t)) || !file.read((char*)&size, sizeof(size)))
+				break;
+			const uint64 offset = (uint64)file.tellg();
+			if (!file.seekg(size, std::ios::cur) || (uint64)file.tellg() != offset + size)
+				break; // incomplete last entry (the app was closed while writing)
+			m_blobIndex[name] = { offset, size };
+			m_blobFileSize = offset + size;
+		}
+	}
+
+	bool ReadBlob(const BlobLocation& location, std::vector<uint8>& data)
+	{
+		std::lock_guard fileLock(m_fileMutex);
+		std::ifstream file(m_path, std::ios::binary);
+		data.resize(location.size);
+		return file.seekg((std::streamoff)location.offset) && file.read((char*)data.data(), location.size);
+	}
+
+	void AppendBlob(const std::wstring& name, const void* data, uint32 size)
+	{
+		std::lock_guard fileLock(m_fileMutex);
+		std::error_code ec;
+		fs::create_directories(m_path.parent_path(), ec);
+		const bool newFile = m_blobFileSize == 0;
+		std::ofstream file(m_path, std::ios::binary | (newFile ? std::ios::trunc : std::ios::app));
+		if (!file)
+			return;
+		if (newFile)
+		{
+			const uint32 header[2] = { kBlobFileMagic, kBlobFileVersion };
+			file.write((const char*)header, sizeof(header));
+			m_blobFileSize = sizeof(header);
+		}
+		const uint16 nameLength = (uint16)name.size();
+		file.write((const char*)&nameLength, sizeof(nameLength));
+		file.write((const char*)name.data(), nameLength * sizeof(wchar_t));
+		file.write((const char*)&size, sizeof(size));
+		const uint64 offset = m_blobFileSize + sizeof(nameLength) + nameLength * sizeof(wchar_t) + sizeof(size);
+		if (!file.write((const char*)data, size))
+			return;
+		m_blobFileSize = offset + size;
+		m_blobIndex[name] = { offset, size };
+	}
+
 	std::mutex m_mutex;
 	std::mutex m_fileMutex;
 	fs::path m_path;
@@ -199,6 +354,14 @@ private:
 	std::unordered_map<std::wstring, ComPtr<ID3D12PipelineState>> m_inMemory;
 	bool m_dirty = false;
 	std::chrono::steady_clock::time_point m_lastSave;
+	// blob mode (see OpenBlobs)
+	ComPtr<ID3D12Device> m_device;
+	fs::path m_probeMarker;
+	bool m_blobMode = false;
+	bool m_probePending = false;
+	uint32 m_blobFailures = 0;
+	uint64 m_blobFileSize = 0;
+	std::unordered_map<std::wstring, BlobLocation> m_blobIndex;
 };
 
 // A pipeline description that no longer references any Latte or renderer object, so it can be compiled on another thread
@@ -357,15 +520,18 @@ private:
 			return;
 		}
 		std::wstring cacheName;
+		D3D12PipelineQuarantine::t_creatingKey = cacheKey; // loading from a cached blob compiles too
 		if (diskCache)
 		{
 			const std::string key = fmt::format("{:016x}", cacheKey);
 			cacheName.assign(key.begin(), key.end());
 			if (diskCache->Load(cacheName, desc, info->pso))
+			{
+				D3D12PipelineQuarantine::t_creatingKey = 0;
 				return;
+			}
 		}
 		const auto start = std::chrono::steady_clock::now();
-		D3D12PipelineQuarantine::t_creatingKey = cacheKey;
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
 		D3D12PipelineQuarantine::t_creatingKey = 0;
 		D3D12_Checkpoint(device.Get(), "game pipeline created");
@@ -380,7 +546,11 @@ private:
 			if (ms >= 2000)
 				cemuLog_log(LogType::Force, "D3D12: The driver took {}ms to create the pipeline for VS {:016x} PS {:016x}", ms, vsHash, psHash);
 			if (diskCache)
-				diskCache->Store(cacheName, info->pso.Get());
+			{
+				D3D12PipelineQuarantine::t_creatingKey = cacheKey; // the blob cache test recreates the pipeline
+				diskCache->Store(cacheName, desc, info->pso.Get());
+				D3D12PipelineQuarantine::t_creatingKey = 0;
+			}
 		}
 	}
 
@@ -716,10 +886,25 @@ void D3D12PipelineCache::OpenDiskCaches(uint64 titleId)
 		return;
 	m_diskCacheOpened = true;
 	D3D12PipelineQuarantine::Open(titleId);
-	if (m_renderer->IsPipelineLibrarySupported())
+	bool forceBlobs = false; // CEMU_D3D12_PSO_BLOBS=1 tests the Xbox's blob cache on a PC
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	char* env = nullptr;
+	size_t envLength = 0;
+	if (_dupenv_s(&env, &envLength, "CEMU_D3D12_PSO_BLOBS") == 0 && env)
+	{
+		forceBlobs = env[0] == '1';
+		free(env);
+	}
+#endif
+	if (m_renderer->IsPipelineLibrarySupported() && !forceBlobs)
 		m_diskCache = D3D12PipelineDiskCache::Open(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}.bin", titleId));
 	if (!m_diskCache) // see D3D12Renderer::CreateDevice
-		m_diskCache = D3D12PipelineDiskCache::CreateInMemory();
+	{
+		const fs::path probeMarker = ActiveSettings::GetCachePath("shaderCache/driver/d3d12/pipeline_blob_test.txt");
+		std::error_code ec;
+		fs::create_directories(probeMarker.parent_path(), ec);
+		m_diskCache = D3D12PipelineDiskCache::OpenBlobs(m_renderer->GetDevice(), ActiveSettings::GetCachePath("shaderCache/driver/d3d12/{:016x}_blobs.bin", titleId), probeMarker);
+	}
 	if (m_diskCache) // recreating pipelines at launch only helps if they can be cached
 		m_recordFile = std::make_unique<D3D12PipelineRecordFile>(ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12pipelines.bin", titleId));
 }
@@ -922,7 +1107,14 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 			m_waitWindowStart = now;
 			m_waitedInWindow = std::chrono::milliseconds(0);
 		}
-		const auto timeout = std::max(std::chrono::milliseconds(0), std::chrono::milliseconds(2000) - m_waitedInWindow);
+		// Settings → "Shader compiling": smooth never waits (a draw is skipped until its pipeline is ready, effects can
+		// pop in or stay missing if the game draws them only once), accurate always waits (stutters, never skips)
+		auto timeout = std::max(std::chrono::milliseconds(0), std::chrono::milliseconds(2000) - m_waitedInWindow);
+		const int waitMode = GetConfig().pipeline_wait.GetValue();
+		if (waitMode == 0)
+			timeout = std::chrono::milliseconds(0);
+		else if (waitMode == 2)
+			timeout = std::chrono::hours(1);
 		const bool ready = m_compileQueue->WaitForReady(result, timeout);
 		m_waitedInWindow += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
 		if (!ready)

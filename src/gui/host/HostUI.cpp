@@ -393,6 +393,17 @@ namespace
 			config.precompile_pipelines = precompile;
 			changed = true;
 		}
+		if (asyncCompile)
+		{
+			const char* waitModes[] = { "Smooth: never wait, new effects can pop in", "Balanced: short waits, rarely misses an effect", "Accurate: always wait, stutters" };
+			int waitMode = std::clamp<int>(config.pipeline_wait.GetValue(), 0, 2);
+			ImGui::SetNextItemWidth(620.0f * s_scale);
+			if (ImGui::Combo("New shaders", &waitMode, waitModes, 3))
+			{
+				config.pipeline_wait = waitMode;
+				changed = true;
+			}
+		}
 		const char* filters[] = { "Bilinear", "Bicubic", "Hermite", "Nearest neighbor" };
 		int upscale = std::clamp<int>(config.upscale_filter.GetValue(), 0, 3);
 		ImGui::SetNextItemWidth(400.0f * s_scale);

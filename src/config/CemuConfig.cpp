@@ -145,6 +145,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	precompile_pipelines = graphic.get("PrecompilePipelines", precompile_pipelines);
+	pipeline_wait = graphic.get("PipelineWait", pipeline_wait);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
@@ -381,6 +382,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("PrecompilePipelines", precompile_pipelines.GetValue());
+	graphic.set("PipelineWait", pipeline_wait.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
 
 	auto overlay_node = graphic.set("Overlay");
