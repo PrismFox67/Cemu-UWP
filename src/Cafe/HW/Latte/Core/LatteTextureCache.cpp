@@ -396,11 +396,11 @@ void LatteTexture_RefreshInfoCache();
 // Set by the frontend when the process gets close to its memory limit (Xbox: 5 GB for the app) and by renderers when a
 // texture can't be created. RAM-backed textures normally stay cached for two minutes after their last use, so loading
 // the next Mario Kart 8 track at 4K kept the previous track's textures and went over the limit
-static std::atomic_bool s_textureMemoryPressure = false;
+static std::atomic_int s_textureMemoryPressure = 0;
 
-void LatteTC_SetMemoryPressure(bool pressure)
+void LatteTC_SetMemoryPressure(int level)
 {
-	s_textureMemoryPressure = pressure;
+	s_textureMemoryPressure = level;
 }
 
 // under memory pressure: deletes textures not used in the last frames that can be recreated (from RAM or because the
@@ -411,7 +411,8 @@ static void LatteTC_ReleaseForMemoryPressure()
 	if (deletable.empty())
 		return;
 	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
-	const size_t count = std::min<size_t>(deletable.size(), 48);
+	// level 2: a track load can add a gigabyte within a second, 48 per frame can be too slow then
+	const size_t count = s_textureMemoryPressure >= 2 ? deletable.size() : std::min<size_t>(deletable.size(), 48);
 	for (size_t i = 0; i < count; i++)
 		LatteTexture_Delete(deletable[i]);
 	static uint32 s_lastLogFrame = 0;

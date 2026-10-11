@@ -92,7 +92,7 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 		if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 			renderer->HandleDeviceError(hr, "CreateCommittedResource (texture)");
 		else if (hr == E_OUTOFMEMORY)
-			LatteTC_SetMemoryPressure(true); // the frontend clears it again once memory use is back down
+			LatteTC_SetMemoryPressure(2); // the frontend clears it again once memory use is back down
 		// otherwise keep going without a host resource. All users check GetResource() and views become null descriptors
 	}
 	else if (renderer->IsDebugNamingEnabled())

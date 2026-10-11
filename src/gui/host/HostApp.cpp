@@ -332,22 +332,29 @@ namespace
 	{
 		static auto s_next = std::chrono::steady_clock::now();
 		static uint64 s_highest = 0;
-		static bool s_pressure = false;
+		static int s_pressure = 0;
 		const auto now = std::chrono::steady_clock::now();
 		if (now < s_next)
 			return;
 		s_next = now + std::chrono::milliseconds(250);
 		uint64 usage, limit;
 		HostPlatform::GetMemoryUsage(usage, limit);
-		// above 80% of the budget the texture cache releases unused textures early, below 70% it goes back to normal
+		// above 80% of the budget the texture cache releases unused textures early, above 90% all of them at once (loading a
+		// Mario Kart 8 track at 4K went from 82% to 94% within 1.3 s), below 70% it goes back to normal
 		if (limit)
 		{
-			const bool pressure = s_pressure ? usage * 100 >= limit * 70 : usage * 100 >= limit * 80;
+			const uint64 percent = usage * 100 / limit;
+			int pressure = 0;
+			if (percent >= 90)
+				pressure = 2;
+			else if (percent >= 80 || (s_pressure != 0 && percent >= 70))
+				pressure = 1;
+			// set on every check: a renderer raises it to 2 when a texture allocation fails, this clears that again
+			LatteTC_SetMemoryPressure(pressure);
 			if (pressure != s_pressure)
 			{
 				s_pressure = pressure;
-				LatteTC_SetMemoryPressure(pressure);
-				cemuLog_log(LogType::Force, "Host: memory {} MB of {} MB, texture memory pressure {}", usage >> 20, limit >> 20, pressure ? "on" : "off");
+				cemuLog_log(LogType::Force, "Host: memory {} MB of {} MB, texture memory pressure {}", usage >> 20, limit >> 20, pressure == 2 ? "high" : (pressure ? "on" : "off"));
 			}
 		}
 		static auto s_lastLog = now - std::chrono::seconds(30);
