@@ -796,11 +796,14 @@ void GDBServer::CMDReadMemory(std::unique_ptr<CommandContext>& context)
 	if (!memory_isAddressRangeAccessible(addr, length))
 		return context->QueueResponse(RESPONSE_ERROR);
 
-	std::string memoryRepr;
+	// hex encode with a table: formatting each byte separately made large reads (memory searches) take minutes
+	static constexpr char kHex[] = "0123456789ABCDEF";
+	std::string memoryRepr((size_t)length * 2, '0');
 	uint8* values = memory_getPointerFromVirtualOffset(addr);
 	for (sint64 i = 0; i < length; i++)
 	{
-		memoryRepr += fmt::format("{:02X}", values[i]);
+		memoryRepr[i * 2] = kHex[values[i] >> 4];
+		memoryRepr[i * 2 + 1] = kHex[values[i] & 0xF];
 	}
 
 	auto patchesRange = m_patchedInstructions.lower_bound(addr);
