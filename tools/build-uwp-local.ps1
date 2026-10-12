@@ -36,7 +36,7 @@ $orig = Get-Content $manifest -Raw
 try {
 	(($orig -replace 'Version="0\.1\.\d+\.0"', "Version=`"$Version`"")) | Set-Content $manifest -NoNewline -Encoding utf8
 	if (-not (Test-Path "$repo\build-uwp-local\CemuBin.sln") -and -not (Test-Path "$repo\build-uwp-local\Cemu.sln")) {
-		Step 'cmake configure' { & $cmake -S $repo -B "$repo\build-uwp-local" -G "Visual Studio 18 2026" -A x64 -DCMAKE_SYSTEM_NAME=WindowsStore -DCMAKE_SYSTEM_VERSION=10.0 }
+		Step 'cmake configure' { & $cmake -S $repo -B "$repo\build-uwp-local" -G "Visual Studio 18 2026" -A x64 -DCMAKE_SYSTEM_NAME=WindowsStore "-DCMAKE_SYSTEM_VERSION=10.0" }
 	}
 	Step 'build and package' { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=true "-p:PackageCertificateKeyFile=$pfx" -p:PackageCertificatePassword=cemu "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages\\" }
 }
