@@ -1672,10 +1672,41 @@ void D3D12Renderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 	const uint32 blockDimSrc = srcFmt.isCompressed ? 4 : 1;
 	const uint32 blockDimDst = dstFmt.isCompressed ? 4 : 1;
 
+	// Keep the copy inside both mips. D3D12 records an out of range box without complaint and then fails the whole command
+	// list with E_INVALIDARG on Close (seen on the MK8 title screen), which takes the emulator down
+	{
+		const auto mipExtent = [](LatteTextureD3D12* tex, sint32 mip, uint32 blockDim, bool height) {
+			const uint64 full = height ? tex->GetDesc().Height : tex->GetDesc().Width;
+			return (sint32)AlignUp<uint64>(std::max<uint64>(1, full >> mip), blockDim);
+		};
+		const sint32 width = std::min({ effectiveCopyWidth, mipExtent(srcTex, srcMip, blockDimSrc, false) - effectiveSrcX, mipExtent(dstTex, dstMip, blockDimDst, false) - effectiveDstX });
+		const sint32 height = std::min({ effectiveCopyHeight, mipExtent(srcTex, srcMip, blockDimSrc, true) - effectiveSrcY, mipExtent(dstTex, dstMip, blockDimDst, true) - effectiveDstY });
+		if (width != effectiveCopyWidth || height != effectiveCopyHeight || effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0)
+		{
+			static uint32 s_logged = 0;
+			if (s_logged++ < 20)
+				cemuLog_log(LogType::Force, "D3D12: Texture copy {}x{} at {},{} -> {},{} (mips {}/{}) outside a {}x{} -> {}x{} texture, clamped to {}x{}", effectiveCopyWidth, effectiveCopyHeight,
+				effectiveSrcX, effectiveSrcY, effectiveDstX, effectiveDstY, srcMip, dstMip, srcTex->GetDesc().Width, srcTex->GetDesc().Height, dstTex->GetDesc().Width, dstTex->GetDesc().Height, width, height);
+			if (width <= 0 || height <= 0 || effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0)
+				return;
+			effectiveCopyWidth = width;
+			effectiveCopyHeight = height;
+		}
+	}
+
 	for (sint32 d = 0; d < srcDepth; d++)
 	{
 		const uint32 sSlice = srcSlice + d;
 		const uint32 dSlice = dstSlice + d;
+		const auto sliceCount = [](LatteTextureD3D12* tex, sint32 mip) {
+			const uint32 n = tex->GetDesc().DepthOrArraySize;
+			return tex->Is3DTexture() ? std::max<uint32>(1, n >> mip) : n;
+		};
+		if (sSlice >= sliceCount(srcTex, srcMip) || dSlice >= sliceCount(dstTex, dstMip))
+		{
+			cemuLog_logOnce(LogType::Force, "D3D12: Texture copy slice {} -> {} outside the texture, skipped", sSlice, dSlice);
+			continue;
+		}
 		if (sameFamily && planeCompatible)
 		{
 			for (uint32 plane = 0; plane < srcTex->GetPlaneCount(); plane++)
