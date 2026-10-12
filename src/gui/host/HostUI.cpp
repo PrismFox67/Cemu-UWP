@@ -428,7 +428,11 @@ namespace
 		}
 		// DXIL (DXC) skips the driver's DXBC translation, which may make the Xbox's per session pipeline creation faster.
 		// Each compiler has its own shader cache, so switching recompiles every shader once
+#ifdef CEMU_UWP
+		const char* compilers[] = { "FXC (slower game start)", "DXC (default, faster game start)" };
+#else
 		const char* compilers[] = { "FXC (default)", "DXC (experimental)" };
+#endif
 		int compiler = std::clamp<int>(config.d3d12_shader_compiler.GetValue(), 0, 1);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
 		if (ImGui::Combo("Shader compiler (next game start)", &compiler, compilers, 2))
