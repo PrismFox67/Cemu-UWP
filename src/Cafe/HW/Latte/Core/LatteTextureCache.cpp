@@ -410,9 +410,54 @@ int LatteTC_GetMemoryPressure()
 
 // under memory pressure: deletes textures not used in the last frames that can be recreated (from RAM or because the
 // GPU overwrote them), least recently used first
+// estimated size of all textures by kind, logged under memory pressure so a crash log shows what filled the memory
+static void LatteTC_LogTextureMemory(size_t deletableCount)
+{
+	uint64 bytesGpu = 0, bytesRam = 0;
+	uint32 countGpu = 0, countRam = 0;
+	std::vector<std::pair<uint64, LatteTexture*>> largest;
+	for (LatteTexture* tex : LatteTexture::GetAllTextures())
+	{
+		if (!tex)
+			continue;
+		uint64 bytes = (uint64)std::max(tex->width, 1) * (uint64)std::max(tex->height, 1) * (uint64)std::max(tex->depth, 1) * tex->GetBPP() / 8;
+		if (tex->mipLevels > 1)
+			bytes = bytes * 4 / 3;
+		if (tex->isUpdatedOnGPU)
+		{
+			bytesGpu += bytes;
+			countGpu++;
+		}
+		else
+		{
+			bytesRam += bytes;
+			countRam++;
+		}
+		largest.emplace_back(bytes, tex);
+	}
+	const size_t top = std::min<size_t>(largest.size(), 6);
+	std::partial_sort(largest.begin(), largest.begin() + top, largest.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+	std::string topList;
+	for (size_t i = 0; i < top; i++)
+	{
+		LatteTexture* tex = largest[i].second;
+		topList += fmt::format(" {}x{}x{} fmt {:04x} {} MB{};", tex->width, tex->height, tex->depth, (uint32)tex->format, largest[i].first >> 20, tex->isUpdatedOnGPU ? " (GPU)" : "");
+	}
+	cemuLog_log(LogType::Force, "Memory pressure: textures written by the GPU {} ({} MB), loaded from RAM {} ({} MB), {} releasable. Largest:{}",
+		countGpu, bytesGpu >> 20, countRam, bytesRam >> 20, deletableCount, topList);
+}
+
+static int s_loggedPressureLevel = 0; // reset when the pressure ends
+
 static void LatteTC_ReleaseForMemoryPressure()
 {
 	std::vector<LatteTexture*> deletable = LatteTC_GetDeleteableTextures();
+	// once per pressure episode and level, so the log shows what filled the memory
+	if (s_textureMemoryPressure > s_loggedPressureLevel)
+	{
+		s_loggedPressureLevel = s_textureMemoryPressure;
+		LatteTC_LogTextureMemory(deletable.size());
+	}
 	if (deletable.empty())
 		return;
 	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
@@ -436,6 +481,8 @@ void LatteTC_CleanupUnusedTextures()
 {
 	if (s_textureMemoryPressure)
 		LatteTC_ReleaseForMemoryPressure();
+	else
+		s_loggedPressureLevel = 0;
 	static size_t currentScanIndex = 0;
 	uint32 currentTick = GetTickCount();
 	sint32 maxDelete = 10;
