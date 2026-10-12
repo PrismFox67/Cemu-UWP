@@ -45,6 +45,9 @@ public:
 
 	uint64 GetSize() const { return m_size; }
 	uint64 GetUsedBytes() const;
+	// overflow buffers the recording command list holds. They are only freed once it is submitted and done, so the
+	// renderer submits early when there are any (a course load in MK8 at 4K piled up over a GB of them)
+	uint64 GetRecordingOverflowBytes() const { return m_recordingOverflowBytes; }
 
 private:
 	std::optional<uint64> TryAllocate(uint64 size, uint64 alignment);
@@ -59,6 +62,8 @@ private:
 	uint64 m_head = 0;
 	uint64 m_tail = 0;
 	bool m_recordingHasData = false;
+	uint64 m_recordingOverflowBytes = 0;
+	bool m_loggedOverflow = false;
 
 	struct Marker
 	{

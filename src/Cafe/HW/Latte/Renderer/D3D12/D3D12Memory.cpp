@@ -90,7 +90,12 @@ D3D12UploadAllocation D3D12UploadRing::Allocate(uint64 size, uint64 alignment)
 		allocation.offset = 0;
 		allocation.size = size;
 		m_overflow.emplace_back(std::move(overflow));
-		cemuLog_logDebug(LogType::Force, "D3D12: Upload ring overflow ({} bytes requested)", size);
+		m_recordingOverflowBytes += AlignUp<uint64>(size, 256);
+		if (!m_loggedOverflow)
+		{
+			m_loggedOverflow = true;
+			cemuLog_log(LogType::Force, "D3D12: Upload ring full within one command list ({} KB requested), submitting early from now on", size / 1024);
+		}
 		return allocation;
 	}
 	m_head = offset.value() + size;
@@ -105,6 +110,7 @@ D3D12UploadAllocation D3D12UploadRing::Allocate(uint64 size, uint64 alignment)
 
 void D3D12UploadRing::OnSubmit(uint64 submissionId)
 {
+	m_recordingOverflowBytes = 0;
 	if (!m_recordingHasData)
 		return;
 	m_markers.push_back({ submissionId, m_head });
