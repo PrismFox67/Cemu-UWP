@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
@@ -10,7 +10,7 @@
   <Identity
     Name="CemuUWP.Unofficial"
     Publisher="CN=CemuUWP"
-    Version="0.1.900.0" />
+    Version="0.1.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="6c1c7a7e-0c51-4bd3-9a23-2f0c6c1b7e11" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

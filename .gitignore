@@ -53,5 +53,6 @@ bin/gameProfiles/*
 bin/graphicPacks/*
 
 # Ignore Finder view option files created by OS X
-.DS_Storebuild-uwp-local/
+.DS_Store
+build-uwp-local/
 build-uwp-local.log

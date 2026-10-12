@@ -40,5 +40,5 @@ try {
 	}
 	Step 'build and package' { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=true "-p:PackageCertificateKeyFile=$pfx" -p:PackageCertificatePassword=cemu "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages\\" }
 }
-finally { Set-Content $manifest $orig -NoNewline }
+finally { git -C $repo checkout -- src/gui/host/uwp/Package.appxmanifest } # never leave the stamped version for a commit
 Get-ChildItem "$repo\build-uwp-local\AppPackages" -Recurse -Filter *.msix | Sort-Object LastWriteTime | Select-Object -Last 1 | ForEach-Object { Log "package: $($_.FullName)" }
