@@ -520,8 +520,13 @@ void LatteShaderCache_Load()
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
 #ifdef ENABLE_D3D12
-	if (g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_pipelines.GetValue())
-		LatteShaderCache_LoadPipelineCache(cacheTitleId);
+	if (g_renderer->GetType() == RendererAPI::D3D12)
+	{
+		if (GetConfig().precompile_pipelines.GetValue())
+			LatteShaderCache_LoadPipelineCache(cacheTitleId);
+		// every session adds to the startup set that quick start creates on the loading screen
+		D3D12Renderer::GetInstance()->GetPipelineCache()->BeginStartupWindow();
+	}
 #endif
 
 
@@ -645,14 +650,10 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 {
+	// D3D12 quick start (Settings → "in the background"): the loading screen only creates the startup set, the rest is
+	// created while the game runs (D3D12PipelineCache::TickBackgroundPreload)
 #ifdef ENABLE_D3D12
-	// "in the background": no loading screen, the recorded pipelines are created while the game runs (see
-	// D3D12PipelineCache::TickBackgroundPreload)
-	if (g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_in_background.GetValue())
-	{
-		D3D12Renderer::GetInstance()->GetPipelineCache()->StartBackgroundPreload(cacheTitleId);
-		return;
-	}
+	const bool quickStart = g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_in_background.GetValue();
 #endif
 	switch(g_renderer->GetType())
 	{
@@ -668,7 +669,7 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 #endif
 #ifdef ENABLE_D3D12
 	case RendererAPI::D3D12:
-		g_shaderCacheLoaderState.pipelineFileCount = D3D12Renderer::GetInstance()->GetPipelineCache()->BeginPreload(cacheTitleId);
+		g_shaderCacheLoaderState.pipelineFileCount = D3D12Renderer::GetInstance()->GetPipelineCache()->BeginPreload(cacheTitleId, quickStart);
 		break;
 #endif
 	}
@@ -690,7 +691,10 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 #endif
 #ifdef ENABLE_D3D12
 	case RendererAPI::D3D12:
-		D3D12Renderer::GetInstance()->GetPipelineCache()->EndPreload();
+		if (quickStart)
+			D3D12Renderer::GetInstance()->GetPipelineCache()->ContinuePreloadInBackground();
+		else
+			D3D12Renderer::GetInstance()->GetPipelineCache()->EndPreload();
 		break;
 #endif
 	}

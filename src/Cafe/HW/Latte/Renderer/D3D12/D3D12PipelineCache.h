@@ -56,14 +56,17 @@ public:
 	// Creates all pipelines the title used in earlier runs while the shader cache loading screen is shown, so gameplay
 	// doesn't wait for the driver. The pipelines go into the driver cache, draws load them from there. Called on the GPU
 	// thread after the shader cache was loaded: BeginPreload returns the number of pipelines, UpdatePreload is called
-	// repeatedly and returns false once all are done
-	uint32 BeginPreload(uint64 titleId);
+	// repeatedly and returns false once all are done.
+	// startupOnly (Settings → quick start): only the startup set (what earlier sessions needed right after loading) is
+	// created on the loading screen, ContinuePreloadInBackground then creates the rest while the game runs
+	uint32 BeginPreload(uint64 titleId, bool startupOnly = false);
 	bool UpdatePreload(uint32& finishedCount, bool blocking = true);
 	void EndPreload();
+	void ContinuePreloadInBackground();
+	// called when the loading screen ends: pipelines first used during the next minutes join the startup set
+	void BeginStartupWindow();
 
-	// the same, but spread over the frames of the running game instead of a loading screen (Settings → "in the
-	// background"): StartBackgroundPreload replaces the loading screen, TickBackgroundPreload runs once per frame
-	void StartBackgroundPreload(uint64 titleId);
+	// TickBackgroundPreload runs once per frame
 	void TickBackgroundPreload();
 	bool IsBackgroundPreloading() const { return m_backgroundPreload; }
 
@@ -86,6 +89,8 @@ private:
 	bool m_diskCacheOpened = false;
 	struct
 	{
+		std::vector<uint32> order; // record indices, startup set first in quick start
+		size_t limit = 0; // order[next, limit) is still to be created
 		size_t next = 0;
 		uint32 submitted = 0;
 		uint32 skipped = 0; // records whose shaders are missing (e.g. the shader cache was deleted)
@@ -93,6 +98,7 @@ private:
 		std::chrono::steady_clock::time_point start;
 	} m_preload;
 	bool m_backgroundPreload = false;
+	std::chrono::steady_clock::time_point m_startupWindowEnd{};
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
 	// how long draws waited for async pipelines in the current window (see GetOrCreate)
 	std::chrono::steady_clock::time_point m_waitWindowStart{};

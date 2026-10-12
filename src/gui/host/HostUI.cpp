@@ -408,7 +408,9 @@ namespace
 		{
 			bool background = config.precompile_in_background.GetValue();
 			ImGui::Indent(40.0f * s_scale);
-			if (ImGui::Checkbox("In the background instead: start right away, effects pop in until it's done", &background))
+			// quick start: the loading screen only creates the pipelines earlier sessions needed for the menus and the start
+			// of a race, the rest are created in the background
+			if (ImGui::Checkbox("Quick start: load menu and race-start pipelines first, the rest in the background", &background))
 			{
 				config.precompile_in_background = background;
 				changed = true;

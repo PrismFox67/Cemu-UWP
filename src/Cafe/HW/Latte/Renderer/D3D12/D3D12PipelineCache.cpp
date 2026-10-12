@@ -637,9 +637,28 @@ public:
 				m_records.emplace_back(std::move(record));
 			m_validSize = (uint64)file.tellg();
 		}
+		// the startup set: hashes of the records sessions needed right after the loading screen (menus, character
+		// select, the start of a race), merged over all sessions. A plain list of uint64, appended to
+		std::ifstream startup(_StartupPath(), std::ios::binary);
+		uint64 h;
+		while (startup.read((char*)&h, sizeof(h)))
+			m_startup.insert(h);
 	}
 
 	const std::vector<std::vector<uint8>>& GetRecords() const { return m_records; }
+
+	bool IsStartup(const std::vector<uint8>& record) const { return m_startup.count(_Hash(record)) != 0; }
+	size_t GetStartupCount() const { return m_startup.size(); }
+
+	void MarkStartup(const std::vector<uint8>& record)
+	{
+		std::lock_guard lock(m_mutex);
+		const uint64 h = _Hash(record);
+		if (!m_startup.insert(h).second)
+			return;
+		std::ofstream file(_StartupPath(), std::ios::binary | std::ios::app);
+		file.write((const char*)&h, sizeof(h));
+	}
 
 	void Add(const std::vector<uint8>& record)
 	{
@@ -677,11 +696,19 @@ private:
 		return h;
 	}
 
+	fs::path _StartupPath() const
+	{
+		fs::path p = m_path; // <titleId>_d3d12pipelines.bin -> <titleId>_d3d12pipelines.startup.bin
+		p.replace_extension(".startup.bin");
+		return p;
+	}
+
 	std::mutex m_mutex;
 	fs::path m_path;
 	bool m_headerValid = false;
 	uint64 m_validSize = 0;
 	std::unordered_set<uint64> m_known;
+	std::unordered_set<uint64> m_startup;
 	std::vector<std::vector<uint8>> m_records; // loaded from the file, used once for preloading
 };
 
@@ -977,13 +1004,39 @@ bool D3D12PipelineCache::ResolveRecordedShaders(D3D12PipelineCompileJob& job)
 	return true;
 }
 
-uint32 D3D12PipelineCache::BeginPreload(uint64 titleId)
+uint32 D3D12PipelineCache::BeginPreload(uint64 titleId, bool startupOnly)
 {
 	OpenDiskCaches(titleId);
 	m_preload = {};
 	m_preload.finished = std::make_shared<std::atomic<uint32>>(0);
 	m_preload.start = std::chrono::steady_clock::now();
-	return m_recordFile ? (uint32)m_recordFile->GetRecords().size() : 0;
+	if (!m_recordFile)
+		return 0;
+	const auto& records = m_recordFile->GetRecords();
+	m_preload.order.reserve(records.size());
+	if (startupOnly)
+	{
+		// quick start: the startup set first (what sessions needed right after loading), the rest in the background.
+		// Without a startup set yet, the oldest records stand in for it: the file is in the order pipelines were first
+		// used, so it starts with the title screen and menus
+		constexpr uint32 kFallbackStartupCount = 400;
+		const bool haveStartup = m_recordFile->GetStartupCount() > 0;
+		for (uint32 i = 0; i < (uint32)records.size(); i++)
+			if (haveStartup ? m_recordFile->IsStartup(records[i]) : i < kFallbackStartupCount)
+				m_preload.order.push_back(i);
+		m_preload.limit = m_preload.order.size();
+		for (uint32 i = 0; i < (uint32)records.size(); i++)
+			if (haveStartup ? !m_recordFile->IsStartup(records[i]) : i >= kFallbackStartupCount)
+				m_preload.order.push_back(i);
+		cemuLog_log(LogType::Force, "D3D12: Quick start: creating {} of {} recorded pipelines on the loading screen{}", m_preload.limit, records.size(), haveStartup ? "" : " (no startup set yet, using the oldest)");
+	}
+	else
+	{
+		for (uint32 i = 0; i < (uint32)records.size(); i++)
+			m_preload.order.push_back(i);
+		m_preload.limit = m_preload.order.size();
+	}
+	return (uint32)m_preload.limit;
 }
 
 bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
@@ -991,13 +1044,14 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 	static const std::vector<std::vector<uint8>> s_noRecords;
 	const std::vector<std::vector<uint8>>& records = m_recordFile ? m_recordFile->GetRecords() : s_noRecords;
 	// keep the compile threads busy, but don't queue everything at once: every job holds copies of its bytecode. In the
-	// background (once per game frame) keep the queue short so a pipeline a draw waits for isn't stuck behind it
-	const uint32 kMaxInFlight = blocking ? 32 : 8;
+	// background (once per game frame) keep it to two at a time, so the emulator keeps its CPU cores (menus would stutter
+	// otherwise) and a pipeline a draw waits for isn't stuck behind preloads
+	const uint32 kMaxInFlight = blocking ? 32 : 2;
 	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(blocking ? 20 : 2);
-	while (m_preload.next < records.size() && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
+	while (m_preload.next < m_preload.limit && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
 	{
 		auto job = std::make_unique<D3D12PipelineCompileJob>();
-		const bool usable = job->DeserializeRecord(records[m_preload.next++]) && ResolveRecordedShaders(*job);
+		const bool usable = job->DeserializeRecord(records[m_preload.order[m_preload.next++]]) && ResolveRecordedShaders(*job);
 		if (!usable)
 		{
 			m_preload.skipped++;
@@ -1010,7 +1064,7 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 		m_compileQueue->Push(std::move(job));
 	}
 	finishedCount = *m_preload.finished + m_preload.skipped;
-	if (m_preload.next < records.size() || *m_preload.finished < m_preload.submitted)
+	if (m_preload.next < m_preload.limit || *m_preload.finished < m_preload.submitted)
 	{
 		if (blocking)
 			std::this_thread::sleep_for(std::chrono::milliseconds(1)); // the loading screen calls this in a loop
@@ -1019,12 +1073,24 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 	return false;
 }
 
-void D3D12PipelineCache::StartBackgroundPreload(uint64 titleId)
+void D3D12PipelineCache::ContinuePreloadInBackground()
 {
-	const uint32 count = BeginPreload(titleId);
-	m_backgroundPreload = count > 0;
-	if (m_backgroundPreload)
-		cemuLog_log(LogType::Force, "D3D12: Creating {} recorded pipelines in the background", count);
+	if (m_preload.limit >= m_preload.order.size())
+	{
+		EndPreload(); // the startup set was everything
+		return;
+	}
+	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_preload.start).count();
+	cemuLog_log(LogType::Force, "D3D12: Quick start: {} pipelines created in {}ms, creating the other {} in the background", m_preload.submitted, ms, m_preload.order.size() - m_preload.limit);
+	m_preload.limit = m_preload.order.size();
+	m_backgroundPreload = true;
+}
+
+void D3D12PipelineCache::BeginStartupWindow()
+{
+	// pipelines first needed within this time after the loading screen join the startup set: the menus, character
+	// select and the start of a race. Real time, so compile waits on a first run only make the window cover a bit less
+	m_startupWindowEnd = std::chrono::steady_clock::now() + std::chrono::seconds(150);
 }
 
 void D3D12PipelineCache::TickBackgroundPreload()
@@ -1171,7 +1237,12 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		return result;
 	}
 	if (m_recordFile)
-		m_recordFile->Add(job->SerializeRecord());
+	{
+		const std::vector<uint8> record = job->SerializeRecord();
+		m_recordFile->Add(record);
+		if (std::chrono::steady_clock::now() < m_startupWindowEnd)
+			m_recordFile->MarkStartup(record);
+	}
 	// pipelines of earlier sessions come from the driver cache in a few ms, only count the ones the driver compiles
 	job->countAsNew = true;
 	if (async)
