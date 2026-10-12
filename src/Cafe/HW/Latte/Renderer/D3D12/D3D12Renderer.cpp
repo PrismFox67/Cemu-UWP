@@ -1143,10 +1143,22 @@ void D3D12Renderer::TryEnableImplicitShaderCache()
 		writeMarker("testing");
 		m_implicitCacheTesting = true;
 	}
-	const HRESULT hr = device9->ShaderCacheControl(D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_D3D_CACHE_FOR_DRIVER | D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_DRIVER_MANAGED, D3D12_SHADER_CACHE_CONTROL_FLAG_ENABLE);
+	// one kind at a time: the runtime rejects the whole call (E_INVALIDARG on a PC outside Windows developer mode) if any
+	// kind can't be controlled
+	const std::pair<D3D12_SHADER_CACHE_KIND_FLAGS, const char*> kinds[] = {
+		{ D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_D3D_CACHE_FOR_DRIVER, "D3D cache for driver" },
+		{ D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_DRIVER_MANAGED, "driver managed" },
+		{ D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_D3D_CONVERSIONS, "D3D conversions" },
+	};
+	std::string results;
+	for (const auto& [kind, name] : kinds)
+	{
+		const HRESULT hr = device9->ShaderCacheControl(kind, D3D12_SHADER_CACHE_CONTROL_FLAG_ENABLE);
+		results += fmt::format("{}{}: {}", results.empty() ? "" : ", ", name, D3D12_HResultToString(hr));
+	}
 	const HRESULT removed = m_device->GetDeviceRemovedReason();
-	cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: enable {}{}", D3D12_HResultToString(hr), FAILED(removed) ? fmt::format(", device removed: {}", D3D12_HResultToString(removed)) : std::string());
-	if ((FAILED(hr) || FAILED(removed)) && m_implicitCacheTesting)
+	cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: enable {}{}", results, FAILED(removed) ? fmt::format(", device removed: {}", D3D12_HResultToString(removed)) : std::string());
+	if (FAILED(removed) && m_implicitCacheTesting)
 	{
 		writeMarker("failed");
 		m_implicitCacheTesting = false;
