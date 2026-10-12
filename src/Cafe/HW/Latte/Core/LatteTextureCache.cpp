@@ -420,7 +420,12 @@ static void LatteTC_LogTextureMemory(size_t deletableCount)
 	{
 		if (!tex)
 			continue;
-		uint64 bytes = (uint64)std::max(tex->width, 1) * (uint64)std::max(tex->height, 1) * (uint64)std::max(tex->depth, 1) * tex->GetBPP() / 8;
+		// effective size: resolution packs scale render targets (a 1280x720 target becomes 3840x2160 at 4K)
+		sint32 w, h;
+		tex->GetEffectiveSize(w, h, 0);
+		uint64 bytes = (uint64)std::max(w, 1) * (uint64)std::max(h, 1) * (uint64)std::max(tex->depth, 1) * tex->GetBPP() / 8;
+		if (tex->IsCompressedFormat())
+			bytes /= 16; // GetBPP() is per 4x4 block for BC formats
 		if (tex->mipLevels > 1)
 			bytes = bytes * 4 / 3;
 		if (tex->isUpdatedOnGPU)
