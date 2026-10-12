@@ -902,22 +902,43 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
 {
 	uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
 	uint64 aocTitleId = (currentTitleId & 0xFFFFFFFFull) | 0x0005000c00000000ull;
-	for (auto& it : fs::recursive_directory_iterator(currentPath))
+	// lexically_relative instead of fs::relative: the latter canonicalizes both paths, which queries every parent folder
+	// up to the drive root. In the UWP sandbox (Xbox) the app may not look at those, it threw and the uncaught exception
+	// crashed the game when a pack with replacement files (CTGP-Universe) was activated. Errors are logged, not thrown
+	std::error_code ec;
+	auto it = fs::recursive_directory_iterator(currentPath, ec);
+	if (ec)
 	{
-		if (fs::is_regular_file(it))
-		{
-			fs::path virtualMountPath = fs::relative(it.path(), currentPath);
-			if (isAOC)
-			{
-				virtualMountPath = fs::path(fmt::format("/vol/aoc{:016x}/", aocTitleId)) / virtualMountPath;
-			}
-			else
-			{
-				virtualMountPath = fs::path(virtualMountBase) / virtualMountPath;
-			}
-			fscDeviceRedirect_add(virtualMountPath.generic_string(), it.file_size(), it.path().generic_string(), m_fs_priority);
-		}
+		cemuLog_log(LogType::Force, "Graphic pack {}: can't read {}: {}", GetName(), _pathToUtf8(currentPath), ec.message());
+		return;
 	}
+	uint32 count = 0;
+	for (; it != fs::recursive_directory_iterator(); it.increment(ec))
+	{
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "Graphic pack {}: error while listing {}: {}", GetName(), _pathToUtf8(currentPath), ec.message());
+			break;
+		}
+		std::error_code fileEc;
+		if (!it->is_regular_file(fileEc))
+			continue;
+		const uint64 fileSize = it->file_size(fileEc);
+		if (fileEc)
+			continue;
+		fs::path virtualMountPath = it->path().lexically_relative(currentPath);
+		if (isAOC)
+		{
+			virtualMountPath = fs::path(fmt::format("/vol/aoc{:016x}/", aocTitleId)) / virtualMountPath;
+		}
+		else
+		{
+			virtualMountPath = fs::path(virtualMountBase) / virtualMountPath;
+		}
+		fscDeviceRedirect_add(virtualMountPath.generic_string(), fileSize, it->path().generic_string(), m_fs_priority);
+		count++;
+	}
+	cemuLog_log(LogType::Force, "Graphic pack {}: {} replacement files in {}", GetName(), count, _pathToUtf8(currentPath.filename()));
 }
 
 void GraphicPack2::LoadReplacedFiles()
