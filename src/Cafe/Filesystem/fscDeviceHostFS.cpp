@@ -218,20 +218,36 @@ FSCVirtualFile* FSCVirtualFile_Host::OpenFile(const fs::path& path, FSC_ACCESS_F
 
 /* Device implementation */
 
+// std::filesystem needs the \\?\ form for paths of 260+ characters as well (see FileStream_win32.cpp): MK8 time trial
+// ghost saves get names of 175 characters
+static fs::path _HostPath(std::string_view utf8Path)
+{
+	fs::path p = _utf8ToPath(utf8Path);
+#if BOOST_OS_WINDOWS
+	std::wstring w = p.wstring();
+	if (w.size() >= 240 && w[1] == L':' && w.rfind(L"\\\\?\\", 0) != 0)
+	{
+		std::replace(w.begin(), w.end(), L'/', L'\\');
+		return fs::path(L"\\\\?\\" + w);
+	}
+#endif
+	return p;
+}
+
 class fscDeviceHostFSC : public fscDeviceC
 {
 public:
 	FSCVirtualFile* fscDeviceOpenByPath(std::string_view path, FSC_ACCESS_FLAG accessFlags, void* ctx, sint32* fscStatus) override
 	{
 		*fscStatus = FSC_STATUS_OK;
-		FSCVirtualFile* vf = FSCVirtualFile_Host::OpenFile(_utf8ToPath(path), accessFlags, *fscStatus);
+		FSCVirtualFile* vf = FSCVirtualFile_Host::OpenFile(_HostPath(path), accessFlags, *fscStatus);
 		cemu_assert_debug((bool)vf == (*fscStatus == FSC_STATUS_OK));
 		return vf;
 	}
 
 	bool fscDeviceCreateDir(std::string_view path, void* ctx, sint32* fscStatus) override
 	{
-		fs::path dirPath = _utf8ToPath(path);
+		fs::path dirPath = _HostPath(path);
 		if (fs::exists(dirPath))
 		{
 			if (!fs::is_directory(dirPath))
@@ -250,7 +266,7 @@ public:
 	bool fscDeviceRemoveFileOrDir(std::string_view path, void* ctx, sint32* fscStatus) override
 	{
 		*fscStatus = FSC_STATUS_OK;
-		fs::path _path = _utf8ToPath(path);
+		fs::path _path = _HostPath(path);
 		std::error_code ec;
 		if (!fs::exists(_path, ec))
 		{
@@ -268,8 +284,8 @@ public:
 	bool fscDeviceRename(std::string_view srcPath, std::string_view dstPath, void* ctx, sint32* fscStatus) override
 	{
 		*fscStatus = FSC_STATUS_OK;
-		fs::path _srcPath = _utf8ToPath(srcPath);
-		fs::path _dstPath = _utf8ToPath(dstPath);
+		fs::path _srcPath = _HostPath(srcPath);
+		fs::path _dstPath = _HostPath(dstPath);
 		std::error_code ec;
 		if (!fs::exists(_srcPath, ec))
 		{

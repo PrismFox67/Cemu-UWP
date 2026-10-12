@@ -7,9 +7,22 @@
 #define CreateFileW CreateFileFromAppW
 #endif
 
+// Paths of 260 characters and more need the \\?\ form, which only takes backslashes. MK8 names its time trial ghost
+// saves after the run (175 characters), which together with the Xbox app folder makes 348, and the failed save
+// crashed the game
+static std::wstring _Win32Path(std::wstring p)
+{
+	if (p.size() < 240 || p.rfind(L"\\\\?\\", 0) == 0)
+		return p;
+	std::replace(p.begin(), p.end(), L'/', L'\\');
+	if (p.size() >= 3 && p[1] == L':' && p[2] == L'\\')
+		return L"\\\\?\\" + p;
+	return p;
+}
+
 FileStream* FileStream::openFile(std::string_view path)
 {
-	HANDLE hFile = CreateFileW(boost::nowide::widen(path.data(), path.size()).c_str(), FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+	HANDLE hFile = CreateFileW(_Win32Path(boost::nowide::widen(path.data(), path.size())).c_str(), FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -17,7 +30,7 @@ FileStream* FileStream::openFile(std::string_view path)
 
 FileStream* FileStream::openFile(const wchar_t* path, bool allowWrite)
 {
-	HANDLE hFile = CreateFileW(path, allowWrite ? (FILE_GENERIC_READ | FILE_GENERIC_WRITE) : FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+	HANDLE hFile = CreateFileW(_Win32Path(path).c_str(), allowWrite ? (FILE_GENERIC_READ | FILE_GENERIC_WRITE) : FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -25,12 +38,12 @@ FileStream* FileStream::openFile(const wchar_t* path, bool allowWrite)
 
 FileStream* FileStream::openFile2(const fs::path& path, bool allowWrite)
 {
-	return openFile(path.generic_wstring().c_str(), allowWrite);
+	return openFile(path.wstring().c_str(), allowWrite);
 }
 
 FileStream* FileStream::createFile(const wchar_t* path)
 {
-	HANDLE hFile = CreateFileW(path, FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
+	HANDLE hFile = CreateFileW(_Win32Path(path).c_str(), FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -39,7 +52,7 @@ FileStream* FileStream::createFile(const wchar_t* path)
 FileStream* FileStream::createFile(std::string_view path)
 {
 	auto w = boost::nowide::widen(path.data(), path.size());
-	HANDLE hFile = CreateFileW(w.c_str(), FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
+	HANDLE hFile = CreateFileW(_Win32Path(w).c_str(), FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -47,7 +60,7 @@ FileStream* FileStream::createFile(std::string_view path)
 
 FileStream* FileStream::createFile2(const fs::path& path)
 {
-	return createFile(path.generic_wstring().c_str());
+	return createFile(path.wstring().c_str());
 }
 
 std::optional<std::vector<uint8>> FileStream::LoadIntoMemory(const fs::path& path)
