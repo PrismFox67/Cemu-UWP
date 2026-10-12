@@ -472,6 +472,23 @@ void D3D12Renderer::HandleDeviceError(HRESULT hr, const char* what)
 	cemuLog_log(LogType::Force, "{}", msg);
 	if (FAILED(reason))
 		LogDeviceRemovedData();
+	// with the debug layer (CEMU_D3D12_DEBUG=1) the call that made e.g. Close fail is in the info queue, which otherwise
+	// only goes to an attached debugger
+	ComPtr<ID3D12InfoQueue> infoQueue;
+	if (m_device && SUCCEEDED(m_device.As(&infoQueue)))
+	{
+		const uint64 count = infoQueue->GetNumStoredMessages();
+		for (uint64 i = count > 20 ? count - 20 : 0; i < count; i++)
+		{
+			SIZE_T size = 0;
+			if (FAILED(infoQueue->GetMessage(i, nullptr, &size)) || size == 0)
+				continue;
+			std::vector<uint8> buffer(size);
+			auto* message = (D3D12_MESSAGE*)buffer.data();
+			if (SUCCEEDED(infoQueue->GetMessage(i, message, &size)) && message->Severity <= D3D12_MESSAGE_SEVERITY_WARNING)
+				cemuLog_log(LogType::Force, "D3D12 debug layer: {}", std::string_view(message->pDescription, message->DescriptionByteLength ? message->DescriptionByteLength - 1 : 0));
+		}
+	}
 	throw std::runtime_error(msg);
 }
 
