@@ -275,6 +275,9 @@ private:
 	bool m_dredEnabled = false;
 	bool m_pipelineLibrarySupported = false;
 	bool m_pipelineBlobsSupported = false;
+	void TryEnableImplicitShaderCache();
+	bool m_implicitCacheTesting = false;
+	uint32 m_implicitCacheTestFrames = 0;
 	uint64 m_uniqueIdCounter = 0;
 	D3D12FormatSupport m_formatSupport;
 	D3D_SHADER_MODEL m_highestShaderModel = D3D_SHADER_MODEL_5_1;

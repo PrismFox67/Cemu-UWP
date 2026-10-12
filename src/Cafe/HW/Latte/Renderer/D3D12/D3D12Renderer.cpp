@@ -17,6 +17,7 @@
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "config/CemuConfig.h"
+#include "config/ActiveSettings.h"
 #include "WindowSystem.h"
 
 #include <imgui.h>
@@ -242,6 +243,7 @@ void D3D12Renderer::CreateDevice()
 	}
 	cemuLog_log(LogType::Force, "D3D12: Pipeline cache: libraries {}, single pipeline blobs {} (shader cache flags 0x{:x})", m_pipelineLibrarySupported ? "supported" : "not supported",
 		m_pipelineBlobsSupported ? "supported" : "not supported", (uint32)shaderCache.SupportFlags);
+	TryEnableImplicitShaderCache();
 
 	// queue + fence
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};
@@ -1105,8 +1107,61 @@ void D3D12Renderer::DrawEmptyFrame(bool mainWindow)
 	SwapBuffers(mainWindow, !mainWindow);
 }
 
+// The Xbox's driver can't save pipelines for us (it removes the device on pipeline libraries and on GetCachedBlob), but
+// its runtime has ID3D12Device9 (shader cache flags 0x60: control and session delete). Enabling the implicit caches lets
+// the runtime keep what the driver compiles across launches, if the driver uses them. Unknown drivers may remove the
+// device for this too, so the first try is guarded like the blob cache test: the marker says "testing" until frames were
+// presented for a while, and a launch that finds "testing" knows the previous one died and leaves it off for good
+void D3D12Renderer::TryEnableImplicitShaderCache()
+{
+	ComPtr<ID3D12Device9> device9;
+	if (FAILED(m_device.As(&device9)))
+	{
+		cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: no ID3D12Device9");
+		return;
+	}
+	const fs::path marker = ActiveSettings::GetCachePath("shaderCache/driver/d3d12/implicit_cache_test.txt");
+	std::string state;
+	{
+		std::ifstream f(marker);
+		std::getline(f, state);
+	}
+	auto writeMarker = [&marker](const char* text) {
+		std::error_code ec;
+		fs::create_directories(marker.parent_path(), ec);
+		std::ofstream(marker, std::ios::trunc) << text << "\n";
+	};
+	if (state == "testing" || state == "failed")
+	{
+		if (state == "testing")
+			writeMarker("failed");
+		cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: off, {}", state == "testing" ? "the previous launch ended while testing it" : "it failed before");
+		return;
+	}
+	if (state != "ok")
+	{
+		writeMarker("testing");
+		m_implicitCacheTesting = true;
+	}
+	const HRESULT hr = device9->ShaderCacheControl(D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_D3D_CACHE_FOR_DRIVER | D3D12_SHADER_CACHE_KIND_FLAG_IMPLICIT_DRIVER_MANAGED, D3D12_SHADER_CACHE_CONTROL_FLAG_ENABLE);
+	const HRESULT removed = m_device->GetDeviceRemovedReason();
+	cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: enable {}{}", D3D12_HResultToString(hr), FAILED(removed) ? fmt::format(", device removed: {}", D3D12_HResultToString(removed)) : std::string());
+	if ((FAILED(hr) || FAILED(removed)) && m_implicitCacheTesting)
+	{
+		writeMarker("failed");
+		m_implicitCacheTesting = false;
+	}
+}
+
 void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+	if (m_implicitCacheTesting && swapTV && ++m_implicitCacheTestFrames >= 1200)
+	{
+		// 20 s of frames, with pipelines created on the loading screen and in game: the driver took it
+		m_implicitCacheTesting = false;
+		std::ofstream(ActiveSettings::GetCachePath("shaderCache/driver/d3d12/implicit_cache_test.txt"), std::ios::trunc) << "ok\n";
+		cemuLog_log(LogType::Force, "D3D12: Implicit shader cache: test passed");
+	}
 	if (swapTV && m_swapChainMain)
 		PresentSwapChain(true);
 	if (swapDRC && m_swapChainPad)
