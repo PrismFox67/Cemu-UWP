@@ -172,7 +172,10 @@ HostControllers::PlayerInfo HostControllers::GetPlayer(int player)
 	for (const auto& c : emulated->get_controllers())
 	{
 		if (c->api() == InputAPI::XInput && info.pad < 0)
+		{
 			info.pad = std::atoi(c->uuid().c_str());
+			info.deadzone = c->get_settings().axis.deadzone;
+		}
 		else if (c->api() == InputAPI::Keyboard)
 			info.hasKeyboard = true;
 	}
@@ -218,6 +221,23 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 	{
 		cemuLog_log(LogType::Force, "Host: failed to set up controller for player {}: {}", player + 1, ex.what());
 	}
+}
+
+void HostControllers::SetDeadzone(int player, float deadzone)
+{
+	auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	deadzone = std::clamp(deadzone, 0.0f, 0.9f);
+	for (const auto& c : emulated->get_controllers())
+	{
+		if (c->api() != InputAPI::XInput)
+			continue;
+		auto settings = c->get_settings();
+		settings.axis.deadzone = settings.rotation.deadzone = deadzone;
+		c->set_settings(settings);
+	}
+	InputManager::instance().save(player);
 }
 
 void HostControllers::BeginPairing(bool gameRunning)

@@ -24,6 +24,7 @@ namespace HostControllers
 		int pad = -1; // XInput index, -1 if no controller is assigned
 		bool padConnected = false;
 		bool hasKeyboard = false;
+		float deadzone = 0.15f; // stick deadzone of the controller (0..1)
 	};
 
 	const char* KindName(Kind kind);
@@ -35,6 +36,8 @@ namespace HostControllers
 
 	PlayerInfo GetPlayer(int player);
 	void SetPlayer(int player, Kind kind, int pad);
+	// deadzone of both sticks, raise it for controllers with stick drift
+	void SetDeadzone(int player, float deadzone);
 
 	// pairing. UpdatePairing() polls the controllers and has to be called every frame from the UI thread while pairing
 	// in game, players without a controller keep their setup instead of being disconnected

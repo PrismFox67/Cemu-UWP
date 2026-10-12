@@ -392,6 +392,7 @@ struct D3D12PipelineCompileJob
 	std::shared_ptr<D3D12PipelineInfo> info;
 	std::shared_ptr<D3D12PipelineDiskCache> diskCache;
 	std::shared_ptr<std::atomic<uint32>> finishedCounter; // incremented when the job is done (pipeline preloading)
+	bool countAsNew = false; // a draw needs it: show it in the "Compiled N new pipelines" overlay unless it was cached
 	ShaderRef vsRef, gsRef, psRef;
 	ComPtr<ID3D12Device> device;
 	ComPtr<ID3D12RootSignature> rootSignature;
@@ -542,6 +543,8 @@ private:
 				return;
 			}
 		}
+		if (countAsNew)
+			g_compiling_pipelines++;
 		const auto start = std::chrono::steady_clock::now();
 		HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&info->pso));
 		D3D12PipelineQuarantine::t_creatingKey = 0;
@@ -1169,7 +1172,8 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	}
 	if (m_recordFile)
 		m_recordFile->Add(job->SerializeRecord());
-	g_compiling_pipelines++;
+	// pipelines of earlier sessions come from the driver cache in a few ms, only count the ones the driver compiles
+	job->countAsNew = true;
 	if (async)
 	{
 		// Skipping draws is only a last resort: games render some things only once, and a skipped draw can leave them

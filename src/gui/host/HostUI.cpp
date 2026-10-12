@@ -554,6 +554,21 @@ namespace
 				else
 					ImGui::TextDisabled(info.hasKeyboard ? "turn on controller %d (keyboard works)" : "turn on controller %d", info.pad + 1);
 			}
+			if (info.kind != Kind::None && info.pad >= 0)
+			{
+				// stick drift: a worn stick that doesn't return to the center moves the player, a larger deadzone hides it
+				const int percent = (int)std::lround(info.deadzone * 100.0f);
+				ImGui::SetNextItemWidth(columnWidth);
+				if (ImGui::BeginCombo("##deadzone", fmt::format("Stick deadzone {}%", percent).c_str()))
+				{
+					for (int p = 0; p <= 50; p += 5)
+					{
+						if (ImGui::Selectable(fmt::format("{}%{}", p, p == 15 ? " (default)" : p >= 25 ? " (stick drift)" : "").c_str(), p == percent))
+							s_deferred.emplace_back([player, p]() { SetDeadzone(player, p / 100.0f); });
+					}
+					ImGui::EndCombo();
+				}
+			}
 			ImGui::EndDisabled();
 			ImGui::PopID();
 		}

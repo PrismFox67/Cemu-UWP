@@ -43,6 +43,7 @@ namespace
 		kMenuResume,
 		kMenuPairControllers,
 		kMenuGamePadScreen,
+		kMenuTouchCursor,
 		kMenuShowFPS,
 		kMenuExitGame,
 		kMenuExit,
@@ -60,6 +61,13 @@ namespace
 	std::atomic_bool s_menuOpen = false;
 	std::atomic_int s_menuSelection = 0;
 	uint32 s_lastPadButtons = 0;
+	// touch cursor: stands in for the GamePad's touch screen (Super Mario Maker can't be played without it). The right
+	// stick moves it over the GamePad screen, RT touches. Position is 0..1 of the GamePad image, drawn by the GPU thread
+	std::atomic_bool s_touchCursor = false;
+	std::atomic<float> s_touchX = 0.5f, s_touchY = 0.5f;
+	std::atomic_bool s_touchDown = false;
+	bool s_touchRestoreTVScreen = false;
+	std::chrono::steady_clock::time_point s_touchLastUpdate{};
 	std::chrono::steady_clock::time_point s_comboStart{};
 	bool s_comboActive = false;
 	bool s_comboConsumed = false;
@@ -291,6 +299,32 @@ namespace
 			_LaunchGame(*launch);
 	}
 
+	// hands the cursor to the emulated GamePad as a touch, the same way a touch on the wx frontend's window does
+	void _SetTouch(bool down)
+	{
+		s_touchDown = down;
+		sint32 x, y, w, h;
+		LatteRenderTarget_getScreenImageArea(&x, &y, &w, &h, nullptr, nullptr, false);
+		auto& touch = InputManager::instance().m_main_touch;
+		std::scoped_lock lock(touch.m_mutex);
+		touch.position = { x + (sint32)(s_touchX * w), y + (sint32)(s_touchY * h) };
+		if (down && !touch.left_down)
+			touch.left_down_toggle = true; // a tap shorter than the game's input poll still counts
+		touch.left_down = down;
+	}
+
+	void _UpdateTouchCursor(const HostGamepad::State& pad)
+	{
+		const auto now = std::chrono::steady_clock::now();
+		const float dt = std::min(0.1f, std::chrono::duration<float>(now - s_touchLastUpdate).count());
+		s_touchLastUpdate = now;
+		// crosses the screen in about a second at full tilt, slower near the center for precise placement
+		auto speed = [](float v) { return v * std::abs(v) * 1.1f; };
+		s_touchX = std::clamp(s_touchX + speed(pad.rightX) * dt, 0.0f, 1.0f);
+		s_touchY = std::clamp(s_touchY - speed(pad.rightY) * dt, 0.0f, 1.0f);
+		_SetTouch(pad.rightTrigger > 0.5f);
+	}
+
 	void _ExecuteMenuItem(int item)
 	{
 		auto& config = GetConfig();
@@ -306,6 +340,23 @@ namespace
 		case kMenuGamePadScreen:
 			// same state the screen swap hotkey (Ctrl+Tab in the wx frontend) flips
 			LatteGPUState.isDRCPrimary = !LatteGPUState.isDRCPrimary;
+			break;
+		case kMenuTouchCursor:
+			s_touchCursor = !s_touchCursor;
+			if (s_touchCursor)
+			{
+				// touches map onto the screen that is shown, so show the GamePad's
+				s_touchRestoreTVScreen = !LatteGPUState.isDRCPrimary;
+				LatteGPUState.isDRCPrimary = true;
+				s_touchLastUpdate = std::chrono::steady_clock::now();
+				s_menuOpen = false;
+			}
+			else
+			{
+				_SetTouch(false);
+				if (s_touchRestoreTVScreen)
+					LatteGPUState.isDRCPrimary = false;
+			}
 			break;
 		case kMenuShowFPS:
 		{
@@ -376,6 +427,11 @@ namespace
 		cemuLog_log(LogType::Force, "Host: stopping the title, back to the game list");
 		s_menuOpen = false;
 		s_comboActive = false;
+		if (s_touchCursor)
+		{
+			s_touchCursor = false;
+			_SetTouch(false);
+		}
 		CafeSystem::ShutdownTitle();
 		GetConfigHandle().Save();
 		InputManager::instance().save();
@@ -424,7 +480,11 @@ namespace
 		}
 
 		if (!s_menuOpen)
+		{
+			if (s_touchCursor)
+				_UpdateTouchCursor(pad);
 			return;
+		}
 		if (pressed & HostGamepad::kUp)
 			s_menuSelection = (s_menuSelection + kMenuCount - 1) % kMenuCount;
 		if (pressed & HostGamepad::kDown)
@@ -724,6 +784,17 @@ bool HostApp::IsInGameMenuOpen()
 
 void HostApp::DrawInGameMenu()
 {
+	if (s_touchCursor && !s_menuOpen)
+	{
+		sint32 x, y, w, h;
+		LatteRenderTarget_getScreenImageArea(&x, &y, &w, &h, nullptr, nullptr, false);
+		const ImVec2 p((float)x + s_touchX * (float)w, (float)y + s_touchY * (float)h);
+		const float r = std::max(10.0f, (float)h / 60.0f);
+		ImDrawList* draw = ImGui::GetForegroundDrawList();
+		const ImU32 fill = s_touchDown ? IM_COL32(255, 200, 40, 230) : IM_COL32(255, 255, 255, 140);
+		draw->AddCircleFilled(p, r, fill);
+		draw->AddCircle(p, r, IM_COL32(0, 0, 0, 220), 0, std::max(2.0f, r / 5.0f));
+	}
 	const bool pairing = HostControllers::IsPairing();
 	if (!s_menuOpen && !pairing)
 		return;
@@ -775,6 +846,7 @@ void HostApp::DrawInGameMenu()
 			"Resume",
 			"Pair controllers",
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
+			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			"Exit to game list",
 			"Quit Cemu",
