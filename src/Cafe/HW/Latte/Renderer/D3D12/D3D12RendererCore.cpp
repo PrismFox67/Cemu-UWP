@@ -36,6 +36,7 @@ static_assert(sizeof(dxil_spirv_vertex_runtime_data) <= D3D12Const::kRuntimeData
 void D3D12Renderer::draw_beginSequence()
 {
 	ServicePendingPresent(false); // frame interpolation without vsync: the previous real frame may be due
+	LatteTC_ReleaseForMemoryPressureIfDue();
 	m_state.skipDrawSequence = false;
 	const bool streamoutEnable = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
 

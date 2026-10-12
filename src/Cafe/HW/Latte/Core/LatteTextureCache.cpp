@@ -462,7 +462,7 @@ static void LatteTC_ReleaseForMemoryPressure()
 		return;
 	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
 	// level 2: a track load can add a gigabyte within a second, 48 per frame can be too slow then
-	const size_t count = s_textureMemoryPressure >= 2 ? deletable.size() : std::min<size_t>(deletable.size(), 48);
+	const size_t count = s_textureMemoryPressure >= 2 ? deletable.size() : std::min<size_t>(deletable.size(), 256);
 	for (size_t i = 0; i < count; i++)
 		LatteTexture_Delete(deletable[i]);
 	static uint32 s_lastLogFrame = 0;
@@ -545,4 +545,19 @@ void LatteTC_UnloadAllTextures()
 			LatteTexture_Delete(itr);
 	}
 	LatteRenderTarget_unloadAll();
+}
+
+// Also called between draws: loading an MK8 course at 4K on the Xbox added a gigabyte within 1.5 s while hardly any frame
+// ended, so releasing only at the end of a frame (LatteTC_CleanupUnusedTextures) came too late, and the previous
+// course's textures were still there when the allocations failed
+void LatteTC_ReleaseForMemoryPressureIfDue()
+{
+	if (!s_textureMemoryPressure)
+		return;
+	static auto s_last = std::chrono::steady_clock::time_point{};
+	const auto now = std::chrono::steady_clock::now();
+	if (now - s_last < std::chrono::milliseconds(5))
+		return;
+	s_last = now;
+	LatteTC_ReleaseForMemoryPressure();
 }

@@ -130,6 +130,7 @@ void LatteTC_MarkTextureStillInUse(LatteTexture* texture); // lets the texture g
 void LatteTC_CleanupUnusedTextures();
 void LatteTC_SetMemoryPressure(int level); // process near its memory limit: 1 releases unused textures early, 2 (very close) all of them at once
 int LatteTC_GetMemoryPressure(); // 0 none, 1 above 80% of the memory budget, 2 above 90% (or an allocation failed)
+void LatteTC_ReleaseForMemoryPressureIfDue(); // GPU thread, between draws: releases unused textures while memory is tight
 
 std::vector<LatteTexture*> LatteTC_GetDeleteableTextures();
 
