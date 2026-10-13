@@ -1,0 +1,58 @@
+name: Xbox / D3D12 bug report
+description: A crash, freeze or graphics problem in this build (Xbox app or the Windows D3D12 build)
+labels: ["bug", "xbox"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! This tracker is for **this fork** (Direct3D 12 renderer and Xbox app), not official Cemu.
+        **The logs are the most useful part.** On the Xbox, open the Device Portal on a PC → **File explorer** →
+        **LocalAppData** → the **CemuUWP** package → **LocalState**, and download:
+        - `log.txt`: the current or last session
+        - `log_previous.txt`: the session before. **If Cemu crashed and you restarted it, the crash is in this one.**
+
+        On Windows, the logs are next to Cemu.exe (or in the folder shown under Settings).
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Xbox Series X
+        - Xbox Series S
+        - Windows PC (D3D12 build)
+        - Windows PC (Xbox frontend test build)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Build version
+      description: The version in the Device Portal's app list (e.g. 0.1.81.0) or the commit in the release title
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game, region and update version
+      placeholder: "Mario Kart 8 (USA), update v4.2, with DLC"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you were doing, and what went wrong (crash, freeze, black screen, missing graphics, slowdown...)
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings and graphic packs
+      description: App type in Dev Home (Game or App), resolution pack, New shaders (Smooth/Balanced/Accurate), shader compiler, other graphic packs
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Drag `log.txt` and `log_previous.txt` here (see the top of this form for where they are)
+    validations:
+      required: true
