@@ -375,9 +375,13 @@ private:
 };
 
 // Open file or directory from virtual file system
+void (*g_fscOpenFileObserver)(const char* path) = nullptr;
+
 FSCVirtualFile* fsc_open(const char* path, FSC_ACCESS_FLAG accessFlags, sint32* fscStatus, sint32 maxPriority)
 {
 	cemu_assert_debug(HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::OPEN_FILE) || HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::OPEN_DIR)); // must open either file or directory
+	if (g_fscOpenFileObserver && HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::OPEN_FILE))
+		g_fscOpenFileObserver(path);
 	FSCVirtualFile* dirList[FSC_PRIORITY_COUNT];
 	uint8 dirListCount = 0;
 	std::string devicePath;

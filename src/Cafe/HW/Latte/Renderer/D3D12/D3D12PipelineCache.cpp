@@ -13,6 +13,7 @@
 #include "Cafe/CafeSystem.h"
 #include "util/helpers/helpers.h"
 #include "Common/ExceptionHandler/ExceptionHandler.h"
+#include "Cafe/Filesystem/fsc.h"
 
 #include <chrono>
 #include <cstdio>
@@ -643,6 +644,43 @@ public:
 		uint64 h;
 		while (startup.read((char*)&h, sizeof(h)))
 			m_startup.insert(h);
+		for (uint32 i = 0; i < (uint32)m_records.size(); i++)
+			m_index.emplace(_Hash(m_records[i]), i);
+		// scene tags: (scene hash, record hash) pairs, the records a level (a Mario Kart 8 course) used, appended to
+		std::ifstream scenes(_ScenePath(), std::ios::binary);
+		uint64 pair[2];
+		while (scenes.read((char*)pair, sizeof(pair)))
+			if (m_sceneTags.insert({ pair[0], pair[1] }).second)
+				m_scenes[pair[0]].push_back(pair[1]);
+	}
+
+	static uint64 Hash(const std::vector<uint8>& record) { return _Hash(record); }
+
+	// index of a loaded record, -1 if it isn't in the file (yet)
+	sint32 IndexOf(uint64 recordHash) const
+	{
+		auto it = m_index.find(recordHash);
+		return it == m_index.end() ? -1 : (sint32)it->second;
+	}
+
+	std::vector<uint64> GetSceneRecords(uint64 scene)
+	{
+		std::lock_guard lock(m_mutex);
+		auto it = m_scenes.find(scene);
+		return it == m_scenes.end() ? std::vector<uint64>() : it->second;
+	}
+
+	void TagScene(uint64 scene, uint64 recordHash)
+	{
+		std::lock_guard lock(m_mutex);
+		if (!m_sceneTags.insert({ scene, recordHash }).second)
+			return;
+		m_scenes[scene].push_back(recordHash);
+		std::error_code ec;
+		fs::create_directories(m_path.parent_path(), ec);
+		std::ofstream file(_ScenePath(), std::ios::binary | std::ios::app);
+		const uint64 pair[2] = { scene, recordHash };
+		file.write((const char*)pair, sizeof(pair));
 	}
 
 	const std::vector<std::vector<uint8>>& GetRecords() const { return m_records; }
@@ -682,6 +720,10 @@ public:
 		const uint32 size = (uint32)record.size();
 		if (file.write((const char*)&size, sizeof(size)) && file.write((const char*)record.data(), size) && file.flush())
 			m_validSize += sizeof(size) + size;
+		// also usable by a level that loads again in this session (records are only added on the GPU thread, which is
+		// also the only reader of m_records)
+		m_index.emplace(_Hash(record), (uint32)m_records.size());
+		m_records.push_back(record);
 	}
 
 private:
@@ -703,6 +745,17 @@ private:
 		return p;
 	}
 
+	fs::path _ScenePath() const
+	{
+		fs::path p = m_path; // <titleId>_d3d12pipelines.scene.bin
+		p.replace_extension(".scene.bin");
+		return p;
+	}
+
+	struct PairHash { size_t operator()(const std::pair<uint64, uint64>& p) const { return (size_t)(p.first * 0x9E3779B97F4A7C15ull ^ p.second); } };
+	std::unordered_map<uint64, uint32> m_index; // record hash -> index in m_records
+	std::unordered_map<uint64, std::vector<uint64>> m_scenes; // scene hash -> record hashes, in first-use order
+	std::unordered_set<std::pair<uint64, uint64>, PairHash> m_sceneTags;
 	std::mutex m_mutex;
 	fs::path m_path;
 	bool m_headerValid = false;
@@ -926,14 +979,18 @@ static D3D_PRIMITIVE_TOPOLOGY _GetTopology(Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PR
 	}
 }
 
+std::atomic<uint64> D3D12PipelineCache::s_pendingScene{ 0 };
+
 D3D12PipelineCache::D3D12PipelineCache(D3D12Renderer* renderer)
 	: m_renderer(renderer)
 {
 	m_compileQueue = D3D12PipelineCompileQueue::Create();
+	g_fscOpenFileObserver = &D3D12PipelineCache::OnGameFileOpened;
 }
 
 D3D12PipelineCache::~D3D12PipelineCache()
 {
+	g_fscOpenFileObserver = nullptr;
 	m_compileQueue->Stop();
 	SaveDiskCache();
 	Clear();
@@ -1093,8 +1150,60 @@ void D3D12PipelineCache::BeginStartupWindow()
 	m_startupWindowEnd = std::chrono::steady_clock::now() + std::chrono::seconds(150);
 }
 
+void D3D12PipelineCache::OnGameFileOpened(const char* path)
+{
+	// Mario Kart 8 (and its DLC and mods): every course loads course/<name>/course_model.szs
+	const char* model = strstr(path, "/course_model.szs");
+	const char* course = strstr(path, "/course/");
+	if (!model || !course || course > model)
+		return;
+	uint64 h = 0xcbf29ce484222325ull;
+	for (const char* p = course + 8; p < model; p++)
+		h = (h ^ (uint8)*p) * 0x100000001b3ull;
+	s_pendingScene.store(h ? h : 1);
+	cemuLog_log(LogType::Force, "D3D12: Level load {}: creating its recorded pipelines on the loading screen", std::string(course + 8, model));
+}
+
+void D3D12PipelineCache::TickScenePreload()
+{
+	const uint64 scene = s_pendingScene.exchange(0);
+	if (scene && m_recordFile)
+	{
+		m_scene = scene;
+		m_sceneOrder.clear();
+		m_sceneNext = 0;
+		for (uint64 h : m_recordFile->GetSceneRecords(scene))
+		{
+			const sint32 i = m_recordFile->IndexOf(h);
+			if (i >= 0)
+				m_sceneOrder.push_back((uint32)i);
+		}
+		cemuLog_log(LogType::Force, "D3D12: Level load: {} recorded pipelines", m_sceneOrder.size());
+	}
+	else if (scene)
+		m_scene = scene;
+	// queue them ahead of the background preload, a few ms of shader lookups per frame so the loading screen keeps moving
+	// (pipelines already created this session come from the in-memory driver cache right away)
+	if (m_sceneNext >= m_sceneOrder.size())
+		return;
+	const auto& records = m_recordFile->GetRecords();
+	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(6);
+	while (m_sceneNext < m_sceneOrder.size() && std::chrono::steady_clock::now() < sliceEnd)
+	{
+		auto job = std::make_unique<D3D12PipelineCompileJob>();
+		if (!job->DeserializeRecord(records[m_sceneOrder[m_sceneNext++]]) || !ResolveRecordedShaders(*job))
+			continue;
+		job->info = std::make_shared<D3D12PipelineInfo>();
+		job->diskCache = m_diskCache;
+		m_compileQueue->Push(std::move(job), true);
+	}
+	if (m_sceneNext >= m_sceneOrder.size())
+		cemuLog_log(LogType::Force, "D3D12: Level load: all {} pipelines queued", m_sceneOrder.size());
+}
+
 void D3D12PipelineCache::TickBackgroundPreload()
 {
+	TickScenePreload();
 	if (!m_backgroundPreload)
 		return;
 	uint32 finished = 0;
@@ -1260,6 +1369,8 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	{
 		const std::vector<uint8> record = job->SerializeRecord();
 		m_recordFile->Add(record);
+		if (m_scene)
+			m_recordFile->TagScene(m_scene, D3D12PipelineRecordFile::Hash(record));
 		if (std::chrono::steady_clock::now() < m_startupWindowEnd)
 			m_recordFile->MarkStartup(record);
 	}

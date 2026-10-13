@@ -177,6 +177,8 @@ bool fsc_unmount(std::string_view mountPath, sint32 priority);
 void fsc_unmountAll();
 
 FSCVirtualFile* fsc_open(const char* path, FSC_ACCESS_FLAG accessFlags, sint32* fscStatus, sint32 maxPriority=FSC_PRIORITY_MAX);
+// called with the path of every file the game opens (any thread); the D3D12 pipeline cache uses it to notice level loads
+extern void (*g_fscOpenFileObserver)(const char* path);
 FSCVirtualFile* fsc_openDirIterator(const char* path, sint32* fscStatus);
 bool fsc_createDir(const char* path, sint32* fscStatus);
 bool fsc_rename(const char* srcPath, const char* dstPath, sint32* fscStatus);

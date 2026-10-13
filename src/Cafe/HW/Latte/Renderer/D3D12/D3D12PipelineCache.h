@@ -68,6 +68,12 @@ public:
 
 	// TickBackgroundPreload runs once per frame
 	void TickBackgroundPreload();
+
+	// Level loads (scenes): a file open that starts a level (Mario Kart 8: course/<name>/course_model.szs) makes it the
+	// current scene. Pipelines first used during a scene are tagged with it, and when the scene loads again its tagged
+	// pipelines are created ahead of everything else while the game's loading screen is up, instead of on the first
+	// frames of the level. Called from any thread
+	static void OnGameFileOpened(const char* path);
 	bool IsBackgroundPreloading() const { return m_backgroundPreload; }
 
 	static uint64 CalculateHash(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader,
@@ -98,6 +104,11 @@ private:
 		std::chrono::steady_clock::time_point start;
 	} m_preload;
 	bool m_backgroundPreload = false;
+	void TickScenePreload();
+	static std::atomic<uint64> s_pendingScene; // set by OnGameFileOpened, picked up on the GPU thread
+	uint64 m_scene = 0;
+	std::vector<uint32> m_sceneOrder; // record indices of the scene's pipelines still to be queued
+	size_t m_sceneNext = 0;
 	std::chrono::steady_clock::time_point m_startupWindowEnd{};
 	std::unordered_map<uint64, ComPtr<ID3D12PipelineState>> m_internalPipelines;
 	// how long draws waited for async pipelines in the current window (see GetOrCreate)
