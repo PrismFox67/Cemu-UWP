@@ -91,6 +91,13 @@ if(CEMU_UWP)
 		foreach(dataFile ${UWP_DATA_FILES})
 			file(RELATIVE_PATH relPath "${CMAKE_SOURCE_DIR}/bin" "${dataFile}")
 			get_filename_component(relDir "${relPath}" DIRECTORY)
+			if (dataFile MATCHES "\\.asm$")
+				# Visual Studio leaves .asm files out of the package; ship graphic pack patches as .asm.txt,
+				# InstallBundledGraphicPacks() restores the name
+				set(packagedFile "${CMAKE_CURRENT_BINARY_DIR}/uwpData/${relPath}.txt")
+				configure_file("${dataFile}" "${packagedFile}" COPYONLY)
+				set(dataFile "${packagedFile}")
+			endif()
 			target_sources(CemuBin PRIVATE "${dataFile}")
 			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
 			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_LOCATION "${relDir}")

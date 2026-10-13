@@ -123,7 +123,10 @@ static void InstallBundledGraphicPacks()
 		{
 			if (!file.is_regular_file(ec))
 				continue;
-			const fs::path dst = target / fs::relative(file.path(), pack.path(), ec);
+			fs::path dst = target / fs::relative(file.path(), pack.path(), ec);
+			// the UWP package can't carry .asm files, so they're packaged as <name>.asm.txt
+			if (dst.extension() == ".txt" && dst.stem().extension() == ".asm")
+				dst.replace_extension();
 			if (_SameFileContent(file.path(), dst))
 				continue;
 			fs::create_directories(dst.parent_path(), ec);
