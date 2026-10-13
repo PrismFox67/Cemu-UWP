@@ -225,6 +225,19 @@ void RendererShaderD3D12::PreponeCompilation(bool isRenderThread)
 	m_compilationState.setValue(COMPILATION_STATE::DONE);
 }
 
+void RendererShaderD3D12::Prioritize()
+{
+	std::lock_guard _l(s_shaderD3D12ThreadPool.m_queueMutex);
+	if (!m_compilationState.hasState(COMPILATION_STATE::QUEUED))
+		return;
+	auto& q = s_shaderD3D12ThreadPool.m_queue;
+	auto it = std::find(q.begin(), q.end(), this);
+	if (it == q.end() || it == q.begin())
+		return;
+	q.erase(it);
+	q.push_front(this);
+}
+
 bool RendererShaderD3D12::IsCompiled()
 {
 	return m_compilationState.hasState(COMPILATION_STATE::DONE);

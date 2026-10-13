@@ -1216,6 +1216,26 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		return it->second.get();
 
 	const bool async = GetConfig().async_compile.GetValue();
+	// Smooth: the game's shaders are compiled on the shader threads as soon as they're created. Compiling one on the
+	// render thread on its first draw (PreponeCompilation) hitched for tens to hundreds of ms on the Xbox when a new
+	// course or effect showed up, so skip the draw until the threads are done (it pops in a few frames later). Nothing
+	// is cached here, the next draw tries again. Small and cube map targets still wait (see IsLikelyOneOffTarget)
+	if (async && GetConfig().pipeline_wait.GetValue() == 0 && !IsLikelyOneOffTarget(fbo))
+	{
+		static D3D12PipelineInfo s_notReady; // isReady stays false: isValid() is false and the draw is skipped
+		bool pending = false;
+		for (LatteDecompilerShader* shader : { vertexShader, geometryShader, pixelShader })
+		{
+			auto* s = shader ? static_cast<RendererShaderD3D12*>(shader->shader) : nullptr;
+			if (s && !s->IsCompiled())
+			{
+				s->Prioritize();
+				pending = true;
+			}
+		}
+		if (pending)
+			return &s_notReady;
+	}
 	for (LatteDecompilerShader* shader : { vertexShader, geometryShader, pixelShader })
 	{
 		// FXC/DXC are slow for large shaders but never pathological, and the bytecode cache makes later runs instant

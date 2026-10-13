@@ -33,6 +33,8 @@ public:
 	void PreponeCompilation(bool isRenderThread) override;
 	bool IsCompiled() override;
 	bool WaitForCompiled() override;
+	// moves a still queued shader to the front of the compile queue (a draw is waiting for it)
+	void Prioritize();
 
 	// valid only once IsCompiled() is true
 	bool IsValid() const { return !m_bytecode.empty(); }
