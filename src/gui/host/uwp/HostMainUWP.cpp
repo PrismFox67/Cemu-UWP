@@ -341,11 +341,13 @@ namespace
 			// the console may terminate a suspended app without further notice, keep the settings safe
 			auto deferral = args.SuspendingOperation().GetDeferral();
 			GetConfigHandle().Save();
+			HostApp::OnSuspending(true);
 			deferral.Complete();
 		}
 
 		void OnResuming(const IInspectable&, const IInspectable&)
 		{
+			HostApp::OnSuspending(false);
 		}
 	};
 

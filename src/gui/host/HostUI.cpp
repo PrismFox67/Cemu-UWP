@@ -3,6 +3,8 @@
 #include "gui/host/HostControllers.h"
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostGraphicPacks.h"
+#include "gui/host/HostIcons.h"
+#include "gui/host/HostTools.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -66,6 +68,17 @@ namespace
 	char s_newPathBuffer[1024]{};
 	std::vector<std::function<void()>> s_deferred; // run after the frame (picker callbacks etc.)
 	std::optional<fs::path> s_pendingLaunch; // set by the file picker
+	std::function<void*(uint64, const uint8*, int, int)> s_textureProvider;
+	std::optional<Message> s_lastSessionProblem; // shown above the game list
+	bool s_updateDismissed = false;
+	// first launch: a setup screen (game folder, keys, graphic packs) instead of the tabs until it's finished once
+	bool s_setupChecked = false;
+	bool s_showSetup = false;
+
+	fs::path _SetupMarkerPath()
+	{
+		return ActiveSettings::GetUserDataPath("setup_done.txt");
+	}
 
 	void _RebuildFonts()
 	{
@@ -147,6 +160,10 @@ namespace
 				e.version = info.GetVersion();
 		}
 		std::sort(games.begin(), games.end(), [](const GameEntry& a, const GameEntry& b) { return boost::algorithm::ilexicographical_compare(a.name, b.name); });
+		std::vector<TitleId> titleIds;
+		for (const GameEntry& e : games)
+			titleIds.emplace_back(e.titleId);
+		HostIcons::Request(titleIds);
 		s_games = std::move(games);
 		s_selectedGame = std::clamp(s_selectedGame, 0, std::max(0, (int)s_games.size() - 1));
 	}
@@ -266,9 +283,56 @@ namespace
 		HostUI::RequestGameListRefresh();
 	}
 
+	// "save logs" / "back up saves" buttons, disabled while one of them runs
+	void _DrawToolButtons(bool logs, bool saves)
+	{
+		const bool busy = HostTools::IsBusy();
+		ImGui::BeginDisabled(busy);
+		if (logs && ImGui::Button("Save logs to USB"))
+			s_deferred.emplace_back([]() { HostTools::StartSaveLogs(); });
+		if (logs && saves)
+			ImGui::SameLine();
+		if (saves && ImGui::Button("Back up saves to USB"))
+			s_deferred.emplace_back([]() { HostTools::StartBackupSaves(); });
+		ImGui::EndDisabled();
+		if (busy)
+		{
+			ImGui::SameLine();
+			ImGui::TextUnformatted(HostTools::GetBusyText().c_str());
+		}
+	}
+
+	// above the game list: the last session's crash and a newer build
+	void _DrawNotices()
+	{
+		if (s_lastSessionProblem)
+		{
+			ImGui::PushFont(s_fontLarge);
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", s_lastSessionProblem->title.c_str());
+			ImGui::PopFont();
+			ImGui::TextWrapped("%s", s_lastSessionProblem->text.c_str());
+			ImGui::TextWrapped("To report it, save the logs to your USB drive and attach them to a bug report on GitHub.");
+			_DrawToolButtons(true, false);
+			ImGui::SameLine();
+			if (ImGui::Button("Dismiss"))
+				s_lastSessionProblem.reset();
+			ImGui::Separator();
+		}
+		const std::string newer = HostTools::GetNewerBuild();
+		if (!newer.empty() && !s_updateDismissed)
+		{
+			ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "A newer build is available: %s", newer.c_str());
+			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s", HostTools::GetDownloadUrl());
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Hide"))
+				s_updateDismissed = true;
+		}
+	}
+
 	std::optional<fs::path> _DrawGamesTab()
 	{
 		std::optional<fs::path> launch;
+		_DrawNotices();
 		if (CafeTitleList::IsScanning())
 			ImGui::TextDisabled("Scanning game folders...");
 		if (s_games.empty())
@@ -283,13 +347,33 @@ namespace
 			const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f;
 			if (ImGui::BeginChild("##gamelist", ImVec2(0.0f, -footer), true))
 			{
+				const float rowHeight = ImGui::GetTextLineHeight() * 2.8f;
+				const float iconSize = rowHeight;
+				const float textX = iconSize + ImGui::GetStyle().ItemSpacing.x;
 				for (int i = 0; i < (int)s_games.size(); i++)
 				{
 					const GameEntry& game = s_games[i];
 					ImGui::PushID(i);
 					const bool selected = i == s_selectedGame;
-					const std::string label = fmt::format("{}\n{:016x}  v{}{}{}", game.name, game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "");
-					if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, ImGui::GetTextLineHeight() * 2.4f)))
+					const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+					const bool activated = ImGui::Selectable("##game", selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, rowHeight));
+					// the game's own icon (box art) left of its name, a placeholder until it's loaded
+					ImDrawList* drawList = ImGui::GetWindowDrawList();
+					const ImVec2 iconMin = rowStart;
+					const ImVec2 iconMax(rowStart.x + iconSize, rowStart.y + iconSize);
+					void* texture = nullptr;
+					if (const HostIcons::Icon* icon = HostIcons::Get(game.titleId); icon && s_textureProvider)
+						texture = s_textureProvider(game.titleId, icon->rgba.data(), icon->width, icon->height);
+					if (texture)
+						drawList->AddImageRounded(texture, iconMin, iconMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8.0f * s_scale);
+					else
+						drawList->AddRectFilled(iconMin, iconMax, IM_COL32(40, 44, 52, 255), 8.0f * s_scale);
+					const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
+					const float textY = rowStart.y + (rowHeight - lineHeight * 2.0f) * 0.5f;
+					drawList->AddText(ImVec2(rowStart.x + textX, textY), ImGui::GetColorU32(ImGuiCol_Text), game.name.c_str());
+					const std::string details = fmt::format("{:016x}  v{}{}{}", game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "");
+					drawList->AddText(ImVec2(rowStart.x + textX, textY + lineHeight), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
+					if (activated)
 					{
 						s_selectedGame = i;
 						launch = game.path;
@@ -424,11 +508,10 @@ namespace
 		ImGui::EndChild();
 	}
 
-	void _DrawSettingsTab()
+	// the game folder list with Remove buttons, "Add folder..." and a path field (Settings and the setup screen)
+	void _DrawGameFolderControls()
 	{
 		auto& config = GetConfig();
-		bool changed = false;
-		ImGui::SeparatorText("Game folders");
 		for (size_t i = 0; i < config.game_paths.size(); i++)
 		{
 			ImGui::PushID((int)i);
@@ -461,6 +544,70 @@ namespace
 			s_newPathBuffer[0] = '\0';
 			s_deferred.emplace_back([path]() { _AddGamePath(path); });
 		}
+	}
+
+	void _FinishSetup()
+	{
+		std::ofstream(_SetupMarkerPath(), std::ios::trunc) << "first-time setup finished\n";
+		s_showSetup = false;
+		s_tab = kTabGames;
+	}
+
+	// first launch: the three things a new tester has to do before a game works well
+	void _DrawSetup()
+	{
+		ImGui::PushFont(s_fontLarge);
+		ImGui::TextUnformatted("Welcome! Three steps to get started");
+		ImGui::PopFont();
+		ImGui::TextDisabled("You can change all of this later under Settings and Graphic packs.");
+
+		ImGui::SeparatorText("1. Your games");
+		ImGui::TextWrapped("Add the folder or USB drive with your games (decrypted dumps, .wua, or .wud/.wux disc images). Keep updates and DLC "
+			"as their own folders next to the game, they're found automatically.");
+		_DrawGameFolderControls();
+		if (CafeTitleList::IsScanning())
+			ImGui::TextDisabled("Scanning game folders...");
+		else if (!GetConfig().game_paths.empty())
+			ImGui::TextColored(s_games.empty() ? ImVec4(1.0f, 0.6f, 0.45f, 1.0f) : ImVec4(0.4f, 0.85f, 0.4f, 1.0f), s_games.empty() ? "No games found in these folders yet" : "%d game(s) found", (int)s_games.size());
+
+		ImGui::SeparatorText("2. Disc keys (only for .wud / .wux)");
+		ImGui::TextWrapped("Disc images need their key. Put keys.txt in your game folder or at the root of the drive, then import it. Skip this for decrypted dumps.");
+		if (ImGui::Button("Import keys.txt from game folders"))
+			s_deferred.emplace_back([]() { _ImportKeys(); });
+
+		ImGui::SeparatorText("3. Community graphic packs");
+		ImGui::TextWrapped("Resolution packs (1440p / 4K) and fixes for games that crash without them, like New Super Mario Bros. U.");
+		const auto status = HostGraphicPacks::GetStatus();
+		const bool busy = HostGraphicPacks::IsBusy();
+		const std::string installed = HostGraphicPacks::GetInstalledVersion();
+		ImGui::BeginDisabled(busy);
+		if (ImGui::Button(installed.empty() ? "Download community graphic packs" : "Check for updates"))
+			HostGraphicPacks::StartUpdate();
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (status.state == HostGraphicPacks::State::Failed)
+			ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", status.text.c_str());
+		else if (status.state != HostGraphicPacks::State::Idle)
+			ImGui::TextUnformatted(status.text.c_str());
+		else if (!installed.empty())
+			ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "Installed (%s)", installed.c_str());
+		if (busy && status.progress >= 0.0f)
+			ImGui::ProgressBar(status.progress, ImVec2(-1.0f, 0.0f));
+
+		ImGui::Spacing();
+		ImGui::Separator();
+		if (ImGui::Button("Done"))
+			s_deferred.emplace_back([]() { _FinishSetup(); });
+		ImGui::SameLine();
+		ImGui::TextDisabled("Tip: for Mario Kart 8 set Graphic packs > TV Resolution to 2560x1440.");
+	}
+
+	void _DrawSettingsTab()
+	{
+		auto& config = GetConfig();
+		bool changed = false;
+		ImGui::SeparatorText("Game folders");
+		_DrawGameFolderControls();
 
 		ImGui::SeparatorText("Graphics");
 		bool vsync = config.vsync.GetValue() != 0;
@@ -581,6 +728,13 @@ namespace
 		ImGui::SameLine();
 		ImGui::TextDisabled("needed for WUD/WUX disc images");
 		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+
+		ImGui::SeparatorText("Logs and backups");
+		const fs::path exportRoot = HostTools::GetExportRoot();
+		ImGui::TextWrapped("Copies go to %s", exportRoot.empty() ? "the drive of your game folder (add one first)" : _pathToUtf8(exportRoot).c_str());
+		_DrawToolButtons(true, true);
+		if (ImGui::Button("Run first-time setup again"))
+			s_showSetup = true;
 		if (changed)
 			GetConfigHandle().Save();
 	}
@@ -708,6 +862,19 @@ namespace
 					}
 					ImGui::EndCombo();
 				}
+				// worn sticks no longer reach the edge, a larger range gets full tilt earlier
+				ImGui::SameLine();
+				const int rangePercent = (int)std::lround(info.range * 100.0f);
+				ImGui::SetNextItemWidth(columnWidth);
+				if (ImGui::BeginCombo("##range", fmt::format("Stick range {}%", rangePercent).c_str()))
+				{
+					for (int p = 100; p <= 150; p += 10)
+					{
+						if (ImGui::Selectable(fmt::format("{}%{}", p, p == 100 ? " (default)" : " (full tilt earlier)").c_str(), p == rangePercent))
+							s_deferred.emplace_back([player, p]() { SetStickRange(player, p / 100.0f); });
+					}
+					ImGui::EndCombo();
+				}
 				ImGui::SameLine();
 				const bool open = s_mappingPlayer == player;
 				if (ImGui::Button(open ? "Hide button mapping" : "Button mapping"))
@@ -788,44 +955,65 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		ImGui::SameLine();
 		ImGui::TextDisabled("%s  |  %s", BUILD_VERSION_WITH_NAME_STRING, HostPlatform::GetName());
 
-		// LB/RB switch tabs (not while pairing, every button press belongs to the pairing then)
-		const bool pairing = HostControllers::IsPairing();
-		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
-			s_tab = (s_tab + kTabCount - 1) % kTabCount;
-		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
-			s_tab = (s_tab + 1) % kTabCount;
-		if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
-			s_tab = kTabSettings;
-		if (pairing)
-			s_tab = kTabControllers;
-
-		const char* tabNames[kTabCount] = { "Games", "Graphic packs", "Controllers", "Settings", "About" };
-		for (int i = 0; i < kTabCount; i++)
+		// the setup screen is shown until it's finished once. Existing setups (games and packs present) skip it
+		if (!s_setupChecked)
 		{
-			if (i > 0)
-				ImGui::SameLine();
-			const bool active = s_tab == i;
-			if (active)
-				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
-			if (ImGui::Button(tabNames[i]))
-				s_tab = i;
-			if (active)
-				ImGui::PopStyleColor();
+			s_setupChecked = true;
+			std::error_code ec;
+			if (!fs::exists(_SetupMarkerPath(), ec))
+			{
+				if (GetConfig().game_paths.empty() || HostGraphicPacks::GetInstalledVersion().empty())
+					s_showSetup = true;
+				else
+					_FinishSetup();
+			}
 		}
-		ImGui::SameLine();
-		ImGui::TextDisabled("(LB / RB)");
-		ImGui::Separator();
-
-		if (s_tab == kTabGames)
-			launch = _DrawGamesTab();
-		else if (s_tab == kTabGraphicPacks)
-			_DrawGraphicPacksTab();
-		else if (s_tab == kTabControllers)
-			_DrawControllersTab();
-		else if (s_tab == kTabSettings)
-			_DrawSettingsTab();
+		if (s_showSetup && !HostControllers::IsPairing())
+		{
+			ImGui::Separator();
+			_DrawSetup();
+		}
 		else
-			_DrawAboutTab();
+		{
+			// LB/RB switch tabs (not while pairing, every button press belongs to the pairing then)
+			const bool pairing = HostControllers::IsPairing();
+			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
+				s_tab = (s_tab + kTabCount - 1) % kTabCount;
+			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
+				s_tab = (s_tab + 1) % kTabCount;
+			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+				s_tab = kTabSettings;
+			if (pairing)
+				s_tab = kTabControllers;
+
+			const char* tabNames[kTabCount] = { "Games", "Graphic packs", "Controllers", "Settings", "About" };
+			for (int i = 0; i < kTabCount; i++)
+			{
+				if (i > 0)
+					ImGui::SameLine();
+				const bool active = s_tab == i;
+				if (active)
+					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+				if (ImGui::Button(tabNames[i]))
+					s_tab = i;
+				if (active)
+					ImGui::PopStyleColor();
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("(LB / RB)");
+			ImGui::Separator();
+
+			if (s_tab == kTabGames)
+				launch = _DrawGamesTab();
+			else if (s_tab == kTabGraphicPacks)
+				_DrawGraphicPacksTab();
+			else if (s_tab == kTabControllers)
+				_DrawControllersTab();
+			else if (s_tab == kTabSettings)
+				_DrawSettingsTab();
+			else
+				_DrawAboutTab();
+		}
 
 		// messages
 		{
@@ -902,4 +1090,14 @@ bool HostUI::HandleBack()
 		return true;
 	}
 	return false;
+}
+
+void HostUI::SetLastSessionProblem(std::string title, std::string text)
+{
+	s_lastSessionProblem = Message{ std::move(title), std::move(text) };
+}
+
+void HostUI::SetTextureProvider(std::function<void*(uint64 key, const uint8* rgba, int width, int height)> provider)
+{
+	s_textureProvider = std::move(provider);
 }

@@ -3,6 +3,8 @@
 #include "gui/host/HostUI.h"
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostControllers.h"
+#include "gui/host/HostIcons.h"
+#include "gui/host/HostTools.h"
 #include "gui/host/LauncherRenderer.h"
 
 #include "Cafe/CafeSystem.h"
@@ -208,6 +210,7 @@ namespace
 
 	void _LaunchGame(const fs::path& path)
 	{
+		HostIcons::Stop(); // it mounts titles, finish before the game's title is mounted
 		std::string error;
 		if (!_PrepareTitle(path, error))
 		{
@@ -236,6 +239,7 @@ namespace
 		}
 		CafeSystem::LaunchForegroundTitle();
 		s_state = State::Running;
+		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());
 	}
 
 	void _RenderLauncherFrame()
@@ -436,6 +440,7 @@ namespace
 			_SetTouch(false);
 		}
 		CafeSystem::ShutdownTitle();
+		HostTools::MarkGameStopped();
 		GetConfigHandle().Save();
 		InputManager::instance().save();
 		s_launcherIgnoresPad = true;
@@ -521,6 +526,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	// write the log from the start instead of only once a game starts: on Xbox it's read through the Device Portal, and
 	// a session that never starts a game or gets terminated would otherwise leave no log at all
 	cemuLog_createLogFile(false);
+	// the previous session's log is log_previous.txt now
+	if (auto problem = HostTools::CheckLastSession())
+		HostUI::SetLastSessionProblem(problem->title, problem->text);
 
 	const fs::path settingsPath = ActiveSettings::GetConfigPath("settings.xml");
 	GetConfigHandle().SetFilename(settingsPath.generic_wstring());
@@ -557,7 +565,11 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	s_launcherContext = ImGui::CreateContext();
 	ImGui::SetCurrentContext(s_launcherContext);
 	HostUI::Initialize(s_launcherContext, ActiveSettings::GetDataPath("resources/fonts/launcher.ttf"), _UIScale());
+	HostUI::SetTextureProvider([](uint64 key, const uint8* rgba, int width, int height) -> void* {
+		return s_launcher ? s_launcher->GetOrCreateTexture(key, rgba, width, height) : nullptr;
+	});
 	ImGui::SetCurrentContext(previous);
+	HostTools::StartUpdateCheck();
 
 	if (!options.launchPath.empty())
 		s_pendingLaunch = options.launchPath;
@@ -603,6 +615,8 @@ void HostApp::Shutdown()
 		cemuLog_log(LogType::Force, "Host: stopping the running title");
 		CafeSystem::ShutdownTitle();
 	}
+	HostTools::MarkGameStopped();
+	HostIcons::Stop();
 	s_launcher.reset();
 	if (s_launcherContext)
 	{
@@ -611,6 +625,11 @@ void HostApp::Shutdown()
 	}
 	GetConfigHandle().Save();
 	InputManager::instance().save();
+}
+
+void HostApp::OnSuspending(bool suspended)
+{
+	HostTools::MarkSuspended(suspended);
 }
 
 bool HostApp::IsGameRunning()

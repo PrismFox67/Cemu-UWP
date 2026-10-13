@@ -231,6 +231,7 @@ HostControllers::PlayerInfo HostControllers::GetPlayer(int player)
 		{
 			info.pad = std::atoi(c->uuid().c_str());
 			info.deadzone = c->get_settings().axis.deadzone;
+			info.range = c->get_settings().axis.range;
 		}
 		else if (c->api() == InputAPI::Keyboard)
 			info.hasKeyboard = true;
@@ -308,6 +309,23 @@ void HostControllers::SetDeadzone(int player, float deadzone)
 			continue;
 		auto settings = c->get_settings();
 		settings.axis.deadzone = settings.rotation.deadzone = deadzone;
+		c->set_settings(settings);
+	}
+	InputManager::instance().save(player);
+}
+
+void HostControllers::SetStickRange(int player, float range)
+{
+	auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	range = std::clamp(range, 0.5f, 2.0f);
+	for (const auto& c : emulated->get_controllers())
+	{
+		if (c->api() != InputAPI::XInput)
+			continue;
+		auto settings = c->get_settings();
+		settings.axis.range = settings.rotation.range = range;
 		c->set_settings(settings);
 	}
 	InputManager::instance().save(player);

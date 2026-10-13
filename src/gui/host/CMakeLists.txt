@@ -10,7 +10,11 @@ add_library(CemuHostFrontend
 	HostGamepad.h
 	HostGraphicPacks.cpp
 	HostGraphicPacks.h
+	HostIcons.cpp
+	HostIcons.h
 	HostPlatform.h
+	HostTools.cpp
+	HostTools.h
 	HostUI.cpp
 	HostUI.h
 	HostWindowSystem.cpp

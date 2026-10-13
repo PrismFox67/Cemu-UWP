@@ -122,7 +122,7 @@ jobs:
         path: ./cemu-d3d12-windows-x64.zip
 
     - name: "Publish ci-latest pre-release"
-      if: github.event_name == 'push'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/d3d12-backend'
       shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -221,12 +221,15 @@ jobs:
         cp bin/Cemu_Host_release.exe pkg/Cemu_Host.exe
         cp -r bin/resources bin/gameProfiles bin/bundledGraphicPacks pkg/
         cd pkg && 7z a -tzip ../cemu-host-win32-x64.zip . > /dev/null && cd ..
-        gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
-        gh release upload ci-latest cemu-host-win32-x64.zip --clobber
-        # debug symbols for stack traces of hangs and crashes, kept out of the main zip because of their size
-        if [ -f bin/Cemu_Host_release.pdb ]; then
-          (cd bin && 7z a -tzip ../cemu-host-win32-x64-pdb.zip Cemu_Host_release.pdb > /dev/null)
-          gh release upload ci-latest cemu-host-win32-x64-pdb.zip --clobber
+        # test branches (uwp/**) only produce artifacts, the pre-release is the main branch's
+        if [ "$GITHUB_REF" = "refs/heads/d3d12-backend" ]; then
+          gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+          gh release upload ci-latest cemu-host-win32-x64.zip --clobber
+          # debug symbols for stack traces of hangs and crashes, kept out of the main zip because of their size
+          if [ -f bin/Cemu_Host_release.pdb ]; then
+            (cd bin && 7z a -tzip ../cemu-host-win32-x64-pdb.zip Cemu_Host_release.pdb > /dev/null)
+            gh release upload ci-latest cemu-host-win32-x64-pdb.zip --clobber
+          fi
         fi
 
     - name: "Upload artifact"
@@ -352,8 +355,10 @@ jobs:
         rm -rf uwp-package/Dependencies/ARM uwp-package/Dependencies/ARM64 uwp-package/Dependencies/x86 uwp-package/TelemetryDependencies
         find uwp-package -type f | sort
         cd uwp-package && 7z a -tzip ../cemu-uwp-x64.zip . > /dev/null && cd ..
-        gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
-        gh release upload ci-latest cemu-uwp-x64.zip --clobber
+        if [ "$GITHUB_REF" = "refs/heads/d3d12-backend" ]; then
+          gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+          gh release upload ci-latest cemu-uwp-x64.zip --clobber
+        fi
 
     - name: "Upload artifact"
       uses: actions/upload-artifact@v6

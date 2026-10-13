@@ -32,6 +32,9 @@ namespace HostApp
 
 	bool IsGameRunning();
 
+	// the shell's app is being suspended (true) or resumed (false). The console may close a suspended app
+	void OnSuspending(bool suspended);
+
 	// --- window events from the shell (UI thread) ---
 	void OnResize(int physWidth, int physHeight, double dpiScale);
 	void OnFocusChanged(bool hasFocus);

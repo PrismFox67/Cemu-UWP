@@ -25,6 +25,7 @@ namespace HostControllers
 		bool padConnected = false;
 		bool hasKeyboard = false;
 		float deadzone = 0.15f; // stick deadzone of the controller (0..1)
+		float range = 1.0f; // stick range, above 1 reaches full tilt before the stick is all the way out
 	};
 
 	const char* KindName(Kind kind);
@@ -38,6 +39,8 @@ namespace HostControllers
 	void SetPlayer(int player, Kind kind, int pad);
 	// deadzone of both sticks, raise it for controllers with stick drift
 	void SetDeadzone(int player, float deadzone);
+	// stick range of both sticks, raise it for worn sticks that no longer reach the edge
+	void SetStickRange(int player, float range);
 
 	// button mapping: which Xbox button drives each Wii U button. Stick directions stay on the sticks
 	struct MappableButton

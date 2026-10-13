@@ -29,6 +29,10 @@ public:
 	// font atlas changed (font size / scale), recreate the font texture before the next frame
 	void InvalidateFonts();
 
+	// texture for ImGui::Image from RGBA8 pixels, created once per key and kept until the renderer is destroyed (the
+	// launcher renderer is recreated after a game, the caller keeps the pixels). Returns nullptr on failure
+	void* GetOrCreateTexture(uint64 key, const uint8* rgba, int width, int height);
+
 private:
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;
