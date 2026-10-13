@@ -234,11 +234,12 @@ namespace coreinit
 				return;
 
 			uint64 currentTime = OSGetTime();
-
-			uint64 ticksSinceStart = currentTime - startTime;
-			uint64 numPeriods = ticksSinceStart / period;
-
-			nextTime = startTime + (numPeriods + 1ull) * period;
+			if (startTime < currentTime)
+			{
+				uint64 ticksSinceStart = currentTime - startTime;
+				uint64 numPeriods = ticksSinceStart / period;
+				nextTime = startTime + (numPeriods + 1ull) * period;
+			}
 
 			alarm->startTime = _swapEndianU64(startTime);
 			alarm->nextTime = _swapEndianU64(nextTime);
