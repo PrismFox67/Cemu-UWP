@@ -93,7 +93,7 @@ if(CEMU_UWP)
 			get_filename_component(relDir "${relPath}" DIRECTORY)
 			target_sources(CemuBin PRIVATE "${dataFile}")
 			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
-			if (dataFile MATCHES "\.asm$")
+			if (dataFile MATCHES "\\.asm$")
 				set_property(SOURCE "${dataFile}" PROPERTY HEADER_FILE_ONLY TRUE) # graphic pack patches are content, not MASM sources
 			endif()
 			set_property(SOURCE "${dataFile}" PROPERTY VS_DEPLOYMENT_LOCATION "${relDir}")
