@@ -261,7 +261,14 @@ namespace
 		std::string from;
 		for (const auto& source : sources)
 			from += "\n" + _pathToUtf8(source);
-		HostUI::PushMessage("keys.txt imported", fmt::format("Added {} new key(s) ({} found, the others were already there). Read from:{}", added, total, from));
+		std::string summary;
+		if (added == 0)
+			summary = fmt::format("All {} key(s) were already imported, nothing to add.", total);
+		else if (added == total)
+			summary = fmt::format("Added {} key(s).", added);
+		else
+			summary = fmt::format("Added {} new key(s), {} were already imported.", added, total - added);
+		HostUI::PushMessage("keys.txt imported", fmt::format("{}\n\nRead from:{}", summary, from));
 		if (added > 0)
 		{
 			CafeTitleList::Refresh(); // disc images that couldn't be read without their key show up now
@@ -769,7 +776,10 @@ namespace
 				if (ImGui::Button(label.c_str(), ImVec2(columnWidth, 0.0f)) && !IsCapturing())
 				{
 					const uint64 id = button.id;
-					s_deferred.emplace_back([player, id]() { BeginCapture(player, id); });
+					if (!info.padConnected)
+						HostUI::PushMessage("Controller not connected", fmt::format("Turn on controller {} first, the new button is pressed on it.", info.pad + 1));
+					else
+						s_deferred.emplace_back([player, id]() { BeginCapture(player, id); });
 				}
 				ImGui::PopID();
 			}

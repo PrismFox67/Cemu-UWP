@@ -97,7 +97,8 @@ std::optional<HostTools::LastSessionProblem> HostTools::CheckLastSession()
 	std::error_code ec;
 	if (!fs::exists(_MarkerPath(), ec))
 		return std::nullopt;
-	const std::string marker = _ReadFile(_MarkerPath());
+	std::string marker = _ReadFile(_MarkerPath());
+	std::erase(marker, '\r'); // written in text mode, Windows line endings
 	fs::remove(_MarkerPath(), ec);
 	std::string game = marker.substr(0, marker.find('\n'));
 	if (game.rfind("game ", 0) == 0)
