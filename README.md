@@ -1,4 +1,54 @@
+# Cemu UWP: Cemu with Direct3D 12, for Xbox Series X|S and Windows
+
+**This is an unofficial fork of [Cemu](https://github.com/cemu-project/Cemu).** It adds a native **Direct3D 12 renderer**
+and an **Xbox app (UWP) frontend made for Dev Mode**, so Wii U games run on an Xbox Series X|S. It isn't affiliated with
+the Cemu team; please report problems with this build here, not to them.
+
+On a Series X it runs **Mario Kart 8 at 1440p or 4K, locked at 60 FPS**, with 4 local players.
+
+### Download
+Everything is on the **[ci-latest pre-release](https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest)**, rebuilt
+on every change:
+
+| File | What it is |
+|---|---|
+| `cemu-uwp-x64.zip` | **The Xbox app.** Install it through the Xbox Device Portal. Setup and recommended settings: **[Xbox tester guide](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/XBOX_TESTERS.md)** |
+| `cemu-d3d12-windows-x64.zip` | Regular Cemu for Windows with the Direct3D 12 renderer added |
+| `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
+| `MK8_FirstPerson.zip` | Mario Kart 8 first person camera graphic pack (see below) |
+
+### What this build adds
+- **Direct3D 12 renderer** next to Cemu's Vulkan and OpenGL ones (Xbox apps can only use D3D12).
+- **An Xbox frontend built for a controller:** game list, settings, graphic pack downloads and presets, players 1-4 with
+  controller pairing, stick deadzones, 5.1 audio, and an in-game menu (click both sticks) with a touch cursor for GamePad
+  games.
+- **Stutter control:** shaders and pipelines are compiled in the background ("Smooth" mode never stops the game for a new
+  shader), pipelines from earlier sessions are rebuilt while the game loads, and each level's pipelines are created on its
+  own loading screen.
+- **Memory management for the Xbox's 5 GB app budget:** unused textures are released under memory pressure and large
+  uploads are split, so big tracks fit at high resolutions.
+- **Frame interpolation** (60 to 120 FPS) for PCs with 120 Hz displays.
+
+### Mario Kart 8 first person camera
+`MK8_FirstPerson.zip` is a graphic pack for Mario Kart 8 (update v4.2). Unzip it into Cemu's `graphicPacks` folder and
+enable *Mario Kart 8 → Mods → First Person Camera*. In a race, click the **right stick** to switch between a cockpit view
+with Mario's hands on the wheel, first person without the kart, and the normal camera. It works in every Cemu build, not
+only this one.
+
+### Status
+Mainly tested with Mario Kart 8 (including 4 player split screen and the DLC). Other games may work; reports are welcome
+in the [issues](https://github.com/PrismFox67/Cemu-UWP/issues). Known limits on the Xbox:
+- The Dev Mode driver can't save compiled pipelines, so they're rebuilt (in the background) after every launch.
+- The biggest modded tracks can run out of memory at 4K; use 1440p.
+- Frame interpolation has no effect on Xbox, which shows UWP apps at 60 Hz.
+
+Technical details: [D3D12 backend README](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/src/Cafe/HW/Latte/Renderer/D3D12/README.md) · [UWP testing notes](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/UWP_TESTING.md)
+
+---
+
 # **Cemu - Wii U emulator**
+
+*The original Cemu README follows.*
 
 [![Build Process](https://github.com/cemu-project/Cemu/actions/workflows/build.yml/badge.svg)](https://github.com/cemu-project/Cemu/actions/workflows/build.yml)
 [![Discord](https://img.shields.io/discord/286429969104764928?label=Cemu&logo=discord&logoColor=FFFFFF)](https://discord.gg/5psYsup)
