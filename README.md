@@ -15,7 +15,7 @@ on every change:
 | `cemu-uwp-x64.zip` | **The Xbox app.** Install it through the Xbox Device Portal. Setup and recommended settings: **[Xbox tester guide](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/XBOX_TESTERS.md)** |
 | `cemu-d3d12-windows-x64.zip` | Regular Cemu for Windows with the Direct3D 12 renderer added |
 | `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
-| `MK8_FirstPerson.zip` | Mario Kart 8 first person camera graphic pack (see below) |
+| `MK8_FirstPerson.zip` | The Mario Kart 8 first person pack on its own, for other Cemu builds (the downloads above already include it) |
 
 ### What this build adds
 - **Direct3D 12 renderer** next to Cemu's Vulkan and OpenGL ones (Xbox apps can only use D3D12).
@@ -30,10 +30,11 @@ on every change:
 - **Frame interpolation** (60 to 120 FPS) for PCs with 120 Hz displays.
 
 ### Mario Kart 8 first person camera
-`MK8_FirstPerson.zip` is a graphic pack for Mario Kart 8 (update v4.2). Unzip it into Cemu's `graphicPacks` folder and
-enable *Mario Kart 8 → Mods → First Person Camera*. In a race, click the **right stick** to switch between a cockpit view
-with Mario's hands on the wheel, first person without the kart, and the normal camera. It works in every Cemu build, not
-only this one.
+This build **comes with** a first person camera pack for Mario Kart 8 (update v4.2): enable *Mario Kart 8 → Mods → First
+Person Camera* in the graphic pack list. In a race, click the **right stick** to switch between a cockpit view with Mario's
+hands on the wheel, first person without the kart, and the normal camera. The pack's options choose whether the camera
+stays steady or spins with the kart during tricks, and how much of the arms to show. It also works in other Cemu builds:
+unzip `MK8_FirstPerson.zip` into their `graphicPacks` folder.
 
 ### Status
 Mainly tested with Mario Kart 8 (including 4 player split screen and the DLC). Other games may work; reports are welcome
