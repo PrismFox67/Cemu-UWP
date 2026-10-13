@@ -44,5 +44,15 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **Known issues:** 4K on the largest tracks can still run out of memory and close the app (use 1440p). Online play isn't
   supported.
 
-Send bug reports, or results from other games, as a reply to the message that pointed you here. The log is at `<data folder>/log.txt`, and it's readable
-through the Device Portal file explorer while the game runs.
+## Reporting problems
+Open an issue with the **[Xbox / D3D12 bug report form](https://github.com/PrismFox67/Cemu-UWP/issues/new/choose)**.
+Results from other games (working or not) are welcome too.
+
+**Attach the logs.** In the Device Portal on a PC: **File explorer** → **LocalAppData** → the **CemuUWP** package →
+**LocalState**, then download:
+- `log.txt`: the current or last session. It can be read while the game runs.
+- `log_previous.txt`: the session before. Starting Cemu moves the old log here, so **after a crash and a restart, the
+  crash is in `log_previous.txt`.**
+
+A crash adds a "Crashlog" section with the stack to the log. If the log just stops without one, the Xbox probably closed
+the app for using too much memory; the "Host: memory" lines show how close it was.
