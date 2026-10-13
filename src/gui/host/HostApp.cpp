@@ -275,8 +275,11 @@ namespace
 		io.DeltaTime = std::clamp(std::chrono::duration<float>(now - s_lastFrame).count(), 1.0f / 1000.0f, 0.25f);
 		s_lastFrame = now;
 		HostControllers::UpdatePairing();
+		HostControllers::UpdateCapture();
 		HostGamepad::State pad = HostGamepad::Poll();
-		if (s_launcherIgnoresPad)
+		if (HostControllers::IsCapturing())
+			pad = HostGamepad::State{ pad.connected }; // the press being captured isn't UI input
+		else if (s_launcherIgnoresPad)
 		{
 			if (pad.buttons == 0)
 				s_launcherIgnoresPad = false;

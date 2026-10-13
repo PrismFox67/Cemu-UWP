@@ -492,6 +492,47 @@ namespace
 			GetConfigHandle().Save();
 	}
 
+	int s_mappingPlayer = -1; // player whose button mapping is shown in the Controllers tab
+
+	void _DrawButtonMapping(int player, const HostControllers::PlayerInfo& info, float columnWidth)
+	{
+		using namespace HostControllers;
+		ImGui::Indent();
+		ImGui::TextDisabled("Select a Wii U button, then press the Xbox button for it on controller %d. The button that had it before gets the old one.", info.pad + 1);
+		const bool capturingHere = IsCapturing() && GetCapturePlayer() == player;
+		if (ImGui::BeginTable("##mapping", 2, ImGuiTableFlags_SizingFixedFit))
+		{
+			for (const auto& button : GetMappableButtons(info.kind))
+			{
+				ImGui::PushID((int)button.id);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextUnformatted(button.name);
+				ImGui::TableNextColumn();
+				std::string label;
+				if (capturingHere && GetCaptureButton() == button.id)
+					label = fmt::format("Press an Xbox button... ({:.0f})", std::ceil(GetCaptureSecondsLeft()));
+				else
+				{
+					label = GetButtonMappingName(player, button.id);
+					if (label.empty())
+						label = "(not mapped)";
+				}
+				if (ImGui::Button(label.c_str(), ImVec2(columnWidth, 0.0f)) && !IsCapturing())
+				{
+					const uint64 id = button.id;
+					s_deferred.emplace_back([player, id]() { BeginCapture(player, id); });
+				}
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+		}
+		if (ImGui::Button("Reset buttons to default"))
+			s_deferred.emplace_back([player]() { ResetButtonMapping(player); });
+		ImGui::Unindent();
+	}
+
 	void _DrawControllersTab()
 	{
 		using namespace HostControllers;
@@ -574,12 +615,18 @@ namespace
 					}
 					ImGui::EndCombo();
 				}
+				ImGui::SameLine();
+				const bool open = s_mappingPlayer == player;
+				if (ImGui::Button(open ? "Hide button mapping" : "Button mapping"))
+					s_mappingPlayer = open ? -1 : player;
+				if (s_mappingPlayer == player)
+					_DrawButtonMapping(player, info, columnWidth);
 			}
 			ImGui::EndDisabled();
 			ImGui::PopID();
 		}
 		ImGui::Spacing();
-		ImGui::TextDisabled("Buttons use the default layout of each controller type (Xbox A = Wii U A, positions as printed).");
+		ImGui::TextDisabled("Buttons use the Xbox button with the same name (Xbox A = Wii U A) unless changed under Button mapping.");
 	}
 
 	void _DrawAboutTab()

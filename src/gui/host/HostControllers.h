@@ -39,6 +39,26 @@ namespace HostControllers
 	// deadzone of both sticks, raise it for controllers with stick drift
 	void SetDeadzone(int player, float deadzone);
 
+	// button mapping: which Xbox button drives each Wii U button. Stick directions stay on the sticks
+	struct MappableButton
+	{
+		const char* name;
+		uint64 id; // emulated controller mapping id
+	};
+	std::vector<MappableButton> GetMappableButtons(Kind kind);
+	std::string GetButtonMappingName(int player, uint64 id); // Xbox button name, empty if unmapped
+	void ResetButtonMapping(int player);
+
+	// capture: the next button pressed on the player's controller is mapped to the Wii U button. Swaps with the Wii U
+	// button that had it before. Cancelled after a few seconds without a press. UpdateCapture() has to be called every
+	// frame like UpdatePairing(); IsCapturing() stays true until the pressed button is released so the UI doesn't see it
+	void BeginCapture(int player, uint64 id);
+	bool IsCapturing();
+	int GetCapturePlayer();
+	uint64 GetCaptureButton();
+	float GetCaptureSecondsLeft();
+	void UpdateCapture();
+
 	// pairing. UpdatePairing() polls the controllers and has to be called every frame from the UI thread while pairing
 	// in game, players without a controller keep their setup instead of being disconnected
 	void BeginPairing(bool gameRunning);

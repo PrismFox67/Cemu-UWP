@@ -6,6 +6,8 @@
 #include "input/api/XInput/XInputController.h"
 #include "input/api/Keyboard/KeyboardController.h"
 #include "input/emulated/VPADController.h"
+#include "input/emulated/ProController.h"
+#include "input/emulated/ClassicController.h"
 
 #include <Windows.h>
 
@@ -87,6 +89,60 @@ namespace
 		emulated->set_mapping(3, xinput, 14); // X
 		emulated->set_mapping(4, xinput, 15); // Y
 	}
+
+	// Xbox buttons that can be mapped: HostGamepad flag for detecting the press, XInputController button id, display name
+	struct XboxButton
+	{
+		uint32 hostButton;
+		uint64 xinputButton;
+		const char* name;
+	};
+	constexpr XboxButton kXboxButtons[] = {
+		{ HostGamepad::kA, kButton12, "A" }, { HostGamepad::kB, kButton13, "B" },
+		{ HostGamepad::kX, kButton14, "X" }, { HostGamepad::kY, kButton15, "Y" },
+		{ HostGamepad::kLB, kButton8, "LB" }, { HostGamepad::kRB, kButton9, "RB" },
+		{ HostGamepad::kLT, kTriggerXP, "LT" }, { HostGamepad::kRT, kTriggerYP, "RT" },
+		{ HostGamepad::kStart, kButton4, "Menu" }, { HostGamepad::kBack, kButton5, "View" },
+		{ HostGamepad::kL3, kButton6, "Left stick click" }, { HostGamepad::kR3, kButton7, "Right stick click" },
+		{ HostGamepad::kUp, kButton0, "D-pad up" }, { HostGamepad::kDown, kButton1, "D-pad down" },
+		{ HostGamepad::kLeft, kButton2, "D-pad left" }, { HostGamepad::kRight, kButton3, "D-pad right" },
+	};
+
+	std::shared_ptr<ControllerBase> _GetXInput(const EmulatedControllerPtr& emulated)
+	{
+		for (const auto& c : emulated->get_controllers())
+		{
+			if (c->api() == InputAPI::XInput)
+				return c;
+		}
+		return {};
+	}
+
+	// the XInput button a Wii U button is mapped to. EmulatedController only exposes the button's name, so it's matched by name
+	const XboxButton* _GetMappedXboxButton(const EmulatedControllerPtr& emulated, const std::shared_ptr<ControllerBase>& xinput, uint64 id)
+	{
+		if (emulated->get_mapping_controller(id) != xinput)
+			return nullptr;
+		const std::string name = emulated->get_mapping_name(id);
+		for (const auto& b : kXboxButtons)
+		{
+			if (xinput->get_button_name(b.xinputButton) == name)
+				return &b;
+		}
+		return nullptr;
+	}
+
+	struct
+	{
+		std::atomic_bool active = false;
+		bool waitingForRelease = false;
+		int player = -1;
+		int pad = -1;
+		uint64 id = 0;
+		uint32 lastButtons = 0;
+		std::chrono::steady_clock::time_point deadline;
+	} s_capture;
+	constexpr auto kCaptureTimeout = std::chrono::seconds(5);
 
 	void _FinishPairing()
 	{
@@ -201,6 +257,16 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 		// Only replace the emulated controller if its type changes. Recreating it changes the input topology the game
 		// sees, which another Xbox UWP Cemu port found can terminate the process while a title is running
 		auto emulated = input.get_controller(player);
+		// a custom button mapping is kept when the player gets another controller (pairing) but the same controller type
+		std::vector<std::pair<uint64, const XboxButton*>> customMapping;
+		if (emulated && emulated->type() == _ToEmulatedType(kind))
+		{
+			if (const auto oldXInput = _GetXInput(emulated))
+			{
+				for (const auto& button : GetMappableButtons(kind))
+					customMapping.emplace_back(button.id, _GetMappedXboxButton(emulated, oldXInput, button.id));
+			}
+		}
 		if (!emulated || emulated->type() != _ToEmulatedType(kind))
 			emulated = input.set_controller(player, _ToEmulatedType(kind));
 		if (!emulated)
@@ -212,6 +278,13 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 			emulated->add_controller(xinput);
 			emulated->set_default_mapping(xinput);
 			_UseLabelLayout(emulated, xinput);
+			for (const auto& [id, xbox] : customMapping)
+			{
+				if (xbox)
+					emulated->set_mapping(id, xinput, xbox->xinputButton);
+				else
+					emulated->delete_mapping(id);
+			}
 		}
 		if (player == 0 && kind == Kind::GamePad && _WantsKeyboard(pad))
 			_AddKeyboard(emulated);
@@ -238,6 +311,169 @@ void HostControllers::SetDeadzone(int player, float deadzone)
 		c->set_settings(settings);
 	}
 	InputManager::instance().save(player);
+}
+
+std::vector<HostControllers::MappableButton> HostControllers::GetMappableButtons(Kind kind)
+{
+	// the button ids differ between the controller types (the GamePad's Home comes after Mic and Screen)
+	auto buttons = [](auto a, auto b, auto x, auto y, auto l, auto r, auto zl, auto zr, auto plus, auto minus, auto home,
+					  auto up, auto down, auto left, auto right) {
+		return std::vector<MappableButton>{
+			{ "A", (uint64)a }, { "B", (uint64)b }, { "X", (uint64)x }, { "Y", (uint64)y },
+			{ "L", (uint64)l }, { "R", (uint64)r }, { "ZL", (uint64)zl }, { "ZR", (uint64)zr },
+			{ "+ (Plus)", (uint64)plus }, { "- (Minus)", (uint64)minus }, { "Home", (uint64)home },
+			{ "D-pad up", (uint64)up }, { "D-pad down", (uint64)down }, { "D-pad left", (uint64)left }, { "D-pad right", (uint64)right },
+		};
+	};
+	std::vector<MappableButton> result;
+	switch (kind)
+	{
+	case Kind::GamePad:
+	{
+		using C = VPADController;
+		result = buttons(C::kButtonId_A, C::kButtonId_B, C::kButtonId_X, C::kButtonId_Y, C::kButtonId_L, C::kButtonId_R, C::kButtonId_ZL, C::kButtonId_ZR,
+			C::kButtonId_Plus, C::kButtonId_Minus, C::kButtonId_Home, C::kButtonId_Up, C::kButtonId_Down, C::kButtonId_Left, C::kButtonId_Right);
+		result.push_back({ "Left stick click", C::kButtonId_StickL });
+		result.push_back({ "Right stick click", C::kButtonId_StickR });
+		break;
+	}
+	case Kind::Pro:
+	{
+		using C = ProController;
+		result = buttons(C::kButtonId_A, C::kButtonId_B, C::kButtonId_X, C::kButtonId_Y, C::kButtonId_L, C::kButtonId_R, C::kButtonId_ZL, C::kButtonId_ZR,
+			C::kButtonId_Plus, C::kButtonId_Minus, C::kButtonId_Home, C::kButtonId_Up, C::kButtonId_Down, C::kButtonId_Left, C::kButtonId_Right);
+		result.push_back({ "Left stick click", C::kButtonId_StickL });
+		result.push_back({ "Right stick click", C::kButtonId_StickR });
+		break;
+	}
+	case Kind::Classic:
+	{
+		using C = ClassicController;
+		result = buttons(C::kButtonId_A, C::kButtonId_B, C::kButtonId_X, C::kButtonId_Y, C::kButtonId_L, C::kButtonId_R, C::kButtonId_ZL, C::kButtonId_ZR,
+			C::kButtonId_Plus, C::kButtonId_Minus, C::kButtonId_Home, C::kButtonId_Up, C::kButtonId_Down, C::kButtonId_Left, C::kButtonId_Right);
+		break;
+	}
+	default:
+		break;
+	}
+	return result;
+}
+
+std::string HostControllers::GetButtonMappingName(int player, uint64 id)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return {};
+	const auto xinput = _GetXInput(emulated);
+	if (!xinput)
+		return {};
+	const XboxButton* xbox = _GetMappedXboxButton(emulated, xinput, id);
+	return xbox ? xbox->name : std::string();
+}
+
+void HostControllers::ResetButtonMapping(int player)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	const auto xinput = _GetXInput(emulated);
+	if (!xinput)
+		return;
+	for (const auto& button : GetMappableButtons(_FromEmulatedType(emulated->type())))
+		emulated->delete_mapping(button.id);
+	emulated->set_default_mapping(xinput);
+	_UseLabelLayout(emulated, xinput);
+	InputManager::instance().save(player);
+	cemuLog_log(LogType::Force, "Host: player {} button mapping reset to the default", player + 1);
+}
+
+void HostControllers::BeginCapture(int player, uint64 id)
+{
+	const PlayerInfo info = GetPlayer(player);
+	if (info.pad < 0 || s_capture.active)
+		return;
+	s_capture.player = player;
+	s_capture.pad = info.pad;
+	s_capture.id = id;
+	// the A that selected the button doesn't count
+	s_capture.lastButtons = HostGamepad::PollPad(info.pad).buttons;
+	s_capture.waitingForRelease = false;
+	s_capture.deadline = std::chrono::steady_clock::now() + kCaptureTimeout;
+	s_capture.active = true;
+}
+
+bool HostControllers::IsCapturing()
+{
+	return s_capture.active;
+}
+
+int HostControllers::GetCapturePlayer()
+{
+	return s_capture.player;
+}
+
+uint64 HostControllers::GetCaptureButton()
+{
+	return s_capture.id;
+}
+
+float HostControllers::GetCaptureSecondsLeft()
+{
+	return std::max(0.0f, std::chrono::duration<float>(s_capture.deadline - std::chrono::steady_clock::now()).count());
+}
+
+void HostControllers::UpdateCapture()
+{
+	if (!s_capture.active)
+		return;
+	const HostGamepad::State pad = HostGamepad::PollPad(s_capture.pad);
+	if (s_capture.waitingForRelease)
+	{
+		if (pad.buttons == 0 || !pad.connected)
+			s_capture.active = false;
+		return;
+	}
+	const uint32 pressed = pad.buttons & ~s_capture.lastButtons;
+	s_capture.lastButtons = pad.buttons;
+	if (!pad.connected || std::chrono::steady_clock::now() > s_capture.deadline)
+	{
+		s_capture.waitingForRelease = true;
+		return;
+	}
+	const XboxButton* xbox = nullptr;
+	for (const auto& b : kXboxButtons)
+	{
+		if (pressed & b.hostButton)
+		{
+			xbox = &b;
+			break;
+		}
+	}
+	if (!xbox)
+		return;
+	s_capture.waitingForRelease = true;
+
+	const int player = s_capture.player;
+	const auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	const auto xinput = _GetXInput(emulated);
+	if (!xinput)
+		return;
+	// the Wii U button that used this Xbox button gets the one the changed button had, so every button stays reachable
+	const XboxButton* previous = _GetMappedXboxButton(emulated, xinput, s_capture.id);
+	for (const auto& button : GetMappableButtons(_FromEmulatedType(emulated->type())))
+	{
+		if (button.id == s_capture.id || _GetMappedXboxButton(emulated, xinput, button.id) != xbox)
+			continue;
+		if (previous)
+			emulated->set_mapping(button.id, xinput, previous->xinputButton);
+		else
+			emulated->delete_mapping(button.id);
+	}
+	emulated->set_mapping(s_capture.id, xinput, xbox->xinputButton);
+	InputManager::instance().save(player);
+	cemuLog_log(LogType::Force, "Host: player {} mapped Xbox {} to Wii U button {}", player + 1, xbox->name, s_capture.id);
 }
 
 void HostControllers::BeginPairing(bool gameRunning)
