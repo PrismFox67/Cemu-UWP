@@ -7,6 +7,7 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
+#include "Cafe/Filesystem/FST/KeyCache.h"
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "Common/version.h"
@@ -14,6 +15,9 @@
 #include <imgui.h>
 
 #include <mutex>
+#include <fstream>
+#include <unordered_set>
+#include <boost/algorithm/string.hpp>
 
 namespace
 {
@@ -162,6 +166,90 @@ namespace
 			CafeTitleList::AddScanPath(_utf8ToPath(it));
 		CafeTitleList::Refresh();
 		HostUI::RequestGameListRefresh();
+	}
+
+	// the 32 digit disc keys in a keys.txt, with the same rules as KeyCache_Prepare: '#' or ';' starts a comment, spaces,
+	// tabs, '-' and '_' are ignored
+	std::vector<std::string> _ReadKeys(const fs::path& file)
+	{
+		std::vector<std::string> keys;
+		std::ifstream in(file);
+		std::string line;
+		while (std::getline(in, line))
+		{
+			line = line.substr(0, line.find_first_of("#;"));
+			std::erase_if(line, [](char c) { return c == ' ' || c == '\t' || c == '-' || c == '_' || c == '\r'; });
+			if (line.size() == 32 && std::all_of(line.begin(), line.end(), [](char c) { return std::isxdigit((unsigned char)c) != 0; }))
+			{
+				boost::algorithm::to_lower(line);
+				keys.emplace_back(line);
+			}
+		}
+		return keys;
+	}
+
+	// looks for keys.txt in the game folders and the folders above them (a drive often has it next to the games folder)
+	// and adds the keys Cemu doesn't have yet to its own keys.txt
+	void _ImportKeys()
+	{
+		const fs::path target = ActiveSettings::GetUserDataPath("keys.txt");
+		std::vector<fs::path> sources;
+		std::error_code ec;
+		for (const auto& gamePath : GetConfig().game_paths)
+		{
+			for (fs::path dir = _utf8ToPath(gamePath); !dir.empty(); dir = dir.parent_path())
+			{
+				const fs::path candidate = dir / "keys.txt";
+				if (fs::is_regular_file(candidate, ec) && !fs::equivalent(candidate, target, ec) &&
+					std::find(sources.begin(), sources.end(), candidate) == sources.end())
+					sources.emplace_back(candidate);
+				if (dir == dir.root_path() || dir.parent_path() == dir)
+					break;
+			}
+		}
+		if (sources.empty())
+		{
+			HostUI::PushMessage("No keys.txt found", "Put keys.txt in one of your game folders (or a folder above it, like the root of the drive) and try again.");
+			return;
+		}
+		const std::vector<std::string> existingList = _ReadKeys(target);
+		std::unordered_set<std::string> known(existingList.begin(), existingList.end());
+		std::ofstream out(target, std::ios::app);
+		if (!out)
+		{
+			HostUI::PushMessage("Couldn't import keys", fmt::format("Cemu can't write {}", _pathToUtf8(target)));
+			return;
+		}
+		size_t added = 0, total = 0;
+		for (const auto& source : sources)
+		{
+			bool wroteHeader = false;
+			for (const auto& key : _ReadKeys(source))
+			{
+				total++;
+				if (!known.insert(key).second)
+					continue;
+				if (!wroteHeader)
+				{
+					out << "\n# imported from " << _pathToUtf8(source) << "\n";
+					wroteHeader = true;
+				}
+				out << key << "\n";
+				added++;
+			}
+		}
+		out.close();
+		KeyCache_Reload();
+		cemuLog_log(LogType::Force, "Host: imported {} new disc key(s) from {} keys.txt file(s)", added, sources.size());
+		std::string from;
+		for (const auto& source : sources)
+			from += "\n" + _pathToUtf8(source);
+		HostUI::PushMessage("keys.txt imported", fmt::format("Added {} new key(s) ({} found, the others were already there). Read from:{}", added, total, from));
+		if (added > 0)
+		{
+			CafeTitleList::Refresh(); // disc images that couldn't be read without their key show up now
+			HostUI::RequestGameListRefresh();
+		}
 	}
 
 	void _RemoveGamePath(size_t index)
@@ -487,6 +575,11 @@ namespace
 
 		ImGui::SeparatorText("Folders");
 		ImGui::TextWrapped("Data (settings, mlc01, shader caches, keys.txt): %s", _pathToUtf8(ActiveSettings::GetUserDataPath()).c_str());
+		// WUD/WUX disc images need their disc key
+		if (ImGui::Button("Import keys.txt from game folders"))
+			s_deferred.emplace_back([]() { _ImportKeys(); });
+		ImGui::SameLine();
+		ImGui::TextDisabled("needed for WUD/WUX disc images");
 		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
 		if (changed)
 			GetConfigHandle().Save();

@@ -10,8 +10,12 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
    (Microsoft.VCLibs) as a dependency.
 2. **Important:** in Dev Home, open the app's options (View button → View details) and set **App type: Game**. As an "App",
    it gets far less memory and only 1080p display modes. You can leave the second dropdown on "Retail".
-3. Start it. Under **Settings → Game folders**, add the folder or USB drive with your games (decrypted dumps or .wua/.wux, plus
-   `keys.txt` where needed). The Settings page shows the data folder.
+3. Start it. Under **Settings → Game folders**, add the folder or USB drive with your games (decrypted dumps, .wua, or
+   .wud/.wux disc images). Keep updates and DLC as their own folders next to the game (for example `MARIO KART 8 [Update]`
+   and `MARIO KART 8 [DLC]`): Cemu finds them there, and the game list shows "(update)" and "+ DLC" when it does. Nothing
+   needs to be installed.
+4. Disc images (.wud/.wux) need their disc key. Put `keys.txt` in your game folder or at the root of the drive, then press
+   **Settings → Import keys.txt from game folders**.
 
 ## Recommended settings (Series X)
 **Settings tab**

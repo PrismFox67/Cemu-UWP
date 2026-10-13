@@ -127,3 +127,11 @@ void KeyCache_Prepare()
 	delete fs_keys;
 	mtxKeyCache.unlock();
 }
+
+void KeyCache_Reload()
+{
+	mtxKeyCache.lock();
+	sKeyCachePrepared = false;
+	mtxKeyCache.unlock();
+	KeyCache_Prepare();
+}
