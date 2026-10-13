@@ -1,0 +1,85 @@
+[Definition]
+titleIds = 000500001010ec00,000500001010ed00,000500001010eb00
+name = First person camera
+path = "Mario Kart 8/Mods/First Person Camera"
+description = First person driving camera (game version 4.2). Click the RIGHT STICK (R3) during a race to cycle: cockpit (hands on the wheel) > first person without the kart > normal camera. The preset picks the cockpit view. Looking back still works.|Tuned on Mario: very big or small drivers may want the "no kart" view.
+version = 7
+
+[Default]
+$fpStartMode = 0
+$fpFov = 1.2
+$fpRootUp = 4.3
+$fpHideArm = 0
+$fpLockDir = 0
+$fpLockTilt = -5.5
+$fpForward = -0.02
+$fpHeight = -9.0
+$fpPitch = 0.75
+$fpHide = 3.1
+$fpHideAhead = 0.03
+$fpHideBelow = 2.0
+
+[Preset]
+category = View
+name = Cockpit (hands on the wheel)
+$fpForward = -0.02
+$fpHeight = -9.0
+$fpPitch = 0.75
+$fpHide = 3.1
+$fpHideAhead = 0.03
+$fpHideBelow = 2.0
+
+[Preset]
+category = View
+name = First person (no kart)
+$fpForward = 0.12
+$fpHeight = 0.0
+$fpPitch = 0.3
+$fpHide = 0.0
+$fpHideAhead = 0.0
+$fpHideBelow = 2.0
+
+[Preset]
+category = View
+name = Bumper
+$fpForward = 0.55
+$fpHeight = -6.0
+$fpPitch = 0.3
+$fpHide = 0.0
+$fpHideAhead = 0.0
+$fpHideBelow = 2.0
+
+[Preset]
+category = View
+name = Low chase
+$fpForward = -0.6
+$fpHeight = -2.0
+$fpPitch = 0.6
+$fpHide = 0.0
+$fpHideAhead = 0.0
+$fpHideBelow = 2.0
+
+[Preset]
+category = Arms (cockpit)
+name = Full arms
+$fpHideArm = 0
+
+[Preset]
+category = Arms (cockpit)
+name = From mid sleeve
+$fpHideArm = 1
+
+[Preset]
+category = Arms (cockpit)
+name = Forearms and gloves only
+$fpHideArm = 2
+
+[Preset]
+category = Camera direction (cockpit)
+name = Steady: looks down the track
+$fpLockDir = 0
+
+[Preset]
+category = Camera direction (cockpit)
+name = Locked to kart: spins with tricks
+$fpLockDir = 1

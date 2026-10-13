@@ -219,7 +219,7 @@ jobs:
       run: |
         mkdir -p pkg
         cp bin/Cemu_Host_release.exe pkg/Cemu_Host.exe
-        cp -r bin/resources bin/gameProfiles pkg/
+        cp -r bin/resources bin/gameProfiles bin/bundledGraphicPacks pkg/
         cd pkg && 7z a -tzip ../cemu-host-win32-x64.zip . > /dev/null && cd ..
         gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
         gh release upload ci-latest cemu-host-win32-x64.zip --clobber

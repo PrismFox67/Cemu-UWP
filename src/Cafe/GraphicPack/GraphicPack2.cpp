@@ -14,6 +14,8 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/RendererOuputShader.h"
 #include <cinttypes>
+#include <fstream>
+#include <iterator>
 
 std::vector<GraphicPackPtr> GraphicPack2::s_graphic_packs;
 std::vector<GraphicPackPtr> GraphicPack2::s_active_graphic_packs;
@@ -93,9 +95,49 @@ void GraphicPack2::LoadGraphicPack(fs::path graphicPackPath)
 	cemuLog_log(LogType::Force, "{}: Outdated graphic pack", _pathToUtf8(rulesPath));
 }
 
+static bool _SameFileContent(const fs::path& a, const fs::path& b)
+{
+	std::error_code ec;
+	if (!fs::exists(b, ec) || fs::file_size(a, ec) != fs::file_size(b, ec))
+		return false;
+	std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
+	return std::equal(std::istreambuf_iterator<char>(fa), std::istreambuf_iterator<char>(), std::istreambuf_iterator<char>(fb));
+}
+
+// Graphic packs shipped with this build (bundledGraphicPacks/ next to the executable or in the app package, e.g. the
+// Mario Kart 8 first person camera) are copied into the user's graphicPacks folder, so they show up in the graphic pack
+// list without a download. A newer build's files replace the installed ones; packs the user deleted come back
+static void InstallBundledGraphicPacks()
+{
+	std::error_code ec;
+	const fs::path source = ActiveSettings::GetDataPath("bundledGraphicPacks");
+	if (!fs::is_directory(source, ec))
+		return;
+	for (const auto& pack : fs::directory_iterator(source, ec))
+	{
+		if (!pack.is_directory(ec))
+			continue;
+		const fs::path target = ActiveSettings::GetUserDataPath("graphicPacks") / pack.path().filename();
+		fs::create_directories(target, ec);
+		for (const auto& file : fs::recursive_directory_iterator(pack.path(), ec))
+		{
+			if (!file.is_regular_file(ec))
+				continue;
+			const fs::path dst = target / fs::relative(file.path(), pack.path(), ec);
+			if (_SameFileContent(file.path(), dst))
+				continue;
+			fs::create_directories(dst.parent_path(), ec);
+			fs::copy_file(file.path(), dst, fs::copy_options::overwrite_existing, ec);
+			if (ec)
+				cemuLog_log(LogType::Force, "Couldn't install bundled graphic pack file {}: {}", _pathToUtf8(dst), ec.message());
+		}
+	}
+}
+
 void GraphicPack2::LoadAll()
 {
 	std::error_code ec;
+	InstallBundledGraphicPacks();
 	fs::path basePath = ActiveSettings::GetUserDataPath("graphicPacks");
 	for (fs::recursive_directory_iterator it(basePath, ec); it != end(it); ++it)
 	{
