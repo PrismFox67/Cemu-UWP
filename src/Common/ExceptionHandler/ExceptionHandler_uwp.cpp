@@ -22,6 +22,10 @@ static std::string _DescribeAddress(uint64 address)
 
 static LONG WINAPI _CemuUnhandledExceptionFilter(EXCEPTION_POINTERS* e)
 {
+	// a second crash (another thread, or inside this handler) must not write into the log that's being written
+	static std::atomic_flag s_handling = ATOMIC_FLAG_INIT;
+	if (s_handling.test_and_set())
+		return EXCEPTION_CONTINUE_SEARCH;
 	ExceptionHandler_RunCrashCallback();
 	if (!CrashLog_Create())
 		return EXCEPTION_CONTINUE_SEARCH;
@@ -37,7 +41,8 @@ static LONG WINAPI _CemuUnhandledExceptionFilter(EXCEPTION_POINTERS* e)
 		cemuLog_writePlainToLog(fmt::format("Thread {} stack {:x}-{:x} ({} KB)\n", GetCurrentThreadId(), (uint64)stackLow, (uint64)stackHigh, (uint64)(stackHigh - stackLow) / 1024));
 		// No dbghelp in UWP: list values on the stack that point into loaded modules, mostly return addresses. Offsets
 		// into Cemu.exe can be resolved with the PDB from the CI build
-		if (e && e->ContextRecord)
+		// a corrupted RSP (stack overflow, bad jump) would fault while scanning, only walk it inside this thread's stack
+		if (e && e->ContextRecord && e->ContextRecord->Rsp >= stackLow && e->ContextRecord->Rsp < stackHigh)
 		{
 			const uint64* sp = (const uint64*)e->ContextRecord->Rsp;
 			int found = 0;
