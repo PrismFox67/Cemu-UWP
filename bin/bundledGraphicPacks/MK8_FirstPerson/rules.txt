@@ -83,3 +83,8 @@ $fpLockDir = 0
 category = Camera direction (cockpit)
 name = Locked to kart: spins with tricks
 $fpLockDir = 1
+
+[Preset]
+category = Camera direction (cockpit)
+name = Locked to kart, also flips (dips when throwing)
+$fpLockDir = 2

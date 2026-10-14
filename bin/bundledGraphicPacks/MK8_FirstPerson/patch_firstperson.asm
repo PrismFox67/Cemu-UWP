@@ -131,16 +131,18 @@ stfs f1, 16(r31)
 lfs f3, 28(r31)
 fadds f3, f3, f2
 stfs f3, 28(r31)
-# "Locked to kart": look along the kart (the root bone turned back by the seat tilt), so the view spins, tilts and rolls
-# with tricks, drifts and ramps: forward = F*c - U*s, up = U*c + F*s, look-at = eye + 48 * forward + lookDown * up
+# "Locked to kart": look along the kart (the root bone turned back by the seat tilt): forward F' = F*c - U*s,
+# up U' = U*c + F*s, so the view spins and rolls with tricks and drifts. The driver leans forward to throw an item or
+# shoot, which tips the root bone down; unless $fpLockDir is 2 ("also flips"), the up/down angle comes from the game's
+# smooth camera instead: F' gets the camera direction's component along the camera up, then F' and U' are made unit
+# and orthogonal again. look-at = eye + 48 * forward + lookDown * up. _fpTmp: +0 camera direction, +24 F', +36 U'
 lwz r0, 116(r12)
 cmpwi r0, 0
 beq _fpNoRoot
+lis r10, _fpTmp@ha
+addi r10, r10, _fpTmp@l
 lfs f10, 108(r12)
 lfs f11, 112(r12)
-lfs f12, 120(r12)
-lis r10, _fpLockLen@ha
-lfs f13, _fpLockLen@l(r10)
 # x
 lfs f0, 96(r12)
 lfs f1, 84(r12)
@@ -148,11 +150,12 @@ fmuls f2, f0, f10
 fnmsubs f2, f1, f11, f2
 fmuls f3, f1, f10
 fmadds f3, f0, f11, f3
-stfs f3, 32(r31)
-lfs f4, 8(r31)
-fmadds f4, f2, f13, f4
-fmadds f4, f3, f12, f4
-stfs f4, 20(r31)
+stfs f2, 24(r10)
+stfs f3, 36(r10)
+lfs f4, 20(r31)
+lfs f5, 8(r31)
+fsubs f4, f4, f5
+stfs f4, 0(r10)
 # y
 lfs f0, 100(r12)
 lfs f1, 88(r12)
@@ -160,11 +163,12 @@ fmuls f2, f0, f10
 fnmsubs f2, f1, f11, f2
 fmuls f3, f1, f10
 fmadds f3, f0, f11, f3
-stfs f3, 36(r31)
-lfs f4, 12(r31)
-fmadds f4, f2, f13, f4
-fmadds f4, f3, f12, f4
-stfs f4, 24(r31)
+stfs f2, 28(r10)
+stfs f3, 40(r10)
+lfs f4, 24(r31)
+lfs f5, 12(r31)
+fsubs f4, f4, f5
+stfs f4, 4(r10)
 # z
 lfs f0, 104(r12)
 lfs f1, 92(r12)
@@ -172,6 +176,88 @@ fmuls f2, f0, f10
 fnmsubs f2, f1, f11, f2
 fmuls f3, f1, f10
 fmadds f3, f0, f11, f3
+stfs f2, 32(r10)
+stfs f3, 44(r10)
+lfs f4, 28(r31)
+lfs f5, 16(r31)
+fsubs f4, f4, f5
+stfs f4, 8(r10)
+cmpwi r0, 2
+beq _fpLockWrite
+addi r3, r10, 0
+bl _fpNorm3
+# a = F'.Ucam, b = dir.Ucam (Ucam = the camera's up, still at +32), F' += (b - a) * Ucam
+lfs f0, 32(r31)
+lfs f1, 36(r31)
+lfs f2, 40(r31)
+lfs f3, 24(r10)
+fmuls f6, f3, f0
+lfs f3, 28(r10)
+fmadds f6, f3, f1, f6
+lfs f3, 32(r10)
+fmadds f6, f3, f2, f6
+lfs f3, 0(r10)
+fmuls f7, f3, f0
+lfs f3, 4(r10)
+fmadds f7, f3, f1, f7
+lfs f3, 8(r10)
+fmadds f7, f3, f2, f7
+fsubs f7, f7, f6
+lfs f3, 24(r10)
+fmadds f3, f7, f0, f3
+stfs f3, 24(r10)
+lfs f3, 28(r10)
+fmadds f3, f7, f1, f3
+stfs f3, 28(r10)
+lfs f3, 32(r10)
+fmadds f3, f7, f2, f3
+stfs f3, 32(r10)
+addi r3, r10, 24
+bl _fpNorm3
+# U' -= (U'.F') F', then unit length
+lfs f0, 24(r10)
+lfs f1, 28(r10)
+lfs f2, 32(r10)
+lfs f3, 36(r10)
+fmuls f6, f3, f0
+lfs f3, 40(r10)
+fmadds f6, f3, f1, f6
+lfs f3, 44(r10)
+fmadds f6, f3, f2, f6
+lfs f3, 36(r10)
+fnmsubs f3, f6, f0, f3
+stfs f3, 36(r10)
+lfs f3, 40(r10)
+fnmsubs f3, f6, f1, f3
+stfs f3, 40(r10)
+lfs f3, 44(r10)
+fnmsubs f3, f6, f2, f3
+stfs f3, 44(r10)
+addi r3, r10, 36
+bl _fpNorm3
+_fpLockWrite:
+lfs f12, 120(r12)
+lis r9, _fpLockLen@ha
+lfs f13, _fpLockLen@l(r9)
+# x
+lfs f2, 24(r10)
+lfs f3, 36(r10)
+stfs f3, 32(r31)
+lfs f4, 8(r31)
+fmadds f4, f2, f13, f4
+fmadds f4, f3, f12, f4
+stfs f4, 20(r31)
+# y
+lfs f2, 28(r10)
+lfs f3, 40(r10)
+stfs f3, 36(r31)
+lfs f4, 12(r31)
+fmadds f4, f2, f13, f4
+fmadds f4, f3, f12, f4
+stfs f4, 24(r31)
+# z
+lfs f2, 32(r10)
+lfs f3, 44(r10)
 stfs f3, 40(r31)
 lfs f4, 16(r31)
 fmadds f4, f2, f13, f4
@@ -243,6 +329,61 @@ _fpFov:
 .float $fpFov
 _fpLockLen:
 .float 48.0
+
+# normalizes the vector of 3 floats at r3 in place (frsqrte + three Newton steps). Uses r4, f0-f8
+_fpNorm3:
+lfs f0, 0(r3)
+lfs f1, 4(r3)
+lfs f2, 8(r3)
+fmuls f3, f0, f0
+fmadds f3, f1, f1, f3
+fmadds f3, f2, f2, f3
+lis r4, _fpNormC@ha
+addi r4, r4, _fpNormC@l
+lfs f5, 0(r4)
+lfs f6, 4(r4)
+lfs f7, 8(r4)
+fcmpu cr0, f3, f7
+blt _fpNorm3Done
+frsqrte f4, f3
+fmuls f8, f4, f4
+fmuls f8, f8, f3
+fnmsubs f8, f8, f5, f6
+fmuls f4, f4, f8
+fmuls f8, f4, f4
+fmuls f8, f8, f3
+fnmsubs f8, f8, f5, f6
+fmuls f4, f4, f8
+fmuls f8, f4, f4
+fmuls f8, f8, f3
+fnmsubs f8, f8, f5, f6
+fmuls f4, f4, f8
+fmuls f0, f0, f4
+fmuls f1, f1, f4
+fmuls f2, f2, f4
+stfs f0, 0(r3)
+stfs f1, 4(r3)
+stfs f2, 8(r3)
+_fpNorm3Done:
+blr
+
+_fpNormC:
+.float 0.5
+.float 1.5
+.float 0.00000001
+_fpTmp:
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
+.float 0.0
 
 0x021720e4 = bl _fpDrive
 
