@@ -217,15 +217,25 @@ void HostTools::StartBackupSaves()
 		size_t files = 0, failed = 0;
 		for (auto it = fs::recursive_directory_iterator(source, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
 		{
-			if (!it->is_regular_file(ec))
+			// own error code: a failure on one file must not end the iteration (the loop stops when ec is set)
+			std::error_code fileEc;
+			if (!it->is_regular_file(fileEc))
 				continue;
-			const fs::path target = folder / "mlc01" / "usr" / "save" / fs::relative(it->path(), source, ec);
-			fs::create_directories(target.parent_path(), ec);
+			const fs::path relative = fs::relative(it->path(), source, fileEc);
+			if (fileEc || relative.empty())
+			{
+				failed++;
+				continue;
+			}
+			const fs::path target = folder / "mlc01" / "usr" / "save" / relative;
+			fs::create_directories(target.parent_path(), fileEc);
 			if (_CopyFile(it->path(), target))
 				files++;
 			else
 				failed++;
 		}
+		if (ec)
+			cemuLog_log(LogType::Force, "Host: save backup stopped early: {}", ec.message());
 		cemuLog_log(LogType::Force, "Host: backed up {} save file(s) to {} ({} failed)", files, _pathToUtf8(folder), failed);
 		if (files == 0)
 			HostUI::PushMessage("Backup failed", fmt::format("Cemu couldn't write to {}", _pathToUtf8(folder)));
