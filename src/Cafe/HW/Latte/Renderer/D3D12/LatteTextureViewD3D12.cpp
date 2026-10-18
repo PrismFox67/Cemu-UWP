@@ -82,7 +82,8 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 				m_rtvFormat = rtv;
 		}
 	}
-	m_usesSliceCopy = (dim == Latte::E_DIM::DIM_2D || dim == Latte::E_DIM::DIM_2D_MSAA) && firstSlice > 0 && !texture->Is3DTexture() && !texture->isDepth;
+	// depth textures too (Mario Kart 8 samples slice 1 of a 1024x1024x2 D16/R16 texture), except depth+stencil (2 planes)
+	m_usesSliceCopy = (dim == Latte::E_DIM::DIM_2D || dim == Latte::E_DIM::DIM_2D_MSAA) && firstSlice > 0 && !texture->Is3DTexture() && texture->GetPlaneCount() == 1;
 
 	// diagnostics for views that select array slices (MK8's button icons are still wrong on the Xbox): log each distinct
 	// layout once
@@ -91,9 +92,9 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 		static std::mutex s_logMutex;
 		static std::unordered_set<uint64> s_logged;
 		// one line per view type of a texture shape (games create a view per slice and grow arrays one slice at a time)
-		const uint64 key = ((uint64)dim << 60) ^ ((uint64)format << 44) ^ ((uint64)texture->width << 30) ^ ((uint64)texture->height << 16) ^ ((uint64)texture->tileMode << 8) ^ (m_usesSliceCopy ? 1 : 0);
+		const uint64 key = ((uint64)dim << 60) ^ ((uint64)format << 44) ^ ((uint64)texture->width << 30) ^ ((uint64)texture->height << 16) ^ ((uint64)texture->tileMode << 8) ^ ((uint64)texture->depth << 1) ^ (m_usesSliceCopy ? 1 : 0);
 		std::lock_guard lock(s_logMutex);
-		if (s_logged.size() < 128 && s_logged.insert(key).second)
+		if (s_logged.size() < 256 && s_logged.insert(key).second)
 			cemuLog_log(LogType::Force, "D3D12: view dim {} fmt {:04x} slices {}+{} mips {}+{} of {}x{}x{} (dim {} tm {}){}", (uint32)dim, (uint32)format, firstSlice, sliceCount, firstMip, mipCount,
 				texture->width, texture->height, texture->depth, (uint32)texture->dim, (uint32)texture->tileMode, m_usesSliceCopy ? " slice copy" : "");
 	}
@@ -101,7 +102,7 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 
 void LatteTextureViewD3D12::UpdateSliceCopy()
 {
-	const uint64 version = std::max(m_baseTexture->lastUpdateEventCounter, m_baseTexture->lastWriteEventCounter);
+	const uint64 version = m_baseTexture->GetContentVersion();
 	if (m_sliceCopy && version == m_sliceCopyVersion)
 		return;
 	ID3D12Resource* baseResource = m_baseTexture->GetResource();
@@ -129,6 +130,7 @@ void LatteTextureViewD3D12::UpdateSliceCopy()
 			return;
 		}
 		D3D12_SetDebugName(m_sliceCopy.Get(), "TextureSliceCopy");
+		cemuLog_log(LogType::Force, "D3D12: slice copy for a 2D view of slice {} ({}x{}, {} mips, fmt {:04x}, phys {:08x})", firstSlice, (uint32)desc.Width, desc.Height, numMip, (uint32)format, m_baseTexture->physAddress);
 		m_sliceCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
 	}
 	m_renderer->TransitionResource(m_sliceCopy.Get(), m_sliceCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -152,7 +154,8 @@ void LatteTextureViewD3D12::UpdateSliceCopy()
 		src.pResource = baseResource;
 		src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 		src.SubresourceIndex = srcSub;
-		m_renderer->GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
+		// depth resources only allow whole subresource copies (no box)
+		m_renderer->GetCommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, m_baseTexture->isDepth ? nullptr : &box);
 	}
 	m_renderer->TransitionResource(m_sliceCopy.Get(), m_sliceCopyState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 	m_renderer->m_hasRecordedWork = true;

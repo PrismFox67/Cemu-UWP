@@ -16,6 +16,10 @@ public:
 	void AllocateOnHost() override;
 
 	ID3D12Resource* GetResource() const { return m_resource.Get(); }
+	// bumped whenever the GPU is about to write the texture (any transition into a write state), so copies of it (2D
+	// slice copies) know when to refresh. The core's event counters miss texture-to-texture copies
+	uint64 GetContentVersion() const { return m_contentVersion; }
+	void MarkContentWritten() { m_contentVersion++; }
 	const D3D12_RESOURCE_DESC& GetDesc() const { return m_desc; }
 	const D3D12TextureFormatInfo& GetFormatInfo() const { return m_formatInfo; }
 	bool IsAlternateFormat() const { return m_formatInfo.isAlternateFormat; }
@@ -44,6 +48,7 @@ protected:
 	LatteTextureView* CreateView(Latte::E_DIM dim, Latte::E_GX2SURFFMT format, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount) override;
 
 private:
+	uint64 m_contentVersion = 1;
 	D3D12Renderer* m_renderer;
 	ComPtr<ID3D12Resource> m_resource;
 	D3D12_RESOURCE_DESC m_desc{};

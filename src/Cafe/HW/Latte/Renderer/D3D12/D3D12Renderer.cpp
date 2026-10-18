@@ -586,6 +586,9 @@ void D3D12Renderer::TransitionTexture(LatteTextureD3D12* texture, uint32 firstMi
 {
 	if (!texture->GetResource())
 		return;
+	constexpr D3D12_RESOURCE_STATES kWriteStates = D3D12_RESOURCE_STATE_COPY_DEST | D3D12_RESOURCE_STATE_RENDER_TARGET | D3D12_RESOURCE_STATE_DEPTH_WRITE | D3D12_RESOURCE_STATE_UNORDERED_ACCESS | D3D12_RESOURCE_STATE_RESOLVE_DEST;
+	if (newState & kWriteStates)
+		texture->MarkContentWritten();
 	const bool is3D = texture->Is3DTexture();
 	if (is3D)
 	{
