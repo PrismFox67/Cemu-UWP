@@ -5,6 +5,7 @@
 #include "input/InputManager.h"
 #include "input/api/XInput/XInputController.h"
 #include "input/api/Keyboard/KeyboardController.h"
+#include "input/api/DSU/DSUController.h"
 #include "input/emulated/VPADController.h"
 #include "input/emulated/ProController.h"
 #include "input/emulated/ClassicController.h"
@@ -414,6 +415,55 @@ void HostControllers::UseNintendoLayout(int player)
 	emulated->set_mapping(4, xinput, 14); // Y on Xbox X
 	InputManager::instance().save(player);
 	cemuLog_log(LogType::Force, "Host: player {} uses the Nintendo button layout", player + 1);
+}
+
+static std::shared_ptr<DSUController> _GetDSU(const EmulatedControllerPtr& emulated)
+{
+	for (const auto& c : emulated->get_controllers())
+	{
+		if (c->api() == InputAPI::DSUClient)
+			return std::static_pointer_cast<DSUController>(c);
+	}
+	return {};
+}
+
+std::string HostControllers::GetMotionServer(int player)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	const auto dsu = emulated ? _GetDSU(emulated) : nullptr;
+	return dsu ? dsu->get_provider_settings().ip : std::string();
+}
+
+bool HostControllers::IsMotionServerConnected(int player)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	const auto dsu = emulated ? _GetDSU(emulated) : nullptr;
+	return dsu && dsu->is_connected();
+}
+
+void HostControllers::SetMotionServer(int player, const std::string& ip)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	if (const auto old = _GetDSU(emulated))
+		emulated->remove_controller(old);
+	if (!ip.empty())
+	{
+		try
+		{
+			// only the motion is used, the phone's buttons stay unmapped
+			auto dsu = std::make_shared<DSUController>(0, DSUProviderSettings(ip, 26760));
+			dsu->set_use_motion(true);
+			emulated->add_controller(dsu);
+		}
+		catch (const std::exception& ex)
+		{
+			cemuLog_log(LogType::Force, "Host: motion server {} for player {} failed: {}", ip, player + 1, ex.what());
+		}
+	}
+	InputManager::instance().save(player);
+	cemuLog_log(LogType::Force, "Host: player {} motion server: {}", player + 1, ip.empty() ? std::string("none") : ip);
 }
 
 static std::string _ProfileName(int slot)

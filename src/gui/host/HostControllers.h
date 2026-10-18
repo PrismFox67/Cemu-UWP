@@ -55,6 +55,11 @@ namespace HostControllers
 
 	// profile slots: the whole setup of a player (type, button mapping, deadzones, range) saved as
 	// controllerProfiles/Xbox profile <slot>.xml, loadable on any player. The controller of the player is kept on load
+	// motion from a phone app over the LAN (DSU / cemuhook protocol, port 26760). Empty ip removes it
+	std::string GetMotionServer(int player);
+	bool IsMotionServerConnected(int player);
+	void SetMotionServer(int player, const std::string& ip);
+
 	constexpr int kProfileSlots = 3;
 	bool HasProfile(int slot);
 	void SaveProfile(int player, int slot);
