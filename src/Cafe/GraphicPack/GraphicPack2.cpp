@@ -142,18 +142,32 @@ void GraphicPack2::LoadAll()
 	std::error_code ec;
 	InstallBundledGraphicPacks();
 	fs::path basePath = ActiveSettings::GetUserDataPath("graphicPacks");
-	for (fs::recursive_directory_iterator it(basePath, ec); it != end(it); ++it)
+	// increment(ec) instead of ++it: ++it throws on a folder it can't enter, which ended the whole scan (the exception
+	// was lost in the std::async of the caller) and left the remaining packs unlisted
+	for (fs::recursive_directory_iterator it(basePath, fs::directory_options::skip_permission_denied, ec); !ec && it != end(it); it.increment(ec))
 	{
-		if (!it->is_directory(ec))
+		std::error_code ecEntry;
+		if (!it->is_directory(ecEntry))
 			continue;
 		fs::path gfxPackPath = it->path();
-		if (fs::exists(gfxPackPath / "rules.txt", ec))
+		if (fs::exists(gfxPackPath / "rules.txt", ecEntry))
 		{
 			LoadGraphicPack(gfxPackPath);
 			it.disable_recursion_pending(); // dont recurse deeper in a gfx pack directory
 			continue;
 		}
 	}
+	if (ec)
+		cemuLog_log(LogType::Force, "Graphic packs: can't read {}: {}", _pathToUtf8(basePath), ec.message());
+	size_t enabled = 0;
+	for (const auto& gp : s_graphic_packs)
+	{
+		if (!gp->IsEnabled())
+			continue;
+		enabled++;
+		cemuLog_log(LogType::Force, "Graphic packs: enabled {}", gp->GetNormalizedPathString());
+	}
+	cemuLog_log(LogType::Force, "Graphic packs: {} loaded from {}, {} enabled, {} entries in the settings", s_graphic_packs.size(), _pathToUtf8(basePath), enabled, GetConfig().graphic_pack_entries.size());
 }
 
 bool GraphicPack2::LoadGraphicPack(const fs::path& rulesPath, IniParser& rules)
@@ -279,6 +293,10 @@ void GraphicPack2::ActivateForCurrentTitle()
 
 void GraphicPack2::Reset()
 {
+	// the Xbox frontend starts titles again in the same process, so the packs must be deactivated here or
+	// Activate() of the next launch sees m_activated and skips loading the patches and shaders
+	for (const auto& gp : s_active_graphic_packs)
+		gp->Deactivate();
 	s_active_graphic_packs.clear();
 	s_isReady = false;
 }
