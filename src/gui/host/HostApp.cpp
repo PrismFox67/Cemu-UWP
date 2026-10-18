@@ -9,6 +9,8 @@
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/nn_nfp/nn_nfp.h"
+#include "Cafe/OS/libs/nsyshid/Skylander.h"
+#include "Common/FileStream.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
@@ -50,6 +52,7 @@ namespace
 		kMenuShowFPS,
 		kMenuStickTilt,
 		kMenuAmiibo,
+		kMenuSkylander,
 		kMenuExitGame,
 		kMenuExit,
 		kMenuCount,
@@ -61,6 +64,8 @@ namespace
 	std::unique_ptr<LauncherRenderer> s_launcher;
 	bool s_launcherFailed = false;
 	std::optional<fs::path> s_pendingLaunch;
+
+	void _EnableSkylanderPortal(); // in-game menu section below
 
 	// in-game menu, read by the GPU thread
 	std::atomic_bool s_menuOpen = false;
@@ -252,6 +257,7 @@ namespace
 			s_state = State::Quitting;
 			return;
 		}
+		_EnableSkylanderPortal();
 		CafeSystem::LaunchForegroundTitle();
 		s_state = State::Running;
 		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());
@@ -404,6 +410,108 @@ namespace
 		cemuLog_log(LogType::Force, "Host: amiibo {} {}", _pathToUtf8(file), ok ? "scanned" : fmt::format("failed, NFC error {}", nfcError));
 	}
 
+	// Skylanders: figure dumps (.sky/.bin/.dmp) in <user data>/skylanders, picked with left/right on the menu item. A puts the
+	// picked figure on the emulated portal (replacing the one there) or takes it off again. The portal is only emulated
+	// when the folder has figures at game launch (see _EnableSkylanderPortal), like desktop Cemu's opt-in setting
+	std::mutex s_skyMutex;
+	std::vector<fs::path> s_skyFiles;
+	int s_skyIndex = 0;
+	std::optional<uint8> s_skyPortalSlot; // portal slot of the placed figure
+	fs::path s_skyPlaced;
+
+	std::vector<fs::path> _ListSkylanderFiles()
+	{
+		std::vector<fs::path> files;
+		std::error_code ec;
+		const fs::path folder = ActiveSettings::GetUserDataPath("skylanders");
+		fs::create_directories(folder, ec);
+		for (fs::directory_iterator it(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+		{
+			std::error_code ecEntry;
+			const std::string ext = _pathToUtf8(it->path().extension());
+			if (it->is_regular_file(ecEntry) && (boost::iequals(ext, ".sky") || boost::iequals(ext, ".bin") || boost::iequals(ext, ".dmp")))
+				files.emplace_back(it->path());
+		}
+		std::sort(files.begin(), files.end());
+		return files;
+	}
+
+	void _RefreshSkylanderFiles()
+	{
+		std::vector<fs::path> files = _ListSkylanderFiles();
+		std::scoped_lock lock(s_skyMutex);
+		s_skyFiles = std::move(files);
+		s_skyIndex = std::clamp(s_skyIndex, 0, std::max(0, (int)s_skyFiles.size() - 1));
+	}
+
+	void _EnableSkylanderPortal()
+	{
+		if (_ListSkylanderFiles().empty())
+			return;
+		auto& portal = GetConfig().emulated_usb_devices.emulate_skylander_portal;
+		if (!portal.GetValue())
+		{
+			portal = true;
+			cemuLog_log(LogType::Force, "Host: skylanders folder has figures, emulating the Skylanders portal");
+		}
+	}
+
+	void _StepSkylander(int step)
+	{
+		std::scoped_lock lock(s_skyMutex);
+		if (s_skyFiles.empty())
+			return;
+		const int count = (int)s_skyFiles.size();
+		s_skyIndex = (s_skyIndex + step + count) % count;
+	}
+
+	std::string _SkylanderLabel()
+	{
+		std::scoped_lock lock(s_skyMutex);
+		if (s_skyFiles.empty())
+			return "Skylander: put figure dumps into the skylanders folder";
+		const fs::path& file = s_skyFiles[s_skyIndex];
+		if (!GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
+			return "Skylander: restart the game to connect the portal";
+		std::string label = fmt::format("Skylander: < {} >", _pathToUtf8(file.stem()));
+		if (s_skyPortalSlot && file == s_skyPlaced)
+			label += "  (on the portal, A removes)";
+		return label;
+	}
+
+	void _ToggleSkylander()
+	{
+		std::scoped_lock lock(s_skyMutex);
+		if (s_skyFiles.empty() || !GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
+			return;
+		const fs::path file = s_skyFiles[s_skyIndex];
+		const bool wasThis = s_skyPortalSlot && file == s_skyPlaced;
+		if (s_skyPortalSlot)
+		{
+			nsyshid::g_skyportal.RemoveSkylander(*s_skyPortalSlot);
+			cemuLog_log(LogType::Force, "Host: skylander {} removed from the portal", _pathToUtf8(s_skyPlaced));
+			s_skyPortalSlot.reset();
+		}
+		if (wasThis)
+			return;
+		std::unique_ptr<FileStream> skyFile(FileStream::openFile2(file, true));
+		std::array<uint8, nsyshid::SKY_FIGURE_SIZE> data;
+		if (!skyFile || skyFile->readData(data.data(), data.size()) != data.size())
+		{
+			cemuLog_log(LogType::Force, "Host: skylander {} couldn't be read (needs a {} byte figure dump)", _pathToUtf8(file), data.size());
+			return;
+		}
+		const uint8 slot = nsyshid::g_skyportal.LoadSkylander(data.data(), std::move(skyFile));
+		if (slot >= nsyshid::MAX_SKYLANDERS)
+		{
+			cemuLog_log(LogType::Force, "Host: skylander {}: the portal is full", _pathToUtf8(file));
+			return;
+		}
+		s_skyPortalSlot = slot;
+		s_skyPlaced = file;
+		cemuLog_log(LogType::Force, "Host: skylander {} placed on the portal (slot {})", _pathToUtf8(file), slot);
+	}
+
 	// Xbox controllers have no gyro. Like desktop Cemu's right mouse button motion, a held right "mouse" button tilts the
 	// emulated GamePad by its position (center = flat), so the right stick deflection is fed as that position
 	void _SetStickTilt(float x, float y, bool active)
@@ -479,6 +587,9 @@ namespace
 			break;
 		case kMenuAmiibo:
 			_ScanAmiibo();
+			break;
+		case kMenuSkylander:
+			_ToggleSkylander();
 			break;
 		case kMenuExitGame:
 			s_menuOpen = false;
@@ -588,7 +699,10 @@ namespace
 				s_menuOpen = !s_menuOpen;
 				s_menuSelection = kMenuResume;
 				if (s_menuOpen)
+				{
 					_RefreshAmiiboFiles();
+					_RefreshSkylanderFiles();
+				}
 			}
 		}
 		else
@@ -600,7 +714,10 @@ namespace
 			s_menuOpen = !s_menuOpen;
 			s_menuSelection = kMenuResume;
 			if (s_menuOpen)
+			{
 				_RefreshAmiiboFiles();
+				_RefreshSkylanderFiles();
+			}
 		}
 
 		if (!s_menuOpen)
@@ -619,6 +736,8 @@ namespace
 			s_menuOpen = false;
 		if (s_menuSelection == kMenuAmiibo && (pressed & (HostGamepad::kLeft | HostGamepad::kRight)))
 			_StepAmiibo((pressed & HostGamepad::kLeft) ? -1 : 1);
+		if (s_menuSelection == kMenuSkylander && (pressed & (HostGamepad::kLeft | HostGamepad::kRight)))
+			_StepSkylander((pressed & HostGamepad::kLeft) ? -1 : 1);
 		if (pressed & HostGamepad::kA)
 			_ExecuteMenuItem(s_menuSelection);
 	}
@@ -870,7 +989,10 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 			s_menuOpen = !s_menuOpen;
 			s_menuSelection = kMenuResume;
 			if (s_menuOpen)
+			{
 				_RefreshAmiiboFiles();
+				_RefreshSkylanderFiles();
+			}
 		}
 		else if (s_menuOpen)
 		{
@@ -880,6 +1002,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 				s_menuSelection = (s_menuSelection + 1) % kMenuCount;
 			else if ((virtualKey == VK_LEFT || virtualKey == VK_RIGHT) && s_menuSelection == kMenuAmiibo)
 				_StepAmiibo(virtualKey == VK_LEFT ? -1 : 1);
+			else if ((virtualKey == VK_LEFT || virtualKey == VK_RIGHT) && s_menuSelection == kMenuSkylander)
+				_StepSkylander(virtualKey == VK_LEFT ? -1 : 1);
 			else if (virtualKey == VK_RETURN)
 				_ExecuteMenuItem(s_menuSelection);
 			else if (virtualKey == VK_ESCAPE)
@@ -1009,6 +1133,7 @@ void HostApp::DrawInGameMenu()
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
 			_AmiiboLabel(),
+			_SkylanderLabel(),
 			"Exit to game list",
 			"Quit Cemu",
 		};

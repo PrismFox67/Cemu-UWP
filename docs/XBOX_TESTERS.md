@@ -48,6 +48,11 @@ the GamePad (let go = flat). Turn it off again to get the camera back on the rig
 **amiibo**: upload amiibo dumps (`.bin`) to `LocalState/amiibo` with the Device Portal. In the in-game menu, pick one on
 **Scan amiibo** with left/right on the D-pad and press A when the game asks for an amiibo.
 
+**Skylanders**: upload figure dumps (`.sky`, `.bin` or `.dmp`, 1 KB each) to `LocalState/skylanders`, then start the game
+(the emulated portal is only connected when that folder has figures at launch). In the in-game menu, pick a figure on
+**Skylander** with left/right and press A to put it on the portal; A again takes it off. Picking another figure and
+pressing A swaps it.
+
 ## Mods and translations
 Mods that replace game files (translations, texture or model swaps) work as graphic packs. A pack is a folder with a
 `rules.txt` and a `content` folder that mirrors the game's `content` folder; only the files you put there are replaced.
