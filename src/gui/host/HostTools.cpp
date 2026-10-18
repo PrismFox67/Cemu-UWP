@@ -15,6 +15,8 @@
 #include <mutex>
 #include <thread>
 
+#include <Windows.h>
+
 namespace
 {
 	constexpr const char* kRepo = "PrismFox67/Cemu-UWP";
@@ -46,15 +48,30 @@ namespace
 		return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 	}
 
-	// copies a file that may be open for writing (log.txt): fs::copy_file can fail on those, reading it works
+	// copies a file that may be open for writing (log.txt): fs::copy_file can fail on those, reading it works.
+	// The data is flushed to the device before returning: the target is usually a USB drive, and without the flush
+	// a copy made shortly before the app is closed or the drive is pulled ends up as the right size but all zero bytes
 	bool _CopyFile(const fs::path& from, const fs::path& to)
 	{
-		std::ifstream in(from, std::ios::binary);
-		if (!in)
+		const std::string data = _ReadFile(from);
+		std::error_code ec;
+		if (data.empty() && !fs::exists(from, ec))
 			return false;
-		std::ofstream out(to, std::ios::binary | std::ios::trunc);
-		out << in.rdbuf();
-		return (bool)out;
+		HANDLE file = CreateFile2(to.c_str(), GENERIC_WRITE, 0, CREATE_ALWAYS, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+			return false;
+		bool ok = true;
+		size_t offset = 0;
+		while (ok && offset < data.size())
+		{
+			DWORD written = 0;
+			const DWORD chunk = (DWORD)std::min<size_t>(data.size() - offset, 1u << 24);
+			ok = WriteFile(file, data.data() + offset, chunk, &written, nullptr) && written == chunk;
+			offset += written;
+		}
+		ok = FlushFileBuffers(file) && ok;
+		CloseHandle(file);
+		return ok;
 	}
 
 	void _RunTask(std::string busyText, std::function<void()> task)
