@@ -51,7 +51,14 @@ namespace HostControllers
 	std::vector<MappableButton> GetMappableButtons(Kind kind);
 	std::string GetButtonMappingName(int player, uint64 id); // Xbox button name, empty if unmapped
 	void ResetButtonMapping(int player);
-	void UseNintendoLayout(int player); // A<->B and X<->Y swapped, the button positions of a Nintendo controller
+	void UseNintendoLayout(int player);
+
+	// profile slots: the whole setup of a player (type, button mapping, deadzones, range) saved as
+	// controllerProfiles/Xbox profile <slot>.xml, loadable on any player. The controller of the player is kept on load
+	constexpr int kProfileSlots = 3;
+	bool HasProfile(int slot);
+	void SaveProfile(int player, int slot);
+	bool LoadProfile(int player, int slot); // A<->B and X<->Y swapped, the button positions of a Nintendo controller
 
 	// capture: the next button pressed on the player's controller is mapped to the Wii U button. Swaps with the Wii U
 	// button that had it before. Cancelled after a few seconds without a press. UpdateCapture() has to be called every

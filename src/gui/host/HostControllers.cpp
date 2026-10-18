@@ -191,8 +191,13 @@ void HostControllers::SetupDefaults()
 	}
 	if (createOtherPlayers)
 		std::ofstream(marker) << "default controller profiles were created\n";
-	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels
-	for (int player = 0; player < kPlayerCount; player++)
+	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels. Only once:
+	// the Nintendo layout preset is the same mapping, and running this on every start reverted it
+	const fs::path labelMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostLabelLayout");
+	const bool migrateLabels = !fs::exists(labelMarker, ec);
+	if (migrateLabels)
+		std::ofstream(labelMarker) << "profiles were switched to the Xbox button labels\n";
+	for (int player = 0; migrateLabels && player < kPlayerCount; player++)
 	{
 		const auto emulated = input.get_controller(player);
 		if (!emulated)
@@ -409,6 +414,47 @@ void HostControllers::UseNintendoLayout(int player)
 	emulated->set_mapping(4, xinput, 14); // Y on Xbox X
 	InputManager::instance().save(player);
 	cemuLog_log(LogType::Force, "Host: player {} uses the Nintendo button layout", player + 1);
+}
+
+static std::string _ProfileName(int slot)
+{
+	return fmt::format("Xbox profile {}", slot + 1);
+}
+
+bool HostControllers::HasProfile(int slot)
+{
+	std::error_code ec;
+	return fs::exists(ActiveSettings::GetConfigPath("controllerProfiles/{}.xml", _ProfileName(slot)), ec);
+}
+
+void HostControllers::SaveProfile(int player, int slot)
+{
+	if (InputManager::instance().save(player, _ProfileName(slot)))
+		cemuLog_log(LogType::Force, "Host: player {} saved to {}", player + 1, _ProfileName(slot));
+}
+
+bool HostControllers::LoadProfile(int player, int slot)
+{
+	const PlayerInfo before = GetPlayer(player);
+	auto& input = InputManager::instance();
+	if (!input.load(player, _ProfileName(slot)))
+	{
+		cemuLog_log(LogType::Force, "Host: couldn't load {} for player {}", _ProfileName(slot), player + 1);
+		return false;
+	}
+	// the profile names the controller it was saved with, keep the one this player has (the mapping is carried over)
+	const PlayerInfo after = GetPlayer(player);
+	if (before.pad >= 0 && after.pad != before.pad)
+	{
+		const float deadzoneLeft = after.deadzone[0], deadzoneRight = after.deadzone[1], range = after.range;
+		SetPlayer(player, after.kind, before.pad);
+		SetDeadzone(player, 0, deadzoneLeft);
+		SetDeadzone(player, 1, deadzoneRight);
+		SetStickRange(player, range);
+	}
+	input.save(player);
+	cemuLog_log(LogType::Force, "Host: player {} loaded {}", player + 1, _ProfileName(slot));
+	return true;
 }
 
 void HostControllers::ResetButtonMapping(int player)

@@ -790,6 +790,21 @@ namespace
 		ImGui::SameLine();
 		if (ImGui::Button("Reset to Xbox layout"))
 			s_deferred.emplace_back([player]() { ResetButtonMapping(player); });
+		// profile slots: the whole player setup, to keep a layout or move it to another player
+		for (int slot = 0; slot < kProfileSlots; slot++)
+		{
+			ImGui::PushID(slot);
+			if (ImGui::Button(fmt::format("Save to profile {}", slot + 1).c_str()))
+				s_deferred.emplace_back([player, slot]() { SaveProfile(player, slot); });
+			ImGui::SameLine();
+			ImGui::BeginDisabled(!HasProfile(slot));
+			if (ImGui::Button(fmt::format("Load profile {}", slot + 1).c_str()))
+				s_deferred.emplace_back([player, slot]() { LoadProfile(player, slot); });
+			ImGui::EndDisabled();
+			if (slot + 1 < kProfileSlots)
+				ImGui::SameLine(0.0f, 40.0f * s_scale);
+			ImGui::PopID();
+		}
 		ImGui::Unindent();
 	}
 
