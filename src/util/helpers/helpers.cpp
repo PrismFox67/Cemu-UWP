@@ -315,14 +315,9 @@ bool TestWriteAccess(const fs::path& p)
 // make path relative to Cemu directory
 fs::path MakeRelativePath(const fs::path& base, const fs::path& path)
 {
-	try
-	{
-		return fs::relative(path, base);
-	}
-	catch (const std::exception&)
-	{
-		return path;
-	}
+	// lexically: fs::relative canonicalizes both paths, which fails on the Xbox (UWP) and left absolute paths in settings.xml
+	fs::path relative = path.lexically_normal().lexically_relative(base.lexically_normal());
+	return relative.empty() ? path : relative;
 }
 
 #ifdef HAS_DIRECTINPUT

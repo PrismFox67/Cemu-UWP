@@ -221,7 +221,7 @@ void HostTools::StartBackupSaves()
 			std::error_code fileEc;
 			if (!it->is_regular_file(fileEc))
 				continue;
-			const fs::path relative = fs::relative(it->path(), source, fileEc);
+			const fs::path relative = it->path().lexically_relative(source);
 			if (fileEc || relative.empty())
 			{
 				failed++;

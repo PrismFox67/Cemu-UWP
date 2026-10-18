@@ -123,7 +123,8 @@ static void InstallBundledGraphicPacks()
 		{
 			if (!file.is_regular_file(ec))
 				continue;
-			fs::path dst = target / fs::relative(file.path(), pack.path(), ec);
+			// lexically: fs::relative canonicalizes, which fails in the read-only app package on the Xbox (empty result)
+			fs::path dst = target / file.path().lexically_relative(pack.path());
 			// the UWP package can't carry .asm files, so they're packaged as <name>.asm.txt
 			if (dst.extension() == ".txt" && dst.stem().extension() == ".asm")
 				dst.replace_extension();
@@ -132,7 +133,7 @@ static void InstallBundledGraphicPacks()
 			fs::create_directories(dst.parent_path(), ec);
 			fs::copy_file(file.path(), dst, fs::copy_options::overwrite_existing, ec);
 			if (ec)
-				cemuLog_log(LogType::Force, "Couldn't install bundled graphic pack file {}: {}", _pathToUtf8(dst), ec.message());
+				cemuLog_log(LogType::Force, "Couldn't install bundled graphic pack file {} -> {}: {}", _pathToUtf8(file.path()), _pathToUtf8(dst), ec.message());
 		}
 	}
 }
