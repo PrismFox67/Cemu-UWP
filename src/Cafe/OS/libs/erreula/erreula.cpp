@@ -399,7 +399,7 @@ namespace erreula
 		if (ImGui::Begin(title.c_str(), nullptr, kPopupFlags))
 		{
 			const float startx = ImGui::GetWindowSize().x / 2.0f;
-			bool hasLeftButtonPressed = false, hasRightButtonPressed = false;
+			bool hasLeftButtonPressed = false, hasRightButtonPressed = false, rightButtonFocused = false;
 
 			switch (appearArg.errorType)
 			{
@@ -470,8 +470,18 @@ namespace erreula
 				ImGui::SameLine();
 					
 				hasRightButtonPressed = ImGui::Button(button2.c_str(), { width2, 0 });
+				rightButtonFocused = ImGui::IsItemFocused();
 				break;
 			}
+			}
+			// A on a controller presses the button that has the navigation focus, or the left one. Without this the dialog
+			// can't be closed when the navigation never focused it (e.g. on the Xbox, where there is no mouse)
+			if (g_errEula.errEulaInstance->GetState() == ErrEulaState::Visible && !hasLeftButtonPressed && !hasRightButtonPressed && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false))
+			{
+				if (rightButtonFocused)
+					hasRightButtonPressed = true;
+				else
+					hasLeftButtonPressed = true;
 			}
 			if (!g_errEula.errEulaInstance->IsDecideSelectButtonError())
 			{

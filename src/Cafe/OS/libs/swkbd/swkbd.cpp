@@ -4,6 +4,7 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include "imgui/imgui_extension.h"
 #include "util/helpers/helpers.h"
 #include "resource/IconsFontAwesome5.h"
@@ -466,7 +467,12 @@ void swkbd_render(bool mainWindow)
 	ImGui::SetNextWindowBgAlpha(0.9f);
 	ImGui::PushFont(textFont);
 
-	if (ImGui::Begin(fmt::format("Software keyboard##SoftwareKeyboard{}",mainWindow).c_str(), nullptr, kPopupFlags))
+	// the keys are navigated with the D-pad and typed with A, so the keyboard window needs the focus. Without it a
+	// controller can't type anything (the Xbox has no mouse)
+	const std::string keyboardWindowName = fmt::format("Software keyboard##SoftwareKeyboard{}", mainWindow);
+	if (ImGuiWindow* keyboardWindow = ImGui::FindWindowByName(keyboardWindowName.c_str()); !keyboardWindow || ImGui::GetCurrentContext()->NavWindow != keyboardWindow)
+		ImGui::SetNextWindowFocus();
+	if (ImGui::Begin(keyboardWindowName.c_str(), nullptr, kPopupFlags))
 	{
 		if(swkbdInternalState->shiftActivated)
 		{
@@ -536,7 +542,8 @@ void swkbd_render(bool mainWindow)
 	}
 	ImGui::End();
 
-	if (io.NavInputs[ImGuiNavInput_Cancel] > 0)
+	// io.NavInputs[] is ignored since ImGui 1.88, read the gamepad keys (ImGui_UpdateWindowInformation feeds them)
+	if (ImGui::IsKeyDown(ImGuiKey_GamepadFaceRight))
 	{
 		if(!swkbdInternalState->cancelState)
 			swkbd_keyInput(8); // backspace
@@ -545,7 +552,7 @@ void swkbd_render(bool mainWindow)
 	else
 		swkbdInternalState->cancelState = false;
 
-	if (io.NavInputs[ImGuiNavInput_Input] > 0)
+	if (ImGui::IsKeyDown(ImGuiKey_GamepadStart))
 	{
 		if (!swkbdInternalState->returnState)
 			swkbd_keyInput(13); // return

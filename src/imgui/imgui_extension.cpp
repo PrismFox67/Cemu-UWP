@@ -147,6 +147,26 @@ void ImGui_UpdateWindowInformation(bool mainWindow)
 
 	const auto mousePos = instance.get_mouse_position(!mainWindow);
 	io.MousePos = { (float)mousePos.x, (float)mousePos.y };
+	if (mainWindow)
+	{
+		// the Xbox frontend's touch cursor moves the TV touch position instead of the mouse. Whichever moved last is the
+		// pointer, so the cursor can click overlay buttons (e.g. OK of an error dialog)
+		static glm::ivec2 s_lastMouse{}, s_lastTouch{};
+		static bool s_touchIsPointer = false;
+		glm::ivec2 touchPos;
+		{
+			std::shared_lock lock(instance.m_main_touch.m_mutex);
+			touchPos = instance.m_main_touch.position;
+		}
+		if (touchPos != s_lastTouch)
+			s_touchIsPointer = true;
+		else if (mousePos != s_lastMouse)
+			s_touchIsPointer = false;
+		s_lastTouch = touchPos;
+		s_lastMouse = mousePos;
+		if (s_touchIsPointer)
+			io.MousePos = { (float)touchPos.x, (float)touchPos.y };
+	}
 
 	bool padDown;
 	const auto pos = instance.get_left_down_mouse_info(&padDown);
@@ -165,31 +185,27 @@ void ImGui_UpdateWindowInformation(bool mainWindow)
 
 	// printf("%f %f %d\n", io.MousePos.x, io.MousePos.y, io.MouseDown[0]);
 
+	// io.NavInputs[] is ignored since ImGui 1.88, the controller buttons are fed as gamepad keys instead
+	bool start = false, a = false, b = false, left = false, right = false, up = false, down = false;
 	for (auto i = 0; i < InputManager::kMaxController; ++i)
 	{
 		const auto controller = instance.get_controller(i);
 		if (!controller)
 			continue;
-
-		if (controller->is_start_down())
-			io.NavInputs[ImGuiNavInput_Input] = 1.0f;
-
-		if (controller->is_a_down())
-			io.NavInputs[ImGuiNavInput_Activate] = 1.0f;
-		
-		if (controller->is_b_down())
-			io.NavInputs[ImGuiNavInput_Cancel] = 1.0f;
-		
-		if (controller->is_left_down())
-			io.NavInputs[ImGuiNavInput_DpadLeft] = 1.0f;
-		
-		if (controller->is_right_down())
-			io.NavInputs[ImGuiNavInput_DpadRight] = 1.0f;
-		
-		if (controller->is_up_down())
-			io.NavInputs[ImGuiNavInput_DpadUp] = 1.0f;
-		
-		if (controller->is_down_down())
-			io.NavInputs[ImGuiNavInput_DpadDown] = 1.0f;
+		start |= controller->is_start_down();
+		a |= controller->is_a_down();
+		b |= controller->is_b_down();
+		left |= controller->is_left_down();
+		right |= controller->is_right_down();
+		up |= controller->is_up_down();
+		down |= controller->is_down_down();
 	}
+	io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+	io.AddKeyEvent(ImGuiKey_GamepadStart, start);
+	io.AddKeyEvent(ImGuiKey_GamepadFaceDown, a);
+	io.AddKeyEvent(ImGuiKey_GamepadFaceRight, b);
+	io.AddKeyEvent(ImGuiKey_GamepadDpadLeft, left);
+	io.AddKeyEvent(ImGuiKey_GamepadDpadRight, right);
+	io.AddKeyEvent(ImGuiKey_GamepadDpadUp, up);
+	io.AddKeyEvent(ImGuiKey_GamepadDpadDown, down);
 }
