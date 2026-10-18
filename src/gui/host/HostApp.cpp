@@ -48,6 +48,7 @@ namespace
 		kMenuGamePadScreen,
 		kMenuTouchCursor,
 		kMenuShowFPS,
+		kMenuStickTilt,
 		kMenuAmiibo,
 		kMenuExitGame,
 		kMenuExit,
@@ -68,6 +69,7 @@ namespace
 	// touch cursor: stands in for the GamePad's touch screen (Super Mario Maker can't be played without it). The right
 	// stick moves it over the GamePad screen, RT touches. Position is 0..1 of the GamePad image, drawn by the GPU thread
 	std::atomic_bool s_touchCursor = false;
+	std::atomic_bool s_stickTilt = false; // the right stick tilts the GamePad (motion controls), see _UpdateStickTilt
 	std::atomic<float> s_touchX = 0.5f, s_touchY = 0.5f;
 	std::atomic_bool s_touchDown = false;
 	bool s_touchRestoreTVScreen = false;
@@ -402,6 +404,19 @@ namespace
 		cemuLog_log(LogType::Force, "Host: amiibo {} {}", _pathToUtf8(file), ok ? "scanned" : fmt::format("failed, NFC error {}", nfcError));
 	}
 
+	// Xbox controllers have no gyro. Like desktop Cemu's right mouse button motion, a held right "mouse" button tilts the
+	// emulated GamePad by its position (center = flat), so the right stick deflection is fed as that position
+	void _SetStickTilt(float x, float y, bool active)
+	{
+		int w, h;
+		WindowSystem::GetWindowPhysSize(w, h);
+		auto& mouse = InputManager::instance().m_main_mouse;
+		std::scoped_lock lock(mouse.m_mutex);
+		// up to 2/3 of the way to the edge: about 90 degrees forward/back and 120 degrees sideways at full tilt
+		mouse.position = { (sint32)(w * (0.5f + x * 0.33f)), (sint32)(h * (0.5f - y * 0.33f)) };
+		mouse.right_down = active;
+	}
+
 	void _ExecuteMenuItem(int item)
 	{
 		auto& config = GetConfig();
@@ -422,6 +437,11 @@ namespace
 			s_touchCursor = !s_touchCursor;
 			if (s_touchCursor)
 			{
+				if (s_stickTilt)
+				{
+					s_stickTilt = false; // both use the right stick
+					_SetStickTilt(0.0f, 0.0f, false);
+				}
 				// touches map onto the screen that is shown, so show the GamePad's
 				s_touchRestoreTVScreen = !LatteGPUState.isDRCPrimary;
 				LatteGPUState.isDRCPrimary = true;
@@ -443,6 +463,20 @@ namespace
 			GetConfigHandle().Save();
 			break;
 		}
+		case kMenuStickTilt:
+			s_stickTilt = !s_stickTilt;
+			if (s_stickTilt)
+			{
+				if (s_touchCursor)
+				{
+					s_touchCursor = false; // both use the right stick
+					_SetTouch(false);
+				}
+				s_menuOpen = false;
+			}
+			else
+				_SetStickTilt(0.0f, 0.0f, false);
+			break;
 		case kMenuAmiibo:
 			_ScanAmiibo();
 			break;
@@ -512,6 +546,11 @@ namespace
 			s_touchCursor = false;
 			_SetTouch(false);
 		}
+		if (s_stickTilt)
+		{
+			s_stickTilt = false;
+			_SetStickTilt(0.0f, 0.0f, false);
+		}
 		CafeSystem::ShutdownTitle();
 		HostTools::MarkGameStopped();
 		GetConfigHandle().Save();
@@ -568,6 +607,8 @@ namespace
 		{
 			if (s_touchCursor)
 				_UpdateTouchCursor(pad);
+			else if (s_stickTilt)
+				_SetStickTilt(pad.rightX, pad.rightY, true);
 			return;
 		}
 		if (pressed & HostGamepad::kUp)
@@ -966,6 +1007,7 @@ void HostApp::DrawInGameMenu()
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
+			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
 			_AmiiboLabel(),
 			"Exit to game list",
 			"Quit Cemu",

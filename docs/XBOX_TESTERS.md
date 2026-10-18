@@ -42,6 +42,9 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 
 **In-game menu**: click both sticks, or hold View + Menu for 1 s. It has: switch to the GamePad screen, a **touch cursor**
 (right stick moves it, RT taps, for games like Super Mario Maker), the FPS counter, and exit to the game list.
+**Motion controls** (gyro puzzles, e.g. BOTW shrines): in the in-game menu set **Motion: On**. The right stick then tilts
+the GamePad (let go = flat). Turn it off again to get the camera back on the right stick.
+
 **amiibo**: upload amiibo dumps (`.bin`) to `LocalState/amiibo` with the Device Portal. In the in-game menu, pick one on
 **Scan amiibo** with left/right on the D-pad and press A when the game asks for an amiibo.
 
