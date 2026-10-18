@@ -83,6 +83,9 @@ LauncherRenderer::LauncherRenderer(const WindowSystem::WindowHandleInfo& target,
 	D3D12_ThrowIfFailed(CreateDXGIFactory2(0, IID_PPV_ARGS(&d.factory)), "CreateDXGIFactory2");
 	D3D12_EnableDeviceRemovedDiagnostics(); // the emulator later gets the same device, see D3D12Renderer::LogDeviceRemovedData
 	D3D12_ThrowIfFailed(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d.device)), "D3D12CreateDevice");
+	D3D12_ResetRemovalReport();
+	if (const HRESULT removed = d.device->GetDeviceRemovedReason(); FAILED(removed))
+		cemuLog_log(LogType::Force, "Launcher: the new device is already removed ({}), a reference to the previous device is still alive", D3D12_HResultToString(removed));
 
 	D3D12_COMMAND_QUEUE_DESC queueDesc{};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;

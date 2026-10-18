@@ -199,6 +199,16 @@ void D3D12Renderer::CreateDevice()
 	}
 	cemuLog_log(LogType::Force, "D3D12: Using device {}", m_selectedDeviceName);
 
+	// D3D12CreateDevice hands out the existing device of the adapter while anything still references it. After a GPU reset
+	// that is a removed device if a reference to the old one survived (Xbox: BOTW stopped at high memory, the next launch
+	// failed its first allocation). Nothing can be done with it in this process, so say so instead of a silent failure
+	D3D12_ResetRemovalReport();
+	if (const HRESULT removed = m_device->GetDeviceRemovedReason(); FAILED(removed))
+	{
+		cemuLog_log(LogType::Force, "D3D12: the new device is already removed ({}), a reference to the previous device is still alive", D3D12_HResultToString(removed));
+		throw std::runtime_error("The graphics device was reset and can't be used again in this session. Restart Cemu to play again.");
+	}
+
 	if (m_debugMode)
 	{
 		ComPtr<ID3D12InfoQueue> infoQueue;
@@ -524,10 +534,9 @@ namespace
 
 void D3D12Renderer::LogDeviceRemovedData()
 {
-	static bool s_logged = false;
-	if (s_logged)
+	if (m_dredLogged)
 		return;
-	s_logged = true;
+	m_dredLogged = true;
 	ComPtr<ID3D12DeviceRemovedExtendedData> dred;
 	if (!m_dredEnabled || !m_device || FAILED(m_device.As(&dred)))
 	{
@@ -705,6 +714,9 @@ void D3D12Renderer::Shutdown()
 	Renderer::Shutdown();
 	WaitForIdle();
 	m_deferredReleaser.ReleaseAll();
+	// a reset during teardown otherwise only shows up later, without breadcrumbs, when the launcher uses the device
+	if (!D3D12_Checkpoint(m_device.Get(), "renderer shutdown"))
+		LogDeviceRemovedData();
 }
 
 void D3D12Renderer::EnableDebugMode()

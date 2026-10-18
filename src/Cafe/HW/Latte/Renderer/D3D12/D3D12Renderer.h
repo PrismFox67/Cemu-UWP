@@ -273,6 +273,7 @@ private:
 	uint64 m_completedFenceValue = 0;
 	bool m_debugMode = false;
 	bool m_dredEnabled = false;
+	bool m_dredLogged = false;
 	bool m_pipelineLibrarySupported = false;
 	bool m_pipelineBlobsSupported = false;
 	void TryEnableImplicitShaderCache();

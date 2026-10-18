@@ -64,6 +64,12 @@ bool D3D12_Checkpoint(ID3D12Device* device, const char* where)
 	return false;
 }
 
+void D3D12_ResetRemovalReport()
+{
+	s_removalReported.store(false);
+	s_lastGoodCheckpoint.store("device created", std::memory_order_relaxed);
+}
+
 HANDLE D3D12_CreateLargeStackThread(std::function<void()> func)
 {
 	// 256 MB of address space, committed on use. Driver shader compilers and FXC recurse deeply on large shaders; on Xbox
