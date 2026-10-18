@@ -131,6 +131,9 @@ jobs:
         gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" \
           --notes "Automatic builds of the D3D12 / UWP fork (Windows with wxWidgets, Win32 test build of the Xbox frontend, UWP package). Not official Cemu releases."
         gh release upload ci-latest cemu-d3d12-windows-x64.zip --clobber
+        # the first person pack on its own, for other Cemu builds (rebuilt every time so it can't go stale)
+        (cd bin/bundledGraphicPacks && 7z a -tzip ../../MK8_FirstPerson.zip MK8_FirstPerson > /dev/null)
+        gh release upload ci-latest MK8_FirstPerson.zip --clobber
         # the title names the commit the files were built from (testers read it to tell builds apart)
         gh release edit ci-latest --title "CI build (d3d12-backend @ ${GITHUB_SHA::7})"
 
