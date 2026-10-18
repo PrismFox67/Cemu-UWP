@@ -137,8 +137,6 @@ stfs f3, 28(r31)
 # smooth camera instead: F' gets the camera direction's component along the camera up, then F' and U' are made unit
 # and orthogonal again. look-at = eye + 48 * forward + lookDown * up. _fpTmp: +0 camera direction, +24 F', +36 U'
 lwz r0, 116(r12)
-cmpwi r0, 0
-beq _fpNoRoot
 lis r10, _fpTmp@ha
 addi r10, r10, _fpTmp@l
 lfs f10, 108(r12)
@@ -186,6 +184,25 @@ cmpwi r0, 2
 beq _fpLockWrite
 addi r3, r10, 0
 bl _fpNorm3
+# "Steady" (0) takes the same path with forward = the camera direction and up = the camera up (no spin or roll)
+lis r12, _fpEye@ha
+addi r12, r12, _fpEye@l
+lwz r0, 116(r12)
+cmpwi r0, 0
+bne _fpLockKart
+lwz r9, 0(r10)
+stw r9, 24(r10)
+lwz r9, 4(r10)
+stw r9, 28(r10)
+lwz r9, 8(r10)
+stw r9, 32(r10)
+lwz r9, 32(r31)
+stw r9, 36(r10)
+lwz r9, 36(r31)
+stw r9, 40(r10)
+lwz r9, 40(r31)
+stw r9, 44(r10)
+_fpLockKart:
 # a = F'.Ucam, b = dir.Ucam (Ucam = the camera's up, still at +32), F' += (b - a) * Ucam
 lfs f0, 32(r31)
 lfs f1, 36(r31)
@@ -202,6 +219,19 @@ lfs f3, 4(r10)
 fmadds f7, f3, f1, f7
 lfs f3, 8(r10)
 fmadds f7, f3, f2, f7
+# the game camera dips for a moment when the driver leans to throw or hops into a drift (its look-at follows the
+# driver, #15): b follows a smoothed copy downwards (_fpPitchS += rate * (b - _fpPitchS)) and goes up at once
+lis r9, _fpPitchS@ha
+addi r9, r9, _fpPitchS@l
+lfs f8, 0(r9)
+lfs f5, 4(r9)
+fsubs f4, f7, f8
+fmadds f8, f4, f5, f8
+stfs f8, 0(r9)
+fcmpu cr0, f7, f8
+bge _fpPitchUp
+fmr f7, f8
+_fpPitchUp:
 fsubs f7, f7, f6
 lfs f3, 24(r10)
 fmadds f3, f7, f0, f3
@@ -237,6 +267,11 @@ addi r3, r10, 36
 bl _fpNorm3
 _fpLockWrite:
 lfs f12, 120(r12)
+lwz r0, 116(r12)
+cmpwi r0, 0
+bne _fpLockTiltOn
+fsubs f12, f12, f12
+_fpLockTiltOn:
 lis r9, _fpLockLen@ha
 lfs f13, _fpLockLen@l(r9)
 # x
@@ -367,6 +402,9 @@ stfs f2, 8(r3)
 _fpNorm3Done:
 blr
 
+_fpPitchS:
+.float 0.0
+.float $fpPitchRate
 _fpNormC:
 .float 0.5
 .float 1.5
