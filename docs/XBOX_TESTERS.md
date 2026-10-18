@@ -85,6 +85,8 @@ for that game. It applies the next time the game starts.
 - **Known issues:** 4K on the largest tracks can still run out of memory and close the app (use 1440p). Online play isn't
   supported.
 
+Tested games and their status: [COMPATIBILITY.md](COMPATIBILITY.md).
+
 ## Reporting problems
 Open an issue with the **[Xbox / D3D12 bug report form](https://github.com/PrismFox67/Cemu-UWP/issues/new/choose)**.
 Results from other games (working or not) are welcome too.

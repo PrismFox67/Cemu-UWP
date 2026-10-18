@@ -12,7 +12,7 @@ on every change:
 
 | File | What it is |
 |---|---|
-| `cemu-uwp-x64.zip` | **The Xbox app.** Install it through the Xbox Device Portal. Setup and recommended settings: **[Xbox tester guide](docs/XBOX_TESTERS.md)** |
+| `cemu-uwp-x64.zip` | **The Xbox app.** Install it through the Xbox Device Portal. Setup and recommended settings: **[Xbox tester guide](docs/XBOX_TESTERS.md)**, tested games: **[compatibility list](docs/COMPATIBILITY.md)** |
 | `cemu-d3d12-windows-x64.zip` | Regular Cemu for Windows with the Direct3D 12 renderer added |
 | `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
 | `MK8_FirstPerson.zip` | The Mario Kart 8 first person pack on its own, for other Cemu builds (the downloads above already include it) |
