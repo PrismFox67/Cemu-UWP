@@ -23,6 +23,8 @@ public:
 	void save(pugi::xml_node& node) override;
 	void load(const pugi::xml_node& node) override;
 
+	const DSUProviderSettings& get_provider_settings() const { return m_provider->get_settings(); }
+
 	bool connect() override;
 	bool is_connected() override;
 	

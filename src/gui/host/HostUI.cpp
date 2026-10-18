@@ -927,6 +927,36 @@ namespace
 					ImGui::EndCombo();
 				}
 				ImGui::SameLine();
+				if (info.kind == Kind::GamePad)
+				{
+					// gyro from a phone app (DSU / cemuhook, e.g. "Motion Source" or "DSU Controller"), the Xbox pad has none
+					static char s_motionIp[kPlayerCount][64]{};
+					static bool s_motionIpLoaded[kPlayerCount]{};
+					if (!s_motionIpLoaded[player])
+					{
+						s_motionIpLoaded[player] = true;
+						strncpy(s_motionIp[player], GetMotionServer(player).c_str(), sizeof(s_motionIp[player]) - 1);
+					}
+					ImGui::SetNextItemWidth(columnWidth);
+					const bool entered = ImGui::InputTextWithHint("##motionip", "Phone motion (DSU) IP", s_motionIp[player], sizeof(s_motionIp[player]), ImGuiInputTextFlags_EnterReturnsTrue);
+					if (ImGui::IsItemActivated())
+						HostPlatform::ShowTextInput(true);
+					if (ImGui::IsItemDeactivated())
+						HostPlatform::ShowTextInput(false);
+					ImGui::SameLine();
+					if (ImGui::Button("Use phone motion") || entered)
+					{
+						std::string ip = boost::trim_copy(std::string(s_motionIp[player]));
+						s_deferred.emplace_back([player, ip]() { SetMotionServer(player, ip); });
+					}
+					ImGui::SameLine();
+					if (GetMotionServer(player).empty())
+						ImGui::TextDisabled("off (empty IP + button removes it)");
+					else if (IsMotionServerConnected(player))
+						ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), "phone connected");
+					else
+						ImGui::TextDisabled("waiting for the phone app");
+				}
 				const bool open = s_mappingPlayer == player;
 				if (ImGui::Button(open ? "Hide button mapping" : "Button mapping / Nintendo layout"))
 					s_mappingPlayer = open ? -1 : player;
