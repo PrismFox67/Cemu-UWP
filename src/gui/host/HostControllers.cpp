@@ -230,7 +230,8 @@ HostControllers::PlayerInfo HostControllers::GetPlayer(int player)
 		if (c->api() == InputAPI::XInput && info.pad < 0)
 		{
 			info.pad = std::atoi(c->uuid().c_str());
-			info.deadzone = c->get_settings().axis.deadzone;
+			info.deadzone[0] = c->get_settings().axis.deadzone;
+			info.deadzone[1] = c->get_settings().rotation.deadzone;
 			info.range = c->get_settings().axis.range;
 		}
 		else if (c->api() == InputAPI::Keyboard)
@@ -297,7 +298,7 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 	}
 }
 
-void HostControllers::SetDeadzone(int player, float deadzone)
+void HostControllers::SetDeadzone(int player, int stick, float deadzone)
 {
 	auto emulated = InputManager::instance().get_controller(player);
 	if (!emulated)
@@ -308,7 +309,7 @@ void HostControllers::SetDeadzone(int player, float deadzone)
 		if (c->api() != InputAPI::XInput)
 			continue;
 		auto settings = c->get_settings();
-		settings.axis.deadzone = settings.rotation.deadzone = deadzone;
+		(stick == 0 ? settings.axis : settings.rotation).deadzone = deadzone;
 		c->set_settings(settings);
 	}
 	InputManager::instance().save(player);
@@ -353,6 +354,7 @@ std::vector<HostControllers::MappableButton> HostControllers::GetMappableButtons
 			C::kButtonId_Plus, C::kButtonId_Minus, C::kButtonId_Home, C::kButtonId_Up, C::kButtonId_Down, C::kButtonId_Left, C::kButtonId_Right);
 		result.push_back({ "Left stick click", C::kButtonId_StickL });
 		result.push_back({ "Right stick click", C::kButtonId_StickR });
+		result.push_back({ "Blow into mic (hold)", C::kButtonId_Mic }); // e.g. Super Mario 3D World
 		break;
 	}
 	case Kind::Pro:
@@ -387,6 +389,26 @@ std::string HostControllers::GetButtonMappingName(int player, uint64 id)
 		return {};
 	const XboxButton* xbox = _GetMappedXboxButton(emulated, xinput, id);
 	return xbox ? xbox->name : std::string();
+}
+
+// Nintendo button positions: the Xbox button where the Wii U's A is (Xbox B) is A, and so on. Same as the reset otherwise
+void HostControllers::UseNintendoLayout(int player)
+{
+	const auto emulated = InputManager::instance().get_controller(player);
+	if (!emulated)
+		return;
+	const auto xinput = _GetXInput(emulated);
+	if (!xinput)
+		return;
+	for (const auto& button : GetMappableButtons(_FromEmulatedType(emulated->type())))
+		emulated->delete_mapping(button.id);
+	emulated->set_default_mapping(xinput);
+	emulated->set_mapping(1, xinput, 13); // A on Xbox B
+	emulated->set_mapping(2, xinput, 12); // B on Xbox A
+	emulated->set_mapping(3, xinput, 15); // X on Xbox Y
+	emulated->set_mapping(4, xinput, 14); // Y on Xbox X
+	InputManager::instance().save(player);
+	cemuLog_log(LogType::Force, "Host: player {} uses the Nintendo button layout", player + 1);
 }
 
 void HostControllers::ResetButtonMapping(int player)

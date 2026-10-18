@@ -8,6 +8,7 @@
 #include "gui/host/LauncherRenderer.h"
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/nn_nfp/nn_nfp.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
@@ -47,6 +48,7 @@ namespace
 		kMenuGamePadScreen,
 		kMenuTouchCursor,
 		kMenuShowFPS,
+		kMenuAmiibo,
 		kMenuExitGame,
 		kMenuExit,
 		kMenuCount,
@@ -217,7 +219,18 @@ namespace
 			HostUI::PushMessage("Can't start the game", error);
 			return;
 		}
-		cemuLog_log(LogType::Force, "Host: launching {}", _pathToUtf8(path));
+		{
+			// launch log for tester reports: which title, and which update and DLC the title list found for it
+			const TitleId titleId = CafeSystem::GetForegroundTitleId();
+			uint16 baseVersion = 0, updateVersion = 0, dlcVersion = 0;
+			const bool hasBase = CafeTitleList::HasTitle(titleId, baseVersion);
+			const bool hasUpdate = CafeTitleList::HasTitle((titleId & ~0xFF00000000ull) | 0x0E00000000ull, updateVersion);
+			const bool hasDlc = CafeTitleList::HasTitle((titleId & ~0xFF00000000ull) | 0x0C00000000ull, dlcVersion);
+			cemuLog_log(LogType::Force, "Host: launching {} (title {:016x}, base {}, update {}, DLC {})", _pathToUtf8(path), titleId,
+				hasBase ? fmt::format("v{}", baseVersion) : std::string("not in list"),
+				hasUpdate ? fmt::format("v{}", updateVersion) : std::string("none"),
+				hasDlc ? fmt::format("v{}", dlcVersion) : std::string("none"));
+		}
 
 		// the emulator renders into the same window, the launcher has to give up its swap chain first
 		s_launcher.reset();
@@ -302,8 +315,8 @@ namespace
 			cemuLog_log(LogType::Force, "Host: launcher device lost, recreating");
 			s_launcher.reset();
 		}
-		if (launch)
-			_LaunchGame(*launch);
+		if (launch && !s_pendingLaunch)
+			s_pendingLaunch = *launch; // started at the beginning of the next frame (after the game list scan)
 	}
 
 	// hands the cursor to the emulated GamePad as a touch, the same way a touch on the wx frontend's window does
@@ -330,6 +343,63 @@ namespace
 		s_touchX = std::clamp(s_touchX + speed(pad.rightX) * dt, 0.0f, 1.0f);
 		s_touchY = std::clamp(s_touchY - speed(pad.rightY) * dt, 0.0f, 1.0f);
 		_SetTouch(pad.rightTrigger > 0.5f);
+	}
+
+	// amiibo: .bin dumps in <user data>/amiibo, picked with left/right on the menu item and scanned with A
+	std::mutex s_amiiboMutex;
+	std::vector<fs::path> s_amiiboFiles;
+	int s_amiiboIndex = 0;
+	std::string s_amiiboStatus;
+
+	void _RefreshAmiiboFiles()
+	{
+		std::vector<fs::path> files;
+		std::error_code ec;
+		const fs::path folder = ActiveSettings::GetUserDataPath("amiibo");
+		fs::create_directories(folder, ec);
+		for (fs::directory_iterator it(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+		{
+			std::error_code ecEntry;
+			if (it->is_regular_file(ecEntry) && boost::iequals(_pathToUtf8(it->path().extension()), ".bin"))
+				files.emplace_back(it->path());
+		}
+		std::sort(files.begin(), files.end());
+		std::scoped_lock lock(s_amiiboMutex);
+		s_amiiboFiles = std::move(files);
+		s_amiiboIndex = std::clamp(s_amiiboIndex, 0, std::max(0, (int)s_amiiboFiles.size() - 1));
+	}
+
+	void _StepAmiibo(int step)
+	{
+		std::scoped_lock lock(s_amiiboMutex);
+		if (s_amiiboFiles.empty())
+			return;
+		const int count = (int)s_amiiboFiles.size();
+		s_amiiboIndex = (s_amiiboIndex + step + count) % count;
+		s_amiiboStatus.clear();
+	}
+
+	std::string _AmiiboLabel()
+	{
+		std::scoped_lock lock(s_amiiboMutex);
+		if (s_amiiboFiles.empty())
+			return "Scan amiibo: put .bin files into the amiibo folder";
+		std::string label = fmt::format("Scan amiibo: < {} >", _pathToUtf8(s_amiiboFiles[s_amiiboIndex].stem()));
+		if (!s_amiiboStatus.empty())
+			label += "  " + s_amiiboStatus;
+		return label;
+	}
+
+	void _ScanAmiibo()
+	{
+		std::scoped_lock lock(s_amiiboMutex);
+		if (s_amiiboFiles.empty())
+			return;
+		const fs::path& file = s_amiiboFiles[s_amiiboIndex];
+		uint32 nfcError = 0;
+		const bool ok = nnNfp_touchNfcTagFromFile(file, &nfcError);
+		s_amiiboStatus = ok ? "(scanned)" : fmt::format("(failed, error {})", nfcError);
+		cemuLog_log(LogType::Force, "Host: amiibo {} {}", _pathToUtf8(file), ok ? "scanned" : fmt::format("failed, NFC error {}", nfcError));
 	}
 
 	void _ExecuteMenuItem(int item)
@@ -373,6 +443,9 @@ namespace
 			GetConfigHandle().Save();
 			break;
 		}
+		case kMenuAmiibo:
+			_ScanAmiibo();
+			break;
 		case kMenuExitGame:
 			s_menuOpen = false;
 			s_exitGameRequested = true;
@@ -475,6 +548,8 @@ namespace
 				s_comboConsumed = true;
 				s_menuOpen = !s_menuOpen;
 				s_menuSelection = kMenuResume;
+				if (s_menuOpen)
+					_RefreshAmiiboFiles();
 			}
 		}
 		else
@@ -485,6 +560,8 @@ namespace
 		{
 			s_menuOpen = !s_menuOpen;
 			s_menuSelection = kMenuResume;
+			if (s_menuOpen)
+				_RefreshAmiiboFiles();
 		}
 
 		if (!s_menuOpen)
@@ -499,6 +576,8 @@ namespace
 			s_menuSelection = (s_menuSelection + 1) % kMenuCount;
 		if (pressed & HostGamepad::kB)
 			s_menuOpen = false;
+		if (s_menuSelection == kMenuAmiibo && (pressed & (HostGamepad::kLeft | HostGamepad::kRight)))
+			_StepAmiibo((pressed & HostGamepad::kLeft) ? -1 : 1);
 		if (pressed & HostGamepad::kA)
 			_ExecuteMenuItem(s_menuSelection);
 	}
@@ -581,6 +660,19 @@ bool HostApp::RunFrame()
 	switch (s_state)
 	{
 	case State::Launcher:
+		if (s_pendingLaunch && CafeTitleList::IsScanning())
+		{
+			// updates and DLC found later in the scan would be missing from the game (it then asks for an update),
+			// so a launch waits until the game list scan is done. The launcher keeps drawing meanwhile
+			static auto s_lastWaitLog = std::chrono::steady_clock::time_point{};
+			if (std::chrono::steady_clock::now() - s_lastWaitLog > std::chrono::seconds(5))
+			{
+				s_lastWaitLog = std::chrono::steady_clock::now();
+				cemuLog_log(LogType::Force, "Host: launch of {} waits for the game list scan", _pathToUtf8(*s_pendingLaunch));
+			}
+			_RenderLauncherFrame();
+			break;
+		}
 		if (s_pendingLaunch)
 		{
 			const fs::path path = *s_pendingLaunch;
@@ -736,6 +828,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 		{
 			s_menuOpen = !s_menuOpen;
 			s_menuSelection = kMenuResume;
+			if (s_menuOpen)
+				_RefreshAmiiboFiles();
 		}
 		else if (s_menuOpen)
 		{
@@ -743,6 +837,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 				s_menuSelection = (s_menuSelection + kMenuCount - 1) % kMenuCount;
 			else if (virtualKey == VK_DOWN)
 				s_menuSelection = (s_menuSelection + 1) % kMenuCount;
+			else if ((virtualKey == VK_LEFT || virtualKey == VK_RIGHT) && s_menuSelection == kMenuAmiibo)
+				_StepAmiibo(virtualKey == VK_LEFT ? -1 : 1);
 			else if (virtualKey == VK_RETURN)
 				_ExecuteMenuItem(s_menuSelection);
 			else if (virtualKey == VK_ESCAPE)
@@ -870,6 +966,7 @@ void HostApp::DrawInGameMenu()
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
+			_AmiiboLabel(),
 			"Exit to game list",
 			"Quit Cemu",
 		};

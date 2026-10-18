@@ -32,10 +32,44 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **Anisotropic Filtering: 16x.** It costs almost nothing.
 - Leave the rest at default. Optional: Enhancements → Debanding, and Remove MKTV Watermark.
 
-**Controllers tab**: controller 1 is the GamePad, controllers 2-4 are Pro Controllers. Use **Stick deadzone** to fix stick drift.
+**Controllers tab**: controller 1 is the GamePad, controllers 2-4 are Pro Controllers.
+- **Stick drift**: each player has a **Left/Right stick deadzone** (0-90 %). The line below shows how far each stick is
+  off center right now; with the stick let go, pick a deadzone a bit above that number.
+- **Nintendo button positions**: open **Button mapping / Nintendo layout** for the player and press
+  **Nintendo layout (A<->B, X<->Y)**. **Reset to Xbox layout** goes back. Single buttons can be remapped there too.
+- **Blow into the microphone** (Super Mario 3D World and others): under Button mapping for the GamePad player, map
+  **Blow into mic (hold)** to a button you don't need (for example the right stick click); holding it blows.
 
 **In-game menu**: click both sticks, or hold View + Menu for 1 s. It has: switch to the GamePad screen, a **touch cursor**
 (right stick moves it, RT taps, for games like Super Mario Maker), the FPS counter, and exit to the game list.
+**amiibo**: upload amiibo dumps (`.bin`) to `LocalState/amiibo` with the Device Portal. In the in-game menu, pick one on
+**Scan amiibo** with left/right on the D-pad and press A when the game asks for an amiibo.
+
+## Mods and translations
+Mods that replace game files (translations, texture or model swaps) work as graphic packs. A pack is a folder with a
+`rules.txt` and a `content` folder that mirrors the game's `content` folder; only the files you put there are replaced.
+
+```
+MyTranslation/
+  rules.txt
+  content/
+    Message/...        (same path and name as the file in the game's content folder)
+```
+
+A minimal `rules.txt` (the title IDs are the game's, all regions you want it for, comma separated):
+
+```
+[Definition]
+titleIds = 000500001010ec00,000500001010ed00,000500001010eb00
+name = My translation
+path = "Mario Kart 8/Mods/My translation"
+description = Replaces the game text
+version = 6
+```
+
+To add it: in the Device Portal, **File explorer** → **LocalAppData** → the **CemuUWP** package → **LocalState** →
+**graphicPacks**, create the pack's folders and upload the files. Restart Cemu, then enable the pack under **Graphic packs**
+for that game. It applies the next time the game starts.
 
 ## What to expect
 - **First launch of a game is slow.** Every shader is compiled once, and the game starts after a few minutes on the loading

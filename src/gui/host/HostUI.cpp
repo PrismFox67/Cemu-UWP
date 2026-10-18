@@ -785,7 +785,10 @@ namespace
 			}
 			ImGui::EndTable();
 		}
-		if (ImGui::Button("Reset buttons to default"))
+		if (ImGui::Button("Nintendo layout (A<->B, X<->Y)"))
+			s_deferred.emplace_back([player]() { UseNintendoLayout(player); });
+		ImGui::SameLine();
+		if (ImGui::Button("Reset to Xbox layout"))
 			s_deferred.emplace_back([player]() { ResetButtonMapping(player); });
 		ImGui::Unindent();
 	}
@@ -860,20 +863,43 @@ namespace
 			}
 			if (info.kind != Kind::None && info.pad >= 0)
 			{
-				// stick drift: a worn stick that doesn't return to the center moves the player, a larger deadzone hides it
-				const int percent = (int)std::lround(info.deadzone * 100.0f);
-				ImGui::SetNextItemWidth(columnWidth);
-				if (ImGui::BeginCombo("##deadzone", fmt::format("Stick deadzone {}%", percent).c_str()))
+				// stick drift: a worn stick that doesn't return to the center moves the player, a larger deadzone hides it.
+				// The live readout shows how far each stick is off center so the deadzone can be set just above the drift
+				const HostGamepad::State pad = HostGamepad::PollPad(info.pad);
+				for (int stick = 0; stick < 2; stick++)
 				{
-					for (int p = 0; p <= 50; p += 5)
+					const char* stickName = stick == 0 ? "Left" : "Right";
+					const int percent = (int)std::lround(info.deadzone[stick] * 100.0f);
+					if (stick > 0)
+						ImGui::SameLine();
+					ImGui::PushID(stick);
+					ImGui::SetNextItemWidth(columnWidth);
+					if (ImGui::BeginCombo("##deadzone", fmt::format("{} stick deadzone {}%", stickName, percent).c_str()))
 					{
-						if (ImGui::Selectable(fmt::format("{}%{}", p, p == 15 ? " (default)" : p >= 25 ? " (stick drift)" : "").c_str(), p == percent))
-							s_deferred.emplace_back([player, p]() { SetDeadzone(player, p / 100.0f); });
+						for (int p = 0; p <= 90; p += 5)
+						{
+							if (ImGui::Selectable(fmt::format("{}%{}", p, p == 15 ? " (default)" : p >= 25 ? " (stick drift)" : "").c_str(), p == percent))
+								s_deferred.emplace_back([player, stick, p]() { SetDeadzone(player, stick, p / 100.0f); });
+						}
+						ImGui::EndCombo();
 					}
-					ImGui::EndCombo();
+					ImGui::PopID();
+				}
+				for (int stick = 0; stick < 2; stick++)
+				{
+					const float x = stick == 0 ? pad.rawLeftX : pad.rawRightX;
+					const float y = stick == 0 ? pad.rawLeftY : pad.rawRightY;
+					const float offCenter = std::min(1.0f, std::sqrt(x * x + y * y));
+					const bool drifting = offCenter > info.deadzone[stick];
+					if (stick > 0)
+						ImGui::SameLine(0.0f, 40.0f * s_scale);
+					const std::string text = fmt::format("{} stick now {}% off center{}", stick == 0 ? "Left" : "Right", (int)std::lround(offCenter * 100.0f), drifting ? " (moves)" : "");
+					if (drifting)
+						ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", text.c_str());
+					else
+						ImGui::TextDisabled("%s", text.c_str());
 				}
 				// worn sticks no longer reach the edge, a larger range gets full tilt earlier
-				ImGui::SameLine();
 				const int rangePercent = (int)std::lround(info.range * 100.0f);
 				ImGui::SetNextItemWidth(columnWidth);
 				if (ImGui::BeginCombo("##range", fmt::format("Stick range {}%", rangePercent).c_str()))
@@ -887,7 +913,7 @@ namespace
 				}
 				ImGui::SameLine();
 				const bool open = s_mappingPlayer == player;
-				if (ImGui::Button(open ? "Hide button mapping" : "Button mapping"))
+				if (ImGui::Button(open ? "Hide button mapping" : "Button mapping / Nintendo layout"))
 					s_mappingPlayer = open ? -1 : player;
 				if (s_mappingPlayer == player)
 					_DrawButtonMapping(player, info, columnWidth);
@@ -896,7 +922,7 @@ namespace
 			ImGui::PopID();
 		}
 		ImGui::Spacing();
-		ImGui::TextDisabled("Buttons use the Xbox button with the same name (Xbox A = Wii U A) unless changed under Button mapping.");
+		ImGui::TextDisabled("Buttons use the Xbox button with the same name (Xbox A = Wii U A). For the Nintendo button positions or own mappings open Button mapping.");
 	}
 
 	void _DrawAboutTab()

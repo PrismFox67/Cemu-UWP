@@ -30,6 +30,8 @@ namespace HostGamepad
 		uint32 buttons = 0; // held
 		float leftX = 0.0f, leftY = 0.0f; // -1..1, y up
 		float rightX = 0.0f, rightY = 0.0f;
+		float rawLeftX = 0.0f, rawLeftY = 0.0f; // -1..1 without any deadzone, for the stick drift readout
+		float rawRightX = 0.0f, rawRightY = 0.0f;
 		float leftTrigger = 0.0f, rightTrigger = 0.0f;
 	};
 

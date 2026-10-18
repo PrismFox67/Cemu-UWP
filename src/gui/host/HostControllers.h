@@ -24,7 +24,7 @@ namespace HostControllers
 		int pad = -1; // XInput index, -1 if no controller is assigned
 		bool padConnected = false;
 		bool hasKeyboard = false;
-		float deadzone = 0.15f; // stick deadzone of the controller (0..1)
+		float deadzone[2] = {0.15f, 0.15f}; // deadzone of the left and right stick (0..1)
 		float range = 1.0f; // stick range, above 1 reaches full tilt before the stick is all the way out
 	};
 
@@ -37,8 +37,8 @@ namespace HostControllers
 
 	PlayerInfo GetPlayer(int player);
 	void SetPlayer(int player, Kind kind, int pad);
-	// deadzone of both sticks, raise it for controllers with stick drift
-	void SetDeadzone(int player, float deadzone);
+	// deadzone of one stick (0 = left, 1 = right), raise it for controllers with stick drift
+	void SetDeadzone(int player, int stick, float deadzone);
 	// stick range of both sticks, raise it for worn sticks that no longer reach the edge
 	void SetStickRange(int player, float range);
 
@@ -51,6 +51,7 @@ namespace HostControllers
 	std::vector<MappableButton> GetMappableButtons(Kind kind);
 	std::string GetButtonMappingName(int player, uint64 id); // Xbox button name, empty if unmapped
 	void ResetButtonMapping(int player);
+	void UseNintendoLayout(int player); // A<->B and X<->Y swapped, the button positions of a Nintendo controller
 
 	// capture: the next button pressed on the player's controller is mapped to the Wii U button. Swaps with the Wii U
 	// button that had it before. Cancelled after a few seconds without a press. UpdateCapture() has to be called every

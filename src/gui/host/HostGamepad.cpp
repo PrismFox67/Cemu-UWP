@@ -77,6 +77,10 @@ HostGamepad::State HostGamepad::PollPad(int index)
 		result.leftY = _NormalizeStick(xs.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
 		result.rightX = _NormalizeStick(xs.Gamepad.sThumbRX, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
 		result.rightY = _NormalizeStick(xs.Gamepad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+		result.rawLeftX = _NormalizeStick(xs.Gamepad.sThumbLX, 0);
+		result.rawLeftY = _NormalizeStick(xs.Gamepad.sThumbLY, 0);
+		result.rawRightX = _NormalizeStick(xs.Gamepad.sThumbRX, 0);
+		result.rawRightY = _NormalizeStick(xs.Gamepad.sThumbRY, 0);
 	}
 	return result;
 }
