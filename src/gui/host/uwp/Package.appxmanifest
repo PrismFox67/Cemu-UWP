@@ -53,6 +53,8 @@
 
   <Capabilities>
     <Capability Name="internetClient" />
+    <!-- LAN: motion from a phone app over DSU (UDP 26760) -->
+    <Capability Name="privateNetworkClientServer" />
     <!-- the PowerPC recompiler generates code at runtime -->
     <Capability Name="codeGeneration" />
     <uap:Capability Name="removableStorage" />
