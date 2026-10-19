@@ -220,17 +220,29 @@ fmadds f7, f3, f1, f7
 lfs f3, 8(r10)
 fmadds f7, f3, f2, f7
 # the game camera dips for a moment when the driver leans to throw or hops into a drift (its look-at follows the
-# driver, #15): b follows a smoothed copy downwards (_fpPitchS += rate * (b - _fpPitchS)) and goes up at once
+# driver, #15): a downward change is ignored for fpPitchHold frames (throw lean, backward throw, drift hop all end
+# sooner), then b follows a smoothed copy (_fpPitchS += rate * (b - _fpPitchS)) - downhill slopes; up goes at once
 lis r9, _fpPitchS@ha
 addi r9, r9, _fpPitchS@l
 lfs f8, 0(r9)
 lfs f5, 4(r9)
+fcmpu cr0, f7, f8
+bge _fpPitchRise
+lwz r0, 8(r9)
+addi r0, r0, 1
+stw r0, 8(r9)
+cmpwi r0, $fpPitchHold
+blt _fpPitchKeep
 fsubs f4, f7, f8
 fmadds f8, f4, f5, f8
 stfs f8, 0(r9)
-fcmpu cr0, f7, f8
-bge _fpPitchUp
+_fpPitchKeep:
 fmr f7, f8
+b _fpPitchUp
+_fpPitchRise:
+stfs f7, 0(r9)
+li r0, 0
+stw r0, 8(r9)
 _fpPitchUp:
 fsubs f7, f7, f6
 lfs f3, 24(r10)
@@ -405,6 +417,7 @@ blr
 _fpPitchS:
 .float 0.0
 .float $fpPitchRate
+.int 0
 _fpNormC:
 .float 0.5
 .float 1.5

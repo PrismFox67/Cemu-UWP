@@ -13,6 +13,7 @@ $fpHideArm = 0
 $fpLockDir = 0
 $fpLockTilt = -5.5
 $fpPitchRate = 0.04
+$fpPitchHold = 45
 $fpForward = -0.02
 $fpHeight = -9.0
 $fpPitch = 0.75
