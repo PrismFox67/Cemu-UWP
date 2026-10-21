@@ -114,4 +114,5 @@ private:
 	// how long draws waited for async pipelines in the current window (see GetOrCreate)
 	std::chrono::steady_clock::time_point m_waitWindowStart{};
 	std::chrono::milliseconds m_waitedInWindow{ 0 };
+	std::chrono::steady_clock::time_point m_lastUsageSave{};
 };

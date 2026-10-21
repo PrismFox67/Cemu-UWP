@@ -652,6 +652,7 @@ public:
 		while (scenes.read((char*)pair, sizeof(pair)))
 			if (m_sceneTags.insert({ pair[0], pair[1] }).second)
 				m_scenes[pair[0]].push_back(pair[1]);
+		_LoadUsage();
 	}
 
 	static uint64 Hash(const std::vector<uint8>& record) { return _Hash(record); }
@@ -684,6 +685,53 @@ public:
 	}
 
 	const std::vector<std::vector<uint8>>& GetRecords() const { return m_records; }
+
+	// usage history across sessions, like danprice142/Cemu-UWP's pipeline recipe usage (MPL-2.0): which session last
+	// drew with a pipeline and in how many sessions it was used. Records unused for a long time aren't created on the
+	// loading screen any more (the Xbox recreates every pipeline each session, ~2.5 s each), the most used come first
+	struct Usage
+	{
+		uint32 lastSession = 0;
+		uint32 sessionsUsed = 0;
+	};
+	uint32 GetSession() const { return m_session; }
+	bool HasUsageHistory() const { return m_usageHistoryFound; }
+	Usage GetUsage(const std::vector<uint8>& record) const
+	{
+		const auto it = m_usage.find(_Hash(record));
+		// no entry: recorded before usage was tracked, or new; counts as used now so it gets the full grace period
+		return it != m_usage.end() ? it->second : Usage{ m_session, 0 };
+	}
+
+	// GPU thread: a draw used this pipeline
+	void MarkUsed(const std::vector<uint8>& record)
+	{
+		Usage& usage = m_usage[_Hash(record)];
+		if (usage.lastSession == m_session)
+			return;
+		usage.lastSession = m_session;
+		usage.sessionsUsed++;
+		m_usageDirty = true;
+	}
+
+	void SaveUsage()
+	{
+		if (!m_usageDirty || m_path.empty())
+			return;
+		m_usageDirty = false;
+		std::vector<uint8> data;
+		auto put = [&](const void* p, size_t n) { data.insert(data.end(), (const uint8*)p, (const uint8*)p + n); };
+		const uint32 header[4] = { kUsageMagic, kUsageVersion, m_session, (uint32)m_usage.size() };
+		put(header, sizeof(header));
+		for (const auto& [hash, usage] : m_usage)
+		{
+			put(&hash, sizeof(hash));
+			put(&usage.lastSession, sizeof(uint32));
+			put(&usage.sessionsUsed, sizeof(uint32));
+		}
+		// a torn write fails validation on the next load and costs one session of history
+		std::ofstream(_UsagePath(), std::ios::binary | std::ios::trunc).write((const char*)data.data(), (std::streamsize)data.size());
+	}
 
 	bool IsStartup(const std::vector<uint8>& record) const { return m_startup.count(_Hash(record)) != 0; }
 	size_t GetStartupCount() const { return m_startup.size(); }
@@ -729,6 +777,8 @@ public:
 private:
 	static constexpr uint32 kMagic = 0x4c503344; // 'D3PL'
 	static constexpr uint32 kVersion = 1;
+	static constexpr uint32 kUsageMagic = 0x55503344; // 'D3PU'
+	static constexpr uint32 kUsageVersion = 1;
 
 	static uint64 _Hash(const std::vector<uint8>& data)
 	{
@@ -743,6 +793,33 @@ private:
 		fs::path p = m_path; // <titleId>_d3d12pipelines.bin -> <titleId>_d3d12pipelines.startup.bin
 		p.replace_extension(".startup.bin");
 		return p;
+	}
+
+	fs::path _UsagePath() const
+	{
+		fs::path p = m_path; // <titleId>_d3d12pipelines.usage.bin
+		p.replace_extension(".usage.bin");
+		return p;
+	}
+
+	void _LoadUsage()
+	{
+		m_session = 1;
+		std::ifstream file(_UsagePath(), std::ios::binary);
+		uint32 header[4]{};
+		if (!file.read((char*)header, sizeof(header)) || header[0] != kUsageMagic || header[1] != kUsageVersion || header[3] > 1000000)
+			return;
+		m_session = header[2] + 1;
+		m_usageHistoryFound = true;
+		for (uint32 i = 0; i < header[3]; i++)
+		{
+			uint64 hash;
+			Usage usage;
+			if (!file.read((char*)&hash, sizeof(hash)) || !file.read((char*)&usage.lastSession, sizeof(uint32)) || !file.read((char*)&usage.sessionsUsed, sizeof(uint32)))
+				break;
+			m_usage[hash] = usage;
+		}
+		m_usageDirty = true; // the session counter moved on
 	}
 
 	fs::path _ScenePath() const
@@ -763,6 +840,10 @@ private:
 	std::unordered_set<uint64> m_known;
 	std::unordered_set<uint64> m_startup;
 	std::vector<std::vector<uint8>> m_records; // loaded from the file, used once for preloading
+	std::unordered_map<uint64, Usage> m_usage;
+	uint32 m_session = 1;
+	bool m_usageHistoryFound = false;
+	bool m_usageDirty = false;
 };
 
 class D3D12PipelineCompileQueue
@@ -998,6 +1079,8 @@ D3D12PipelineCache::~D3D12PipelineCache()
 
 void D3D12PipelineCache::SaveDiskCache()
 {
+	if (m_recordFile)
+		m_recordFile->SaveUsage();
 	if (m_diskCache)
 		m_diskCache->Save();
 }
@@ -1071,6 +1154,22 @@ uint32 D3D12PipelineCache::BeginPreload(uint64 titleId, bool startupOnly)
 		return 0;
 	const auto& records = m_recordFile->GetRecords();
 	m_preload.order.reserve(records.size());
+	// records no session used for kSkipAfterSessions sessions aren't created any more (a draw that needs one still
+	// creates it, which counts as a use again)
+	constexpr uint32 kSkipAfterSessions = 20;
+	const uint32 session = m_recordFile->GetSession();
+	std::vector<D3D12PipelineRecordFile::Usage> usage(records.size());
+	std::vector<bool> stale(records.size(), false);
+	uint32 staleCount = 0;
+	for (uint32 i = 0; i < (uint32)records.size(); i++)
+	{
+		usage[i] = m_recordFile->GetUsage(records[i]);
+		stale[i] = session - usage[i].lastSession >= kSkipAfterSessions;
+		staleCount += stale[i] ? 1 : 0;
+	}
+	if (staleCount)
+		cemuLog_log(LogType::Force, "D3D12: {} recorded pipelines weren't used in the last {} sessions, they aren't precompiled", staleCount, kSkipAfterSessions);
+	auto byUse = [&](uint32 a, uint32 b) { return usage[a].sessionsUsed > usage[b].sessionsUsed; };
 	if (startupOnly)
 	{
 		// quick start: the startup set first (what sessions needed right after loading), the rest in the background.
@@ -1079,18 +1178,22 @@ uint32 D3D12PipelineCache::BeginPreload(uint64 titleId, bool startupOnly)
 		constexpr uint32 kFallbackStartupCount = 400;
 		const bool haveStartup = m_recordFile->GetStartupCount() > 0;
 		for (uint32 i = 0; i < (uint32)records.size(); i++)
-			if (haveStartup ? m_recordFile->IsStartup(records[i]) : i < kFallbackStartupCount)
+			if (!stale[i] && (haveStartup ? m_recordFile->IsStartup(records[i]) : i < kFallbackStartupCount))
 				m_preload.order.push_back(i);
+		std::stable_sort(m_preload.order.begin(), m_preload.order.end(), byUse);
 		m_preload.limit = m_preload.order.size();
 		for (uint32 i = 0; i < (uint32)records.size(); i++)
-			if (haveStartup ? !m_recordFile->IsStartup(records[i]) : i >= kFallbackStartupCount)
+			if (!stale[i] && (haveStartup ? !m_recordFile->IsStartup(records[i]) : i >= kFallbackStartupCount))
 				m_preload.order.push_back(i);
+		std::stable_sort(m_preload.order.begin() + m_preload.limit, m_preload.order.end(), byUse);
 		cemuLog_log(LogType::Force, "D3D12: Quick start: creating {} of {} recorded pipelines on the loading screen{}", m_preload.limit, records.size(), haveStartup ? "" : " (no startup set yet, using the oldest)");
 	}
 	else
 	{
 		for (uint32 i = 0; i < (uint32)records.size(); i++)
-			m_preload.order.push_back(i);
+			if (!stale[i])
+				m_preload.order.push_back(i);
+		std::stable_sort(m_preload.order.begin(), m_preload.order.end(), byUse);
 		m_preload.limit = m_preload.order.size();
 	}
 	return (uint32)m_preload.limit;
@@ -1104,6 +1207,11 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 	// background (once per game frame) keep it to two at a time, so the emulator keeps its CPU cores (menus would stutter
 	// otherwise) and a pipeline a draw waits for isn't stuck behind preloads
 	const uint32 kMaxInFlight = blocking ? 32 : 2;
+	if (!blocking && LatteTC_GetMemoryPressure() >= 1)
+	{
+		finishedCount = *m_preload.finished + m_preload.skipped;
+		return true; // paused until memory use is back down
+	}
 	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(blocking ? 20 : 2);
 	while (m_preload.next < m_preload.limit && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
 	{
@@ -1204,6 +1312,12 @@ void D3D12PipelineCache::TickScenePreload()
 void D3D12PipelineCache::TickBackgroundPreload()
 {
 	TickScenePreload();
+	// the app is often closed without a clean shutdown (Xbox), so the usage history is written every 30 s
+	if (m_recordFile && std::chrono::steady_clock::now() - m_lastUsageSave >= std::chrono::seconds(30))
+	{
+		m_lastUsageSave = std::chrono::steady_clock::now();
+		m_recordFile->SaveUsage();
+	}
 	if (!m_backgroundPreload)
 		return;
 	uint32 finished = 0;
@@ -1369,6 +1483,7 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	{
 		const std::vector<uint8> record = job->SerializeRecord();
 		m_recordFile->Add(record);
+		m_recordFile->MarkUsed(record);
 		if (m_scene)
 			m_recordFile->TagScene(m_scene, D3D12PipelineRecordFile::Hash(record));
 		if (std::chrono::steady_clock::now() < m_startupWindowEnd)
