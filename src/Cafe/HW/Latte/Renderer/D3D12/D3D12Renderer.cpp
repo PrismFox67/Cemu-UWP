@@ -8,6 +8,8 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteTexture.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/CachedFBOD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12TextureReadback.h"
@@ -666,6 +668,57 @@ void D3D12Renderer::FlushBarriers()
 }
 
 /* --- object lifetime notifications --- */
+
+// Texture allocation recovery, adapted from danprice142/Cemu-UWP (MPL-2.0, D3D12Renderer::EvictUwpTextureCache and
+// RecoverTextureAllocation): waits for the GPU, releases what it held, deletes textures the game hasn't used for a few
+// frames (cold and large ones first, the cache recreates them from guest memory when needed again) and returns freed heap
+// pages to the Xbox's commit budget. Before, a failed allocation left the texture without a resource (drawn black)
+bool D3D12Renderer::RecoverTextureMemory(uint64 requestedBytes)
+{
+	struct Candidate
+	{
+		LatteTexture* texture;
+		uint64 bytes;
+		uint32 ageFrames;
+	};
+	WaitForIdle();
+	m_deferredReleaser.ReleaseAll();
+	std::vector<Candidate> candidates;
+	const uint32 currentFrame = LatteGPUState.frameCounter;
+	for (LatteTexture* texture : LatteTC_GetDeleteableTextures())
+	{
+		const uint32 age = currentFrame - texture->lastAccessFrameCount;
+		if (age < 3)
+			continue;
+		const D3D12_RESOURCE_DESC& desc = static_cast<LatteTextureD3D12*>(texture)->GetDesc();
+		const uint64 bytes = static_cast<LatteTextureD3D12*>(texture)->GetResource() ? m_device->GetResourceAllocationInfo(0, 1, &desc).SizeInBytes : 0;
+		candidates.push_back({ texture, bytes, age });
+	}
+	std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+		const bool aCold = a.ageFrames >= 120, bCold = b.ageFrames >= 120;
+		if (aCold != bCold)
+			return aCold;
+		if (a.bytes != b.bytes)
+			return a.bytes > b.bytes;
+		return a.ageFrames > b.ageFrames;
+	});
+	const uint64 target = std::max<uint64>(requestedBytes * 2, 128ull << 20);
+	uint64 freed = 0;
+	uint32 count = 0;
+	for (const Candidate& c : candidates)
+	{
+		if (count >= 32 || freed >= target)
+			break;
+		LatteTexture_Delete(c.texture);
+		freed += c.bytes;
+		count++;
+	}
+	WaitForIdle();
+	m_deferredReleaser.ReleaseAll();
+	HeapCompact(GetProcessHeap(), 0);
+	cemuLog_log(LogType::Force, "D3D12: texture allocation of {} MB failed, deleted {} unused texture(s) ({} MB) to retry", requestedBytes >> 20, count, freed >> 20);
+	return count != 0;
+}
 
 void D3D12Renderer::NotifyTextureRelease(LatteTextureD3D12* texture)
 {

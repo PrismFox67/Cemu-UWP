@@ -190,6 +190,8 @@ public:
 
 	// called from destructors so cached references can be dropped
 	void NotifyTextureRelease(LatteTextureD3D12* texture);
+	// a texture allocation failed with E_OUTOFMEMORY: frees memory so it can be retried. Returns false if nothing was freed
+	bool RecoverTextureMemory(uint64 requestedBytes);
 	// #79 diagnostic: compressed 2D array textures that are sampled (MK8's font). Writing <user>/dump_textures.txt makes the
 	// renderer save their slices (raw blocks, mip 0) to <user>/texdump/ and delete the marker
 	void RegisterArrayTextureForDump(LatteTextureD3D12* texture) { m_dumpCandidates.insert(texture); }
