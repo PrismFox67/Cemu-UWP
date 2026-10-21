@@ -7,6 +7,9 @@ the Cemu team; please report problems with this build here, not to them.
 On a Series X it runs **Mario Kart 8 at 1440p or 4K, locked at 60 FPS**, with 4 local players.
 
 ### Download
+![Xbox app downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FPrismFox67%2FCemu-UWP%2Freleases%2Fdownload%2Fdownload-stats%2Ftotals.json&query=%24.xbox&label=Xbox%20app%20downloads&color=107c10&cacheSeconds=3600)
+(all builds since 2026-10-19; the number is kept across builds, GitHub's own counter resets on every new build)
+
 Everything is on the **[ci-latest pre-release](https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest)**, rebuilt
 on every change:
 
