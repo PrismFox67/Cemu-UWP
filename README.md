@@ -101,3 +101,6 @@ If you want to contribute you can take a look at our [contribution guidelines](/
 
 ## License
 Cemu is licensed under [Mozilla Public License 2.0](/LICENSE.txt). Exempt from this are all files in the dependencies directory for which the licenses of the original code apply as well as some individual files in the src folder, as specified in those file headers respectively.
+
+## Credits (UWP / Xbox port)
+Parts of the Xbox frontend and the D3D12 renderer are adapted from [danprice142/Cemu-UWP](https://github.com/danprice142/Cemu-UWP) (MPL-2.0): the title installer (`src/gui/host/HostTitleInstaller.*`) and the texture allocation recovery in the D3D12 renderer. The adapted code is marked in the files.

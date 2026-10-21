@@ -5,6 +5,7 @@
 #include "gui/host/HostGraphicPacks.h"
 #include "gui/host/HostIcons.h"
 #include "gui/host/HostTools.h"
+#include "gui/host/HostTitleInstaller.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -708,12 +709,105 @@ namespace
 		ImGui::TextDisabled("Tip: for Mario Kart 8 set Graphic packs > TV Resolution to 2560x1440.");
 	}
 
+	// install a game, update or DLC folder into the mlc (games that ask for a system or title update, e.g. BOTW)
+	std::optional<HostTitleInstaller::InstallPlan> s_installPlan;
+	std::string s_installError;
+	bool s_installRefreshPending = false;
+
+	void _DrawInstallSection()
+	{
+		using namespace HostTitleInstaller;
+		const Snapshot snapshot = GetSnapshot();
+		if (snapshot.state == State::Installing || snapshot.state == State::Cancelling)
+		{
+			const float progress = snapshot.requiredBytes ? (float)((double)snapshot.copiedBytes / (double)snapshot.requiredBytes) : 0.0f;
+			ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), fmt::format("{} / {} files", snapshot.copiedFiles, snapshot.fileCount).c_str());
+			ImGui::TextDisabled("%s", snapshot.currentFile.c_str());
+			if (snapshot.state == State::Installing && ImGui::Button("Cancel install"))
+				RequestCancel();
+			s_installRefreshPending = true;
+			return;
+		}
+		if (s_installRefreshPending)
+		{
+			// finished: the new content shows in the game list (update/DLC versions on the cards)
+			s_installRefreshPending = false;
+			CafeTitleList::Refresh();
+			HostUI::RequestGameListRefresh();
+		}
+		if (snapshot.state != State::Idle && !snapshot.message.empty())
+			ImGui::TextColored(snapshot.state == State::Succeeded ? ImVec4(0.55f, 0.9f, 0.55f, 1.0f) : ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", snapshot.message.c_str());
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+		// CEMU_HOST_TEST_INSTALL=<folder>: as if that folder was picked (automated test on a PC, the dialog can't be driven)
+		static bool s_testChecked = false;
+		if (!s_testChecked)
+		{
+			s_testChecked = true;
+			char* v = nullptr;
+			size_t n = 0;
+			if (_dupenv_s(&v, &n, "CEMU_HOST_TEST_INSTALL") == 0 && v)
+			{
+				PlanResult result = BuildPlan(_utf8ToPath(v), ActiveSettings::GetMlcPath());
+				s_installPlan = result.plan;
+				s_installError = result.error;
+				free(v);
+			}
+		}
+#endif
+		if (!s_installPlan)
+		{
+			ImGui::TextWrapped("Copies a game, update or DLC folder (the one with code, content and meta in it) into Cemu's mlc folder, where games find their updates and DLC.");
+			if (ImGui::Button("Install update / DLC from folder..."))
+			{
+				HostPlatform::PickFolder([](const fs::path& path) {
+					if (path.empty())
+						return;
+					PlanResult result = BuildPlan(path, ActiveSettings::GetMlcPath());
+					s_installPlan = result.plan;
+					s_installError = result.error;
+				});
+			}
+			if (!s_installError.empty())
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", s_installError.c_str());
+			return;
+		}
+		const InstallPlan& plan = *s_installPlan;
+		ImGui::Text("%s: %s", std::string(ContentTypeName(plan.type)).c_str(), plan.titleName.c_str());
+		ImGui::TextDisabled("Title %016llx  v%u  %.1f MB, %llu files", (unsigned long long)plan.titleId, plan.version, plan.requiredBytes / 1048576.0, (unsigned long long)plan.fileCount);
+		const char* existing = nullptr;
+		switch (plan.existingState)
+		{
+		case ExistingState::Upgrade: existing = "Replaces the installed older version"; break;
+		case ExistingState::SameVersion: existing = "This version is already installed, it will be replaced"; break;
+		case ExistingState::Downgrade: existing = "A NEWER version is installed, this replaces it with an older one"; break;
+		case ExistingState::DifferentType: existing = "Something else is installed at this title ID, it will be replaced"; break;
+		case ExistingState::Invalid: existing = "A damaged install is at this title ID, it will be replaced"; break;
+		default: break;
+		}
+		if (existing)
+			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.45f, 1.0f), "%s (installed: v%u)", existing, plan.existingVersion);
+		if (plan.availableBytes && plan.availableBytes < plan.requiredBytes)
+			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "Not enough space: %.1f MB free", plan.availableBytes / 1048576.0);
+		ImGui::TextDisabled("To %s", _pathToUtf8(plan.targetPath).c_str());
+		if (ImGui::Button("Install"))
+		{
+			Start(plan);
+			s_installPlan.reset();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel"))
+			s_installPlan.reset();
+	}
+
 	void _DrawSettingsTab()
 	{
 		auto& config = GetConfig();
 		bool changed = false;
 		ImGui::SeparatorText("Game folders");
 		_DrawGameFolderControls();
+
+		ImGui::SeparatorText("Install updates and DLC");
+		_DrawInstallSection();
 
 		ImGui::SeparatorText("Graphics");
 		bool vsync = config.vsync.GetValue() != 0;
@@ -1166,9 +1260,9 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		{
 			// LB/RB switch tabs (not while pairing, every button press belongs to the pairing then)
 			const bool pairing = HostControllers::IsPairing();
-			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false))
+			if (!pairing && (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) || ImGui::IsKeyPressed(ImGuiKey_PageUp, false)))
 				s_tab = (s_tab + kTabCount - 1) % kTabCount;
-			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false))
+			if (!pairing && (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_PageDown, false)))
 				s_tab = (s_tab + 1) % kTabCount;
 			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
 				s_tab = kTabSettings;
@@ -1189,7 +1283,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 					ImGui::PopStyleColor();
 			}
 			ImGui::SameLine();
-			ImGui::TextDisabled("(LB / RB)");
+			ImGui::TextDisabled("(LB / RB, Page Up / Down)");
 			ImGui::Separator();
 
 			if (s_tab == kTabGames)
