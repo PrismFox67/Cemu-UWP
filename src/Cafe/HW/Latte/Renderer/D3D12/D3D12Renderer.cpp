@@ -18,6 +18,7 @@
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "config/CemuConfig.h"
 #include "config/ActiveSettings.h"
+#include <fstream>
 #include "WindowSystem.h"
 
 #include <imgui.h>
@@ -668,6 +669,7 @@ void D3D12Renderer::FlushBarriers()
 
 void D3D12Renderer::NotifyTextureRelease(LatteTextureD3D12* texture)
 {
+	m_dumpCandidates.erase(texture);
 	// drop pending barriers that reference the texture, the resource will be released once the GPU is done with it
 	// (barriers that were already recorded keep the resource alive through the deferred releaser)
 	m_pendingBarriers.erase(std::remove_if(m_pendingBarriers.begin(), m_pendingBarriers.end(), [texture](const D3D12_RESOURCE_BARRIER& b) {
@@ -1223,8 +1225,65 @@ void D3D12Renderer::TryEnableImplicitShaderCache()
 	}
 }
 
+void D3D12Renderer::DumpArrayTexturesIfRequested()
+{
+	if (++m_dumpCheckFrames < 120)
+		return;
+	m_dumpCheckFrames = 0;
+	const fs::path marker = ActiveSettings::GetUserDataPath("dump_textures.txt");
+	std::error_code ec;
+	if (!fs::exists(marker, ec))
+		return;
+	fs::remove(marker, ec);
+	const fs::path folder = ActiveSettings::GetUserDataPath("texdump");
+	fs::create_directories(folder, ec);
+	cemuLog_log(LogType::Force, "D3D12: dumping {} compressed array texture(s) to {}", m_dumpCandidates.size(), _pathToUtf8(folder));
+	for (LatteTextureD3D12* tex : m_dumpCandidates)
+	{
+		const D3D12_RESOURCE_DESC& desc = tex->GetDesc();
+		for (uint32 slice = 0; slice < tex->GetArraySize(); slice++)
+		{
+			const uint32 sub = tex->GetSubresourceIndex(0, slice, 0);
+			D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+			UINT numRows;
+			UINT64 rowSize, totalBytes;
+			m_device->GetCopyableFootprints(&desc, sub, 1, 0, &layout, &numRows, &rowSize, &totalBytes);
+			ComPtr<ID3D12Resource> buffer;
+			D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_READBACK);
+			D3D12_RESOURCE_DESC bufferDesc = D3D12_BufferDesc(totalBytes);
+			if (FAILED(m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer))))
+				continue;
+			TransitionTexture(tex, 0, 1, slice, 1, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			FlushBarriers();
+			D3D12_TEXTURE_COPY_LOCATION src{};
+			src.pResource = tex->GetResource();
+			src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+			src.SubresourceIndex = sub;
+			D3D12_TEXTURE_COPY_LOCATION dst{};
+			dst.pResource = buffer.Get();
+			dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+			dst.PlacedFootprint = layout;
+			m_cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+			m_hasRecordedWork = true;
+			SubmitCommandList(true);
+			void* data = nullptr;
+			const D3D12_RANGE readRange{ 0, (SIZE_T)totalBytes };
+			if (FAILED(buffer->Map(0, &readRange, &data)))
+				continue;
+			const fs::path file = folder / fmt::format("tex_{:08x}_fmt{:04x}_s{}_{}x{}_dxgi{}_pitch{}_rows{}.bin", tex->physAddress, (uint32)tex->format, slice,
+				desc.Width, desc.Height, (uint32)layout.Footprint.Format, layout.Footprint.RowPitch, numRows);
+			std::ofstream(file, std::ios::binary).write((const char*)data, (std::streamsize)totalBytes);
+			const D3D12_RANGE noWrite{ 0, 0 };
+			buffer->Unmap(0, &noWrite);
+			cemuLog_log(LogType::Force, "D3D12: dumped {}", _pathToUtf8(file.filename()));
+		}
+	}
+}
+
 void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+	if (swapTV)
+		DumpArrayTexturesIfRequested();
 	if (m_implicitCacheTesting && swapTV && ++m_implicitCacheTestFrames >= 1200)
 	{
 		// 20 s of frames, with pipelines created on the loading screen and in game: the driver took it
@@ -1906,6 +1965,12 @@ void D3D12Renderer::buffer_bindVertexBuffers(std::span<BindBufferParam> bindings
 		view.BufferLocation = base + b.bindOffset;
 		view.SizeInBytes = std::min<uint32>(b.bindSize, m_bufferCacheSize - b.bindOffset);
 		view.StrideInBytes = b.stride;
+		if (b.stride % 4 != 0)
+		{
+			static std::unordered_set<uint32> s_logged; // GPU thread only
+			if (s_logged.insert(b.stride).second)
+				cemuLog_log(LogType::Force, "D3D12: vertex buffer {} with a stride of {} bytes (not a multiple of 4)", b.index, b.stride);
+		}
 		auto& cur = m_state.vertexBuffers[b.index];
 		if (cur.BufferLocation != view.BufferLocation || cur.SizeInBytes != view.SizeInBytes || cur.StrideInBytes != view.StrideInBytes)
 		{

@@ -190,6 +190,9 @@ public:
 
 	// called from destructors so cached references can be dropped
 	void NotifyTextureRelease(LatteTextureD3D12* texture);
+	// #79 diagnostic: compressed 2D array textures that are sampled (MK8's font). Writing <user>/dump_textures.txt makes the
+	// renderer save their slices (raw blocks, mip 0) to <user>/texdump/ and delete the marker
+	void RegisterArrayTextureForDump(LatteTextureD3D12* texture) { m_dumpCandidates.insert(texture); }
 	void NotifyTextureViewRelease(LatteTextureViewD3D12* view);
 	void NotifyFBORelease(CachedFBOD3D12* fbo);
 
@@ -278,6 +281,9 @@ private:
 	bool m_debugMode = false;
 	bool m_dredEnabled = false;
 	bool m_dredLogged = false;
+	std::unordered_set<LatteTextureD3D12*> m_dumpCandidates;
+	uint32 m_dumpCheckFrames = 0;
+	void DumpArrayTexturesIfRequested();
 	bool m_pipelineLibrarySupported = false;
 	bool m_pipelineBlobsSupported = false;
 	void TryEnableImplicitShaderCache();

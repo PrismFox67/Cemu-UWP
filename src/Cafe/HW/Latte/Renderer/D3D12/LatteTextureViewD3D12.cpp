@@ -85,6 +85,9 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 	// depth textures too (Mario Kart 8 samples slice 1 of a 1024x1024x2 D16/R16 texture), except depth+stencil (2 planes)
 	m_usesSliceCopy = (dim == Latte::E_DIM::DIM_2D || dim == Latte::E_DIM::DIM_2D_MSAA) && firstSlice > 0 && !texture->Is3DTexture() && texture->GetPlaneCount() == 1;
 
+	if (dim == Latte::E_DIM::DIM_2D_ARRAY && texture->GetArraySize() > 1 && texture->GetFormatInfo().isCompressed)
+		m_renderer->RegisterArrayTextureForDump(texture);
+
 	// diagnostics for views that select array slices (MK8's button icons are still wrong on the Xbox): log each distinct
 	// layout once
 	if (firstSlice > 0 || sliceCount > 1 || texture->GetDesc().DepthOrArraySize > 1)
