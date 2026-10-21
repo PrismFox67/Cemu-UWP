@@ -25,14 +25,29 @@ current() {      # asset -> "id count" of the asset now on ci-latest (empty if n
   gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REL" --jq ".assets[] | select(.name == \"$1\") | \"\(.id) \(.download_count)\"" 2>/dev/null
 }
 
-if [ "${1:-}" = "--show" ]; then
+if [ "${1:-}" = "--show" ] || [ "${1:-}" = "--json" ]; then
+  # --show prints the totals; --json writes them to totals.json on the stats release (for the README badge) and
+  # puts a "Downloads so far" line into the ci-latest release notes
   GITHUB_REPOSITORY=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner --jq .nameWithOwner)}
+  json="{"; notes=""
   for a in $(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REL" --jq '.assets[].name'); do
     s=$(read_stats "$a"); base=$(field "$s" base); cid=$(field "$s" counted_id); cnt=$(field "$s" counted)
     read -r id n <<<"$(current "$a")"
     [ "${id:-0}" = "$cid" ] && n=$(( ${n:-0} - cnt ))
-    echo "$a: $(( base + ${n:-0} )) total"
+    total=$(( base + ${n:-0} ))
+    echo "$a: $total total"
+    json="$json\"$a\": $total, "
+    notes="$notes$a: $total, "
   done
+  if [ "$1" = "--json" ]; then
+    xbox=$(sed -n 's/.*"cemu-uwp-x64.zip": \([0-9]*\).*/\1/p' <<<"$json")
+    tmp=$(mktemp -d)
+    printf '%s"xbox": %s, "updated": "%s", "since": "2026-10-19"}\n' "$json" "${xbox:-0}" "$(date -u +%Y-%m-%dT%H:%MZ)" > "$tmp/totals.json"
+    gh release upload $STATS "$tmp/totals.json" --clobber >/dev/null 2>&1 || true
+    rm -rf "$tmp"
+    body=$(gh release view $REL --json body --jq .body | sed '/^Downloads so far/d')
+    gh release edit $REL --notes "$(printf '%s\n\nDownloads so far (all builds since 2026-10-19): %s updated %s' "$body" "${notes%, }" "$(date -u +%Y-%m-%d\ %H:%M)")" >/dev/null 2>&1 || true
+  fi
   exit 0
 fi
 

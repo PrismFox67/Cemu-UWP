@@ -366,6 +366,7 @@ jobs:
           gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
           bash tools/ci/keep_download_count.sh cemu-uwp-x64.zip || true   # GitHub resets the count on replace
           gh release upload ci-latest cemu-uwp-x64.zip --clobber
+          bash tools/ci/keep_download_count.sh --json || true   # totals.json for the README badge + release notes line
         fi
 
     - name: "Upload artifact"
