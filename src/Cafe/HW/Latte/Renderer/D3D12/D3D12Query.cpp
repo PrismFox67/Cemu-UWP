@@ -84,10 +84,41 @@ public:
 			Fragment& f = m_fragments.front();
 			if (!f.finished || f.submission > completed)
 				break;
-			m_accumulatedSum += oq.results[f.queryIndex];
+			m_accumulatedSum += ReadResult(f.queryIndex);
 			oq.freeIndices.push_back(f.queryIndex);
 			m_fragments.erase(m_fragments.begin());
 		}
+	}
+
+	// Map with a read range for every result: the runtime then makes the GPU's write visible to the CPU. Reading the
+	// persistently mapped pointer alone is only reliable on cache coherent hardware, on the Xbox BOTW's rune targeting
+	// (an occlusion query) never found a target (#71)
+	static uint64 ReadResult(uint32 queryIndex)
+	{
+		auto& oq = D3D12Renderer::GetInstance()->m_occlusionQueries;
+		const D3D12_RANGE readRange{ (SIZE_T)queryIndex * sizeof(uint64), (SIZE_T)(queryIndex + 1) * sizeof(uint64) };
+		void* mapped = nullptr;
+		uint64 value = oq.results[queryIndex];
+		if (SUCCEEDED(oq.resultBuffer->Map(0, &readRange, &mapped)))
+		{
+			value = ((const uint64*)mapped)[queryIndex];
+			const D3D12_RANGE noWrite{ 0, 0 };
+			oq.resultBuffer->Unmap(0, &noWrite);
+		}
+		// diagnostic: how many results titles read and how many were zero, every 10 s while queries are used
+		static uint32 s_reads = 0, s_zeros = 0;
+		static auto s_nextLog = std::chrono::steady_clock::now();
+		s_reads++;
+		if (value == 0)
+			s_zeros++;
+		const auto now = std::chrono::steady_clock::now();
+		if (now >= s_nextLog)
+		{
+			s_nextLog = now + std::chrono::seconds(10);
+			cemuLog_log(LogType::Force, "D3D12: occlusion query fragments read: {}, zero: {}, last {}", s_reads, s_zeros, value);
+			s_reads = s_zeros = 0;
+		}
+		return value;
 	}
 
 	void Reset()
