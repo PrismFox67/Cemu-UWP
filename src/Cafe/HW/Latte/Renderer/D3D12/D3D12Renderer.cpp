@@ -421,6 +421,7 @@ void D3D12Renderer::SubmitCommandList(bool waitIdle)
 	m_gpuViewHeap->OnSubmit(submissionId);
 	m_inFlightAllocators.push_back({ std::move(m_currentAllocator), submissionId });
 	m_lastSubmittedFenceValue = submissionId;
+	m_watchdogSubmitted.store(submissionId, std::memory_order_relaxed);
 	m_statSubmitsPerFrame++;
 	m_submitSoon = false;
 
@@ -722,6 +723,31 @@ void D3D12Renderer::Shutdown()
 void D3D12Renderer::EnableDebugMode()
 {
 	// the debug layer has to be enabled before device creation, see CEMU_D3D12_DEBUG
+}
+
+void D3D12Renderer::CheckGpuProgress()
+{
+	static uint64 s_lastCompleted = 0;
+	static auto s_progressTime = std::chrono::steady_clock::now();
+	static auto s_nextLog = s_progressTime;
+	if (!m_fence)
+		return;
+	const auto now = std::chrono::steady_clock::now();
+	const uint64 completed = m_fence->GetCompletedValue();
+	const uint64 submitted = m_watchdogSubmitted.load(std::memory_order_relaxed);
+	if (completed != s_lastCompleted || completed >= submitted)
+	{
+		s_lastCompleted = completed;
+		s_progressTime = now;
+		s_nextLog = now + std::chrono::seconds(2);
+		return;
+	}
+	if (now < s_nextLog)
+		return;
+	s_nextLog = now + std::chrono::seconds(5);
+	cemuLog_log(LogType::Force, "D3D12: GPU hasn't finished a submission for {} ms (completed #{}, submitted #{}, device {})",
+		std::chrono::duration_cast<std::chrono::milliseconds>(now - s_progressTime).count(), completed, submitted,
+		SUCCEEDED(m_device->GetDeviceRemovedReason()) ? "ok" : "removed");
 }
 
 bool D3D12Renderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
