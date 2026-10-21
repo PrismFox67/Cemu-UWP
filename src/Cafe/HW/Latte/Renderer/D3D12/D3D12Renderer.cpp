@@ -219,6 +219,13 @@ void D3D12Renderer::CreateDevice()
 		{
 			infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
 			infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, FALSE);
+			// pipeline library misses are expected (new pipelines) and pushed the error that made Close fail out of the
+			// messages HandleDeviceError logs
+			D3D12_MESSAGE_ID denied[] = { D3D12_MESSAGE_ID_LOADPIPELINE_NAMENOTFOUND };
+			D3D12_INFO_QUEUE_FILTER filter{};
+			filter.DenyList.NumIDs = (UINT)std::size(denied);
+			filter.DenyList.pIDList = denied;
+			infoQueue->AddStorageFilterEntries(&filter);
 		}
 	}
 
