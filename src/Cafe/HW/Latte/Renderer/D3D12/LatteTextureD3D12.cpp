@@ -85,6 +85,18 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 	D3D12_HEAP_PROPERTIES heapProps = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	const D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
 	HRESULT hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// CEMU_D3D12_TEST_TEXTURE_OOM=1: every 300th texture allocation fails once, to exercise the recovery below on a PC
+	static const bool s_testOom = [] { char* v = nullptr; size_t n = 0; const bool on = _dupenv_s(&v, &n, "CEMU_D3D12_TEST_TEXTURE_OOM") == 0 && v && v[0] == '1'; free(v); return on; }();
+	static uint32 s_testCounter = 0;
+	if (s_testOom && SUCCEEDED(hr) && ++s_testCounter % 300 == 0)
+	{
+		m_resource.Reset();
+		hr = E_OUTOFMEMORY;
+	}
+#endif
+	if (hr == E_OUTOFMEMORY && renderer->RecoverTextureMemory(renderer->GetDevice()->GetResourceAllocationInfo(0, 1, &m_desc).SizeInBytes))
+		hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
 	D3D12_Checkpoint(renderer->GetDevice(), "game texture created");
 	if (FAILED(hr))
 	{
