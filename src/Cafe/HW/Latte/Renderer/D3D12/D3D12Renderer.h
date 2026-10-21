@@ -82,6 +82,9 @@ public:
 	bool IsPadWindowActive() override;
 
 	bool GetVRAMInfo(int& usageInMB, int& totalInMB) const override;
+	// called by the host every few hundred ms from another thread: logs when the GPU stops finishing submissions, so a
+	// hang that ends the process (Xbox: no exception, no device removed) still leaves a trace in the log
+	void CheckGpuProgress();
 	void EnableDebugMode() override;
 
 	void ClearColorbuffer(bool padView) override;
@@ -271,6 +274,7 @@ private:
 	HANDLE m_fenceEvent = nullptr;
 	uint64 m_lastSubmittedFenceValue = 0;
 	uint64 m_completedFenceValue = 0;
+	std::atomic<uint64> m_watchdogSubmitted{ 0 }; // m_lastSubmittedFenceValue for other threads
 	bool m_debugMode = false;
 	bool m_dredEnabled = false;
 	bool m_dredLogged = false;
