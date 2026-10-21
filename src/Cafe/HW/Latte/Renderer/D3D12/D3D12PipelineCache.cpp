@@ -1474,6 +1474,17 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 			e.Format = D3D12Format::GetVertexFormat(attr.format);
 			e.InputSlot = attr.attributeBufferIndex;
 			e.AlignedByteOffset = attr.offset;
+			if (attr.offset % 4 != 0)
+			{
+				// AMD's vertex fetch (Xbox) handles attributes that don't start on a 4 byte boundary differently from Intel (#79)
+				static std::mutex s_loggedMutex;
+				static std::unordered_set<uint64> s_logged;
+				const uint64 key = ((uint64)attr.offset << 32) | ((uint64)attr.format << 8) | (uint64)attr.attributeBufferIndex;
+				std::lock_guard lock(s_loggedMutex);
+				if (s_logged.insert(key).second)
+					cemuLog_log(LogType::Force, "D3D12: vertex attribute at unaligned offset {} (format {:02x}, buffer {}, location {}, VS {:016x})",
+						attr.offset, (uint32)attr.format, attr.attributeBufferIndex, location, vertexShader->baseHash);
+			}
 			if (attr.fetchType == LatteConst::VertexFetchType2::INSTANCE_DATA)
 			{
 				e.InputSlotClass = D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
