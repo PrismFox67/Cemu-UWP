@@ -79,6 +79,25 @@ namespace
 	bool s_setupChecked = false;
 	bool s_showSetup = false;
 
+	// folders scanned for games without being added, when they exist (like danprice142/Cemu-UWP): the Xbox's Dev Mode
+	// D:\DevelopmentFiles (which RetroArch users already use) and the usual layout on a USB drive E:
+	void _AddDefaultScanPaths()
+	{
+		auto& configured = GetConfig().game_paths;
+		for (const wchar_t* folder : { L"D:/DevelopmentFiles/Games/wiiu", L"D:/DevelopmentFiles/Games/WiiU", L"E:/Games/wiiu", L"E:/Games/WiiU", L"E:/WiiU/games" })
+		{
+			const fs::path path(folder);
+			std::error_code ec;
+			if (!fs::is_directory(path, ec))
+				continue;
+			const std::string utf8 = _pathToUtf8(path);
+			if (std::any_of(configured.begin(), configured.end(), [&](const std::string& p) { return boost::iequals(p, utf8); }))
+				continue;
+			CafeTitleList::AddScanPath(path);
+			cemuLog_log(LogType::Force, "Host: scanning the default game folder {}", utf8);
+		}
+	}
+
 	fs::path _SetupMarkerPath()
 	{
 		return ActiveSettings::GetUserDataPath("setup_done.txt");
@@ -185,6 +204,7 @@ namespace
 		CafeTitleList::ClearScanPaths();
 		for (auto& it : config.game_paths)
 			CafeTitleList::AddScanPath(_utf8ToPath(it));
+		_AddDefaultScanPaths();
 		CafeTitleList::Refresh();
 		HostUI::RequestGameListRefresh();
 	}
@@ -290,6 +310,7 @@ namespace
 		CafeTitleList::ClearScanPaths();
 		for (auto& it : config.game_paths)
 			CafeTitleList::AddScanPath(_utf8ToPath(it));
+		_AddDefaultScanPaths();
 		CafeTitleList::Refresh();
 		HostUI::RequestGameListRefresh();
 	}
@@ -1201,6 +1222,8 @@ void HostUI::Initialize(ImGuiContext* context, const fs::path& fontFile, float u
 	s_fontFile = fontFile;
 	s_scale = std::max(0.5f, uiScale);
 	HostTheme::Initialize();
+	_AddDefaultScanPaths();
+	CafeTitleList::Refresh();
 	ImGuiIO& io = ImGui::GetIO();
 	io.IniFilename = nullptr;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
