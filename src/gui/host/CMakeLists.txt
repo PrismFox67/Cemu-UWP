@@ -15,6 +15,8 @@ add_library(CemuHostFrontend
 	HostPlatform.h
 	HostTitleInstaller.cpp
 	HostTitleInstaller.h
+	HostTheme.cpp
+	HostTheme.h
 	HostTools.cpp
 	HostTools.h
 	HostUI.cpp

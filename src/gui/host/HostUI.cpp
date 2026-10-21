@@ -6,6 +6,7 @@
 #include "gui/host/HostIcons.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/HostTitleInstaller.h"
+#include "gui/host/HostTheme.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -329,7 +330,7 @@ namespace
 			ImGui::Separator();
 		}
 		const std::string newer = HostTools::GetNewerBuild();
-		if (!newer.empty() && !s_updateDismissed)
+		if (!newer.empty() && !s_updateDismissed && s_tab != kTabGames)
 		{
 			ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "A newer build is available: %s", newer.c_str());
 			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s   (View hides this)", HostTools::GetDownloadUrl());
@@ -351,48 +352,63 @@ namespace
 		return ImGui::IsKeyPressed(gamepad, true) || ImGui::IsKeyPressed(stick, true) || ImGui::IsKeyPressed(keyboard, true);
 	}
 
-	// a card: the title's icon on top, its name on a band below (the Wii U case shape, 3:4)
+	// a Wii U case: spine on the left, the blue Wii U header band, the title's art filling the front (cropped from the
+	// square icon until scraped covers exist), a soft shadow. Proportions of the real case (about 0.72:1)
+	constexpr float kCaseAspect = 0.72f;
+
 	void _DrawCard(ImDrawList* drawList, const GameEntry& game, ImVec2 min, float width, bool selected, float alpha)
 	{
-		const float height = width * 4.0f / 3.0f;
+		const float height = width / kCaseAspect;
 		const ImVec2 max(min.x + width, min.y + height);
-		const float rounding = 10.0f * s_scale;
+		const float r = 4.0f * s_scale;
 		const ImU32 a = (ImU32)(alpha * 255.0f) << IM_COL32_A_SHIFT;
-		if (selected)
+		auto rgb = [&](int cr, int cg, int cb) { return IM_COL32(cr, cg, cb, 0) | a; };
+		// shadow
+		drawList->AddRectFilled(ImVec2(min.x + width * 0.04f, min.y + height * 0.03f), ImVec2(max.x + width * 0.05f, max.y + height * 0.03f), IM_COL32(0, 30, 70, (int)(60 * alpha)), r * 2.0f);
+		// case
+		drawList->AddRectFilled(min, max, rgb(232, 238, 245), r);
+		const float spine = width * 0.07f;
+		drawList->AddRectFilled(min, ImVec2(min.x + spine, max.y), rgb(196, 206, 220), r, ImDrawFlags_RoundCornersLeft);
+		const ImVec2 frontMin(min.x + spine, min.y), frontMax = max;
+		const float band = height * 0.085f;
+		drawList->AddRectFilled(frontMin, ImVec2(frontMax.x, frontMin.y + band), rgb(0, 140, 215), r, ImDrawFlags_RoundCornersTopRight);
 		{
-			// glow: a few widening translucent outlines
-			for (int i = 3; i >= 1; i--)
-			{
-				const float g = i * 4.0f * s_scale;
-				drawList->AddRect(ImVec2(min.x - g, min.y - g), ImVec2(max.x + g, max.y + g), IM_COL32(80, 170, 255, 80 / i), rounding + g, 0, 3.0f * s_scale);
-			}
+			const char* label = "Wii U";
+			const float size = band * 0.62f;
+			const ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, label);
+			drawList->AddText(ImGui::GetFont(), size, ImVec2(frontMin.x + (frontMax.x - frontMin.x - ts.x) * 0.5f, frontMin.y + (band - ts.y) * 0.5f), rgb(255, 255, 255), label);
 		}
-		drawList->AddRectFilled(min, max, IM_COL32(30, 34, 42, 0) | a, rounding);
+		const ImVec2 artMin(frontMin.x, frontMin.y + band), artMax(frontMax.x, frontMax.y - height * 0.03f);
 		void* texture = nullptr;
 		if (const HostIcons::Icon* icon = HostIcons::Get(game.titleId); icon && s_textureProvider)
 			texture = s_textureProvider(game.titleId, icon->rgba.data(), icon->width, icon->height);
-		const ImVec2 artMax(max.x, min.y + width);
 		if (texture)
-			drawList->AddImageRounded(texture, min, artMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 0) | a, rounding, ImDrawFlags_RoundCornersTop);
+		{
+			// crop the square icon to the portrait front
+			const float aspect = (artMax.x - artMin.x) / (artMax.y - artMin.y);
+			const float crop = (1.0f - aspect) * 0.5f;
+			drawList->AddImage(texture, artMin, artMax, ImVec2(crop, 0.0f), ImVec2(1.0f - crop, 1.0f), IM_COL32(255, 255, 255, 0) | a);
+		}
 		else
 		{
-			// no art: the initials of the title, big
+			drawList->AddRectFilled(artMin, artMax, rgb(60, 70, 90));
 			std::string initials;
 			for (size_t i = 0; i < game.name.size() && initials.size() < 2; i++)
 				if (std::isalnum((unsigned char)game.name[i]) && (i == 0 || game.name[i - 1] == ' '))
 					initials += (char)std::toupper((unsigned char)game.name[i]);
 			ImGui::PushFont(s_fontLarge);
-			const ImVec2 size = ImGui::CalcTextSize(initials.c_str());
-			drawList->AddText(ImVec2(min.x + (width - size.x) * 0.5f, min.y + (width - size.y) * 0.5f), IM_COL32(150, 160, 175, 0) | a, initials.c_str());
+			const ImVec2 ts = ImGui::CalcTextSize(initials.c_str());
+			drawList->AddText(ImVec2((artMin.x + artMax.x - ts.x) * 0.5f, (artMin.y + artMax.y - ts.y) * 0.5f), rgb(200, 210, 225), initials.c_str());
 			ImGui::PopFont();
 		}
-		// name band, the name wrapped into the card
-		const float pad = 8.0f * s_scale;
-		drawList->AddRectFilled(ImVec2(min.x, artMax.y), max, (selected ? IM_COL32(28, 92, 170, 0) : IM_COL32(44, 50, 62, 0)) | a, rounding, ImDrawFlags_RoundCornersBottom);
-		const ImVec4 clip(min.x + pad, artMax.y + pad, max.x - pad, max.y - pad);
-		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(clip.x, clip.y), IM_COL32(235, 238, 245, 0) | a, game.name.c_str(), nullptr, width - pad * 2.0f, &clip);
+		// a light sheen on the plastic
+		drawList->AddRectFilledMultiColor(frontMin, ImVec2(frontMin.x + (frontMax.x - frontMin.x) * 0.35f, frontMax.y), IM_COL32(255, 255, 255, (int)(40 * alpha)), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, (int)(40 * alpha)));
 		if (selected)
-			drawList->AddRect(min, max, IM_COL32(120, 200, 255, 255), rounding, 0, 3.0f * s_scale);
+			drawList->AddRect(ImVec2(min.x - 3.0f * s_scale, min.y - 3.0f * s_scale), ImVec2(max.x + 3.0f * s_scale, max.y + 3.0f * s_scale), IM_COL32(255, 255, 255, 255), r + 2.0f, 0, 3.5f * s_scale);
+		// title under the case, two lines at most
+		const float textW = width + 20.0f * s_scale;
+		const ImVec4 clip(min.x - 10.0f * s_scale, max.y + 8.0f * s_scale, min.x - 10.0f * s_scale + textW, max.y + 8.0f * s_scale + ImGui::GetTextLineHeight() * 2.2f);
+		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(clip.x, clip.y), (HostTheme::PanelText() & 0x00FFFFFF) | ((ImU32)((selected ? 1.0f : 0.8f) * alpha * 255.0f) << IM_COL32_A_SHIFT), game.name.c_str(), nullptr, textW, &clip);
 	}
 
 	std::optional<fs::path> _DrawGamesTab()
@@ -447,13 +463,13 @@ namespace
 				area.y -= ImGui::GetFrameHeightWithSpacing(); // the buttons below
 			const ImVec2 origin = ImGui::GetCursorScreenPos();
 			ImDrawList* drawList = ImGui::GetWindowDrawList();
-			const float footer = ImGui::GetTextLineHeightWithSpacing() * 1.5f;
-			const float infoHeight = ImGui::GetTextLineHeightWithSpacing() * 3.5f;
-			// card size from the space: cards are 3:4, the selected one 15% larger
-			const float cardWidth = std::min(area.x / 5.2f, (area.y - footer - infoHeight) / (4.0f / 3.0f) / 1.2f);
+			const float footer = ImGui::GetTextLineHeightWithSpacing() * 1.2f; // details of the selected game
+			const float infoHeight = ImGui::GetTextLineHeightWithSpacing() * 2.6f; // titles under the cases
+			// case size from the space, the selected one 20% larger
+			const float cardWidth = std::min(area.x / 5.6f, (area.y - footer - infoHeight) * kCaseAspect / 1.22f);
 			const float spacing = cardWidth * 0.18f;
 			const float centerX = origin.x + area.x * 0.5f;
-			const float rowCenterY = origin.y + (area.y - footer - infoHeight) * 0.5f;
+			const float rowCenterY = origin.y + (area.y - footer - infoHeight) * 0.5f + 6.0f * s_scale;
 			for (int i = 0; i < count; i++)
 			{
 				const float offset = (float)i - s_carouselScroll;
@@ -461,8 +477,8 @@ namespace
 				if (x + cardWidth < origin.x - cardWidth || x - cardWidth > origin.x + area.x + cardWidth)
 					continue;
 				const float closeness = std::max(0.0f, 1.0f - std::abs(offset)); // 1 for the selected card
-				const float width = cardWidth * (1.0f + 0.15f * closeness);
-				const float height = width * 4.0f / 3.0f;
+				const float width = cardWidth * (1.0f + 0.2f * closeness);
+				const float height = width / kCaseAspect;
 				const float alpha = std::clamp(1.0f - std::abs(offset) * 0.12f, 0.45f, 1.0f);
 				const ImVec2 min(x - width * 0.5f, rowCenterY - height * 0.5f);
 				_DrawCard(drawList, s_games[i], min, width, i == s_selectedGame, alpha);
@@ -476,21 +492,11 @@ namespace
 				}
 			}
 
-			// name and details of the selected game under the row
+			// details of the selected game at the bottom of the panel
 			const GameEntry& game = s_games[s_selectedGame];
-			const float infoY = rowCenterY + cardWidth * 1.15f * (4.0f / 3.0f) * 0.5f + spacing;
-			ImGui::PushFont(s_fontLarge);
-			const ImVec2 nameSize = ImGui::CalcTextSize(game.name.c_str());
-			drawList->AddText(ImVec2(centerX - nameSize.x * 0.5f, infoY), ImGui::GetColorU32(ImGuiCol_Text), game.name.c_str());
-			ImGui::PopFont();
-			const std::string details = fmt::format("{:016x}   v{}{}{}   {} / {}", game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+			const std::string details = fmt::format("{}   {:016x}   v{}{}{}   {} / {}", game.name, game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
 			const ImVec2 detailsSize = ImGui::CalcTextSize(details.c_str());
-			drawList->AddText(ImVec2(centerX - detailsSize.x * 0.5f, infoY + nameSize.y + 4.0f * s_scale), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
-
-			// button hints at the bottom
-			const char* hints = "A  Start        X  Refresh        Y  Settings        LB / RB  Tabs";
-			const ImVec2 hintsSize = ImGui::CalcTextSize(hints);
-			drawList->AddText(ImVec2(centerX - hintsSize.x * 0.5f, origin.y + area.y - footer * 0.8f), ImGui::GetColorU32(ImGuiCol_TextDisabled), hints);
+			drawList->AddText(ImVec2(centerX - detailsSize.x * 0.5f, origin.y + area.y - footer), HostTheme::PanelTextDim(), details.c_str());
 			ImGui::Dummy(area);
 		}
 		if (!s_carouselActive)
@@ -808,6 +814,17 @@ namespace
 
 		ImGui::SeparatorText("Install updates and DLC");
 		_DrawInstallSection();
+
+		ImGui::SeparatorText("Look");
+		{
+			int panel = HostTheme::IsLightPanel() ? 0 : 1;
+			if (ImGui::RadioButton("Light panel", panel == 0))
+				HostTheme::SetLightPanel(true);
+			ImGui::SameLine();
+			if (ImGui::RadioButton("Dark panel", panel == 1))
+				HostTheme::SetLightPanel(false);
+			ImGui::TextDisabled("Background picture: put background.png or background.jpg into %s and restart Cemu", _pathToUtf8(ActiveSettings::GetUserDataPath("theme")).c_str());
+		}
 
 		ImGui::SeparatorText("Graphics");
 		bool vsync = config.vsync.GetValue() != 0;
@@ -1183,6 +1200,7 @@ void HostUI::Initialize(ImGuiContext* context, const fs::path& fontFile, float u
 	s_context = context;
 	s_fontFile = fontFile;
 	s_scale = std::max(0.5f, uiScale);
+	HostTheme::Initialize();
 	ImGuiIO& io = ImGui::GetIO();
 	io.IniFilename = nullptr;
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
@@ -1199,6 +1217,97 @@ bool HostUI::SetScale(float uiScale)
 	_RebuildFonts();
 	_ApplyStyle();
 	return true;
+}
+
+namespace
+{
+	void* _ProvideTexture(uint64 key, const uint8* rgba, int width, int height)
+	{
+		return s_textureProvider ? s_textureProvider(key, rgba, width, height) : nullptr;
+	}
+
+	// a child window inside the panel. framed: a dark rounded area for regular ImGui widgets (readable on the light panel)
+	void _BeginPanelContent(ImVec2 min, ImVec2 max, float pad, bool framed)
+	{
+		ImGui::SetCursorScreenPos(ImVec2(min.x + pad, min.y));
+		const ImVec2 size(max.x - min.x - pad * 2.0f, max.y - min.y - pad * 0.6f);
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, framed ? ImVec4(0.07f, 0.09f, 0.13f, 0.92f) : ImVec4(0, 0, 0, 0));
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 14.0f * s_scale);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, framed ? ImVec2(16.0f * s_scale, 12.0f * s_scale) : ImVec2(0, 0));
+		ImGui::BeginChild("##panelcontent", size, false, framed ? ImGuiWindowFlags_AlwaysUseWindowPadding : (ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse));
+		ImGui::PopStyleVar(2);
+		ImGui::PopStyleColor();
+	}
+
+	float _ShoulderHintWidth(float h, float unit)
+	{
+		return h * 0.6f + 8.0f * unit + h * 1.4f;
+	}
+
+	// "< (LB)" or "(RB) >": an arrow and a rounded shoulder-button pill; returns the right edge
+	float _DrawShoulderHint(ImDrawList* dl, ImVec2 min, float h, const char* label, bool left, float unit)
+	{
+		const ImU32 col = HostTheme::PanelText();
+		const float arrowW = h * 0.6f;
+		const float pillW = h * 1.4f;
+		const float cy = min.y + h * 0.5f;
+		float x = min.x;
+		auto arrow = [&](float ax, bool pointLeft) {
+			const float s = h * 0.28f;
+			if (pointLeft)
+				dl->AddTriangleFilled(ImVec2(ax, cy), ImVec2(ax + s, cy - s), ImVec2(ax + s, cy + s), col);
+			else
+				dl->AddTriangleFilled(ImVec2(ax + arrowW, cy), ImVec2(ax + arrowW - s, cy - s), ImVec2(ax + arrowW - s, cy + s), col);
+			dl->AddRectFilled(ImVec2(pointLeft ? ax + s : ax, cy - s * 0.3f), ImVec2(pointLeft ? ax + arrowW : ax + arrowW - s, cy + s * 0.3f), col);
+		};
+		if (left)
+		{
+			arrow(x, true);
+			x += arrowW + 8.0f * unit;
+		}
+		const ImVec2 pMin(x, min.y + h * 0.1f), pMax(x + pillW, min.y + h * 0.9f);
+		dl->AddRect(pMin, pMax, col, h * 0.4f, 0, 2.0f * unit);
+		const ImVec2 ts = ImGui::CalcTextSize(label);
+		dl->AddText(ImVec2(x + (pillW - ts.x) * 0.5f, cy - ts.y * 0.5f), col, label);
+		x += pillW;
+		if (!left)
+		{
+			x += 8.0f * unit;
+			arrow(x, false);
+			x += arrowW;
+		}
+		return x;
+	}
+
+	float _HintPillWidth(const char* glyph, const char* text, float h, float unit)
+	{
+		const float glyphW = std::max(h * 0.72f, ImGui::CalcTextSize(glyph).x + 14.0f * unit);
+		return 12.0f * unit + glyphW + 10.0f * unit + ImGui::CalcTextSize(text).x + 16.0f * unit;
+	}
+
+	// a translucent pill with a controller button glyph (a coloured circle for face buttons) and a label
+	void _DrawHintPill(ImDrawList* dl, ImVec2 min, float h, const char* glyph, ImU32 glyphColor, const char* text, float unit)
+	{
+		const float w = _HintPillWidth(glyph, text, h, unit);
+		dl->AddRectFilled(min, ImVec2(min.x + w, min.y + h), IM_COL32(20, 28, 40, 170), h * 0.5f);
+		dl->AddRect(min, ImVec2(min.x + w, min.y + h), IM_COL32(255, 255, 255, 60), h * 0.5f, 0, 1.0f * unit);
+		const float cy = min.y + h * 0.5f;
+		const float glyphW = std::max(h * 0.72f, ImGui::CalcTextSize(glyph).x + 14.0f * unit);
+		const float gx = min.x + 12.0f * unit;
+		const ImVec2 gts = ImGui::CalcTextSize(glyph);
+		if (glyphColor != 0)
+		{
+			dl->AddCircleFilled(ImVec2(gx + glyphW * 0.5f, cy), h * 0.36f, IM_COL32(15, 15, 18, 255), 24);
+			dl->AddText(ImVec2(gx + (glyphW - gts.x) * 0.5f, cy - gts.y * 0.5f), glyphColor, glyph);
+		}
+		else
+		{
+			dl->AddRect(ImVec2(gx, cy - h * 0.32f), ImVec2(gx + glyphW, cy + h * 0.32f), IM_COL32(230, 235, 245, 255), h * 0.3f, 0, 1.5f * unit);
+			dl->AddText(ImVec2(gx + (glyphW - gts.x) * 0.5f, cy - gts.y * 0.5f), IM_COL32(230, 235, 245, 255), glyph);
+		}
+		const ImVec2 ts = ImGui::CalcTextSize(text);
+		dl->AddText(ImVec2(gx + glyphW + 10.0f * unit, cy - ts.y * 0.5f), IM_COL32(240, 244, 250, 255), text);
+	}
 }
 
 std::optional<fs::path> HostUI::DrawLauncher()
@@ -1227,16 +1336,51 @@ std::optional<fs::path> HostUI::DrawLauncher()
 			io.ConfigFlags |= nav;
 	}
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	const ImVec2 screenMin = viewport->WorkPos;
+	const ImVec2 screenMax(viewport->WorkPos.x + viewport->WorkSize.x, viewport->WorkPos.y + viewport->WorkSize.y);
+	HostTheme::DrawBackground(ImGui::GetBackgroundDrawList(), screenMin, screenMax, s_textureProvider ? &_ProvideTexture : nullptr);
 	ImGui::SetNextWindowPos(viewport->WorkPos);
 	ImGui::SetNextWindowSize(viewport->WorkSize);
-	const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+	const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground;
 	if (ImGui::Begin("##launcher", nullptr, flags))
 	{
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		const float W = viewport->WorkSize.x, H = viewport->WorkSize.y;
+		const float unit = H / 720.0f;
+
+		// wordmark, top centre
 		ImGui::PushFont(s_fontLarge);
-		ImGui::TextUnformatted("Cemu");
+		{
+			const char* mark = "Cemu";
+			const float size = ImGui::GetFontSize() * 1.6f;
+			const ImVec2 ts = ImGui::CalcTextSize(mark);
+			const ImVec2 pos(screenMin.x + (W - ts.x * 1.6f) * 0.5f, screenMin.y + 22.0f * unit);
+			dl->AddText(ImGui::GetFont(), size, ImVec2(pos.x + 2.0f * unit, pos.y + 3.0f * unit), IM_COL32(0, 60, 120, 90), mark);
+			dl->AddText(ImGui::GetFont(), size, pos, IM_COL32(255, 255, 255, 255), mark);
+		}
 		ImGui::PopFont();
-		ImGui::SameLine();
-		ImGui::TextDisabled("%s  |  %s", BUILD_VERSION_WITH_NAME_STRING, HostPlatform::GetName());
+
+		// update badge, top right
+		const std::string newer = HostTools::GetNewerBuild();
+		if (!newer.empty() && !s_updateDismissed)
+		{
+			const std::string badge = fmt::format("Update available: {}", newer);
+			const ImVec2 ts = ImGui::CalcTextSize(badge.c_str());
+			const ImVec2 max(screenMax.x - 20.0f * unit, screenMin.y + 20.0f * unit + ts.y + 12.0f * unit);
+			const ImVec2 min(max.x - ts.x - 24.0f * unit, screenMin.y + 20.0f * unit);
+			dl->AddRectFilled(min, max, IM_COL32(20, 30, 45, 190), (max.y - min.y) * 0.5f);
+			dl->AddText(ImVec2(min.x + 12.0f * unit, min.y + 6.0f * unit), IM_COL32(140, 210, 255, 255), badge.c_str());
+			if (ImGui::IsMouseHoveringRect(min, max))
+				ImGui::SetTooltip("Download cemu-uwp-x64.zip from %s\nView (Back) hides this", HostTools::GetDownloadUrl());
+		}
+
+		// the panel
+		const ImVec2 panelMin(screenMin.x + W * 0.04f, screenMin.y + H * 0.16f);
+		const ImVec2 panelMax(screenMax.x - W * 0.04f, screenMin.y + H * 0.84f);
+		const float panelRounding = 22.0f * unit;
+		dl->AddRectFilled(ImVec2(panelMin.x + 4.0f * unit, panelMin.y + 8.0f * unit), ImVec2(panelMax.x + 4.0f * unit, panelMax.y + 8.0f * unit), IM_COL32(0, 40, 90, 40), panelRounding);
+		dl->AddRectFilled(panelMin, panelMax, HostTheme::PanelFill(), panelRounding);
+		dl->AddRect(panelMin, panelMax, HostTheme::PanelBorder(), panelRounding, 0, 1.5f * unit);
 
 		// the setup screen is shown until it's finished once. Existing setups (games and packs present) skip it
 		if (!s_setupChecked)
@@ -1251,10 +1395,12 @@ std::optional<fs::path> HostUI::DrawLauncher()
 					_FinishSetup();
 			}
 		}
+		const float pad = 26.0f * unit;
 		if (s_showSetup && !HostControllers::IsPairing())
 		{
-			ImGui::Separator();
+			_BeginPanelContent(panelMin, panelMax, pad, true);
 			_DrawSetup();
+			ImGui::EndChild();
 		}
 		else
 		{
@@ -1268,34 +1414,86 @@ std::optional<fs::path> HostUI::DrawLauncher()
 				s_tab = kTabSettings;
 			if (pairing)
 				s_tab = kTabControllers;
+			if (!pairing && !newer.empty() && ImGui::IsKeyPressed(ImGuiKey_GamepadBack, false))
+				s_updateDismissed = true;
 
+			// category bar: < [LB] previous   CURRENT   next [RB] >
 			const char* tabNames[kTabCount] = { "Games", "Graphic packs", "Controllers", "Settings", "About" };
-			for (int i = 0; i < kTabCount; i++)
+			const float barY = panelMin.y + pad;
+			const float barH = 34.0f * unit;
+			const int prev = (s_tab + kTabCount - 1) % kTabCount, next = (s_tab + 1) % kTabCount;
 			{
-				if (i > 0)
-					ImGui::SameLine();
-				const bool active = s_tab == i;
-				if (active)
-					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
-				if (ImGui::Button(tabNames[i]))
-					s_tab = i;
-				if (active)
-					ImGui::PopStyleColor();
+				ImGui::PushFont(s_fontLarge);
+				const ImVec2 ts = ImGui::CalcTextSize(tabNames[s_tab]);
+				dl->AddText(ImVec2(screenMin.x + (W - ts.x) * 0.5f, barY + (barH - ts.y) * 0.5f), HostTheme::PanelText(), tabNames[s_tab]);
+				ImGui::PopFont();
+				// left: arrow + LB pill + name, right: name + RB pill + arrow
+				const ImVec2 lMin(panelMin.x + pad, barY);
+				const float x1 = _DrawShoulderHint(dl, lMin, barH, "LB", true, unit);
+				const ImVec2 pts = ImGui::CalcTextSize(tabNames[prev]);
+				dl->AddText(ImVec2(x1 + 14.0f * unit, barY + (barH - pts.y) * 0.5f), HostTheme::PanelTextDim(), tabNames[prev]);
+				const ImVec2 nts = ImGui::CalcTextSize(tabNames[next]);
+				const float rightPillW = _ShoulderHintWidth(barH, unit);
+				const ImVec2 rMin(panelMax.x - pad - rightPillW, barY);
+				_DrawShoulderHint(dl, rMin, barH, "RB", false, unit);
+				dl->AddText(ImVec2(rMin.x - 14.0f * unit - nts.x, barY + (barH - nts.y) * 0.5f), HostTheme::PanelTextDim(), tabNames[next]);
+				// mouse/touch on the two sides
+				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+				{
+					if (ImGui::IsMouseHoveringRect(lMin, ImVec2(x1 + 14.0f * unit + pts.x, barY + barH)))
+						s_tab = prev;
+					else if (ImGui::IsMouseHoveringRect(ImVec2(rMin.x - 14.0f * unit - nts.x, barY), ImVec2(panelMax.x - pad, barY + barH)))
+						s_tab = next;
+				}
 			}
-			ImGui::SameLine();
-			ImGui::TextDisabled("(LB / RB, Page Up / Down)");
-			ImGui::Separator();
 
+			const ImVec2 contentMin(panelMin.x, barY + barH + 10.0f * unit);
 			if (s_tab == kTabGames)
+			{
+				_BeginPanelContent(contentMin, panelMax, pad * 0.5f, false);
 				launch = _DrawGamesTab();
-			else if (s_tab == kTabGraphicPacks)
-				_DrawGraphicPacksTab();
-			else if (s_tab == kTabControllers)
-				_DrawControllersTab();
-			else if (s_tab == kTabSettings)
-				_DrawSettingsTab();
+				ImGui::EndChild();
+			}
 			else
-				_DrawAboutTab();
+			{
+				_BeginPanelContent(contentMin, panelMax, pad, true);
+				if (s_tab == kTabGraphicPacks)
+					_DrawGraphicPacksTab();
+				else if (s_tab == kTabControllers)
+					_DrawControllersTab();
+				else if (s_tab == kTabSettings)
+					_DrawSettingsTab();
+				else
+					_DrawAboutTab();
+				ImGui::EndChild();
+			}
+		}
+
+		// hint pills along the bottom
+		{
+			const float pillH = 40.0f * unit;
+			const float y = screenMax.y - 24.0f * unit - pillH;
+			struct Hint { const char* glyph; ImU32 color; const char* text; };
+			std::vector<Hint> hints;
+			if (s_tab == kTabGames && !s_showSetup)
+				hints = { { "A", IM_COL32(40, 170, 60, 255), "Start" }, { "X", IM_COL32(30, 110, 220, 255), "Refresh" }, { "L3+R3", 0, "In-Game Menu" }, { "Y", IM_COL32(220, 170, 20, 255), "Settings" } };
+			else
+				hints = { { "A", IM_COL32(40, 170, 60, 255), "Select" }, { "B", IM_COL32(210, 50, 50, 255), "Back" }, { "LB/RB", 0, "Switch" } };
+			float total = 0.0f;
+			std::vector<float> widths;
+			for (const Hint& hint : hints)
+			{
+				const float w = _HintPillWidth(hint.glyph, hint.text, pillH, unit);
+				widths.push_back(w);
+				total += w;
+			}
+			total += 16.0f * unit * (hints.size() - 1);
+			float x = screenMin.x + (W - total) * 0.5f;
+			for (size_t i = 0; i < hints.size(); i++)
+			{
+				_DrawHintPill(dl, ImVec2(x, y), pillH, hints[i].glyph, hints[i].color, hints[i].text, unit);
+				x += widths[i] + 16.0f * unit;
+			}
 		}
 
 		// messages
