@@ -15,7 +15,7 @@ namespace
 	std::atomic<uint64> s_nextUniqueId{ 1 };
 
 	// bump whenever the cached data format or the compilation pipeline changes in an incompatible way
-	constexpr uint32 kBytecodeCacheVersion = 2;
+	constexpr uint32 kBytecodeCacheVersion = 3; // 3: 2D array layers rounded explicitly (#79)
 	constexpr uint32 kBytecodeCacheMagic = 0x43423344; // 'D3BC'
 
 	struct CacheHeader

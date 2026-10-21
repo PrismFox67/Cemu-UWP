@@ -2530,7 +2530,14 @@ void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContext, Latt
 			src->add(",");
 			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, LATTE_DECOMPILER_DTYPE_FLOAT);
 			src->add(",");
+			// D3D12 on AMD (Xbox): an interpolated layer like 0.99998 selected the wrong 2D array slice (MK8's button
+			// icons came from font sheet 0, #79). Round explicitly like danprice142/Cemu-UWP's HLSL emitter does for loads
+			const bool roundLayer = texDim == Latte::E_DIM::DIM_2D_ARRAY && g_renderer && g_renderer->GetType() == RendererAPI::D3D12;
+			if (roundLayer)
+				src->add("floor(");
 			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, LATTE_DECOMPILER_DTYPE_FLOAT);
+			if (roundLayer)
+				src->add("+0.5)");
 			src->add(")");
 		}
 		else if( texDim == Latte::E_DIM::DIM_CUBEMAP )
