@@ -130,9 +130,11 @@ jobs:
         # the other jobs upload their packages to the same pre-release, so it is updated instead of recreated
         gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" \
           --notes "Automatic builds of the D3D12 / UWP fork (Windows with wxWidgets, Win32 test build of the Xbox frontend, UWP package). Not official Cemu releases."
+        bash tools/ci/keep_download_count.sh cemu-d3d12-windows-x64.zip || true   # GitHub resets the count on replace
         gh release upload ci-latest cemu-d3d12-windows-x64.zip --clobber
         # the first person pack on its own, for other Cemu builds (rebuilt every time so it can't go stale)
         (cd bin/bundledGraphicPacks && 7z a -tzip ../../MK8_FirstPerson.zip MK8_FirstPerson > /dev/null)
+        bash tools/ci/keep_download_count.sh MK8_FirstPerson.zip || true   # GitHub resets the count on replace
         gh release upload ci-latest MK8_FirstPerson.zip --clobber
         # the title names the commit the files were built from (testers read it to tell builds apart)
         gh release edit ci-latest --title "CI build (d3d12-backend @ ${GITHUB_SHA::7})"
@@ -227,10 +229,12 @@ jobs:
         # test branches (uwp/**) only produce artifacts, the pre-release is the main branch's
         if [ "$GITHUB_REF" = "refs/heads/d3d12-backend" ]; then
           gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+          bash tools/ci/keep_download_count.sh cemu-host-win32-x64.zip || true   # GitHub resets the count on replace
           gh release upload ci-latest cemu-host-win32-x64.zip --clobber
           # debug symbols for stack traces of hangs and crashes, kept out of the main zip because of their size
           if [ -f bin/Cemu_Host_release.pdb ]; then
             (cd bin && 7z a -tzip ../cemu-host-win32-x64-pdb.zip Cemu_Host_release.pdb > /dev/null)
+            bash tools/ci/keep_download_count.sh cemu-host-win32-x64-pdb.zip || true   # GitHub resets the count on replace
             gh release upload ci-latest cemu-host-win32-x64-pdb.zip --clobber
           fi
         fi
@@ -360,6 +364,7 @@ jobs:
         cd uwp-package && 7z a -tzip ../cemu-uwp-x64.zip . > /dev/null && cd ..
         if [ "$GITHUB_REF" = "refs/heads/d3d12-backend" ]; then
           gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --title "CI builds" --notes "Automatic builds of the D3D12 / UWP fork. Not official Cemu releases." || true
+          bash tools/ci/keep_download_count.sh cemu-uwp-x64.zip || true   # GitHub resets the count on replace
           gh release upload ci-latest cemu-uwp-x64.zip --clobber
         fi
 
