@@ -627,6 +627,14 @@ namespace
 				pressure = 1;
 			// set on every check: a renderer raises it to 2 when a texture allocation fails, this clears that again
 			LatteTC_SetMemoryPressure(pressure);
+			// freed CRT heap pages still count against the Xbox's budget until they're decommitted (danprice142/Cemu-UWP
+			// does the same under pressure). At most every 5 s, it walks the heap under its lock
+			static auto s_nextCompact = now;
+			if (pressure != 0 && now >= s_nextCompact)
+			{
+				s_nextCompact = now + std::chrono::seconds(5);
+				HeapCompact(GetProcessHeap(), 0);
+			}
 			if (pressure != s_pressure)
 			{
 				s_pressure = pressure;
