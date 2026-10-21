@@ -5,6 +5,7 @@
 #endif
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 #include "config/CemuConfig.h"
+#include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
 
 sint32 s_customVsyncFrequency = -1;
@@ -89,6 +90,23 @@ void LatteTiming_signalVsync()
 	// flip
 	if (s_vsyncIntervalCounter >= swapInterval)
 	{
+		// experiment (#164, from danprice142/Cemu-UWP, MPL-2.0): a buffer is only flipped, and FLIP only signalled, once
+		// the GPU processed a swap request since the last flip; games pace their next swap from the FLIP event. Enabled
+		// by a file named flip_pacing.txt in the user folder, so QA can compare frame pacing on the Xbox without builds
+		static const bool s_flipPacing = [] {
+			std::error_code ec;
+			const bool on = fs::exists(ActiveSettings::GetUserDataPath("flip_pacing.txt"), ec);
+			if (on)
+				cemuLog_log(LogType::Force, "Flip pacing experiment on (flip_pacing.txt)");
+			return on;
+		}();
+		bool flipPending = true;
+		if (s_flipPacing)
+		{
+			flipPending = LatteGPUState.flipRequestCount > 0;
+			if (flipPending)
+				LatteGPUState.flipRequestCount.fetch_sub(1);
+		}
 		if (LatteGPUState.sharedArea)
 		{
 			// hack/workaround - only execute flip if GX2SwapScanBuffers() isn't lagging behind
@@ -109,16 +127,20 @@ void LatteTiming_signalVsync()
 			else
 			{
 				// old code for all other games
-				if (LatteGPUState.flipRequestCount > 0)
+				if (s_flipPacing ? flipPending : LatteGPUState.flipRequestCount > 0)
 				{
-					LatteGPUState.flipRequestCount.fetch_sub(1);
+					if (!s_flipPacing)
+						LatteGPUState.flipRequestCount.fetch_sub(1);
 					LatteGPUState.sharedArea->flipExecuteCountBE = _swapEndianU32(_swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE) + 1);
 				}
 
 			}
 		}
-		GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::FLIP);
-		s_vsyncIntervalCounter = 0;
+		if (flipPending)
+		{
+			GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::FLIP);
+			s_vsyncIntervalCounter = 0;
+		}
 	}
 	// vsync
 	GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::VSYNC);
