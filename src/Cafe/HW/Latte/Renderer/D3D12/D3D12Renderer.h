@@ -211,6 +211,7 @@ public:
 
 	[[noreturn]] void HandleDeviceError(HRESULT hr, const char* what);
 	void LogDeviceRemovedData(); // DRED breadcrumbs and page fault info, logged once
+	void LogDebugLayerMessages(); // last debug layer warnings/errors (CEMU_D3D12_DEBUG=1)
 
 	// used by internal shaders (surface copy, output blit, imgui)
 	RendererShaderD3D12* CreateInternalShader(RendererShader::ShaderType type, const std::string& glsl);
@@ -283,6 +284,7 @@ private:
 	bool m_debugMode = false;
 	bool m_dredEnabled = false;
 	bool m_dredLogged = false;
+	bool m_cmdListBroken = false; // Close failed, ResetCommandList creates a new list
 	std::unordered_set<LatteTextureD3D12*> m_dumpCandidates;
 	uint32 m_dumpCheckFrames = 0;
 	void DumpArrayTexturesIfRequested();

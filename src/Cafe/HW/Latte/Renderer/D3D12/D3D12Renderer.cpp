@@ -402,7 +402,16 @@ void D3D12Renderer::ResetCommandList()
 	m_currentAllocator = std::move(m_freeAllocators.front().allocator);
 	m_freeAllocators.pop_front();
 	D3D12_ThrowIfFailed(m_currentAllocator->Reset(), "ID3D12CommandAllocator::Reset");
-	D3D12_ThrowIfFailed(m_cmdList->Reset(m_currentAllocator.Get(), nullptr), "ID3D12GraphicsCommandList::Reset");
+	if (m_cmdListBroken)
+	{
+		// a list whose Close failed can't be reset, it's replaced
+		m_cmdListBroken = false;
+		ComPtr<ID3D12GraphicsCommandList> list;
+		D3D12_ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_currentAllocator.Get(), nullptr, IID_PPV_ARGS(&list)), "CreateCommandList");
+		m_cmdList = list;
+	}
+	else
+		D3D12_ThrowIfFailed(m_cmdList->Reset(m_currentAllocator.Get(), nullptr), "ID3D12GraphicsCommandList::Reset");
 	if (m_dredEnabled) // identifies the command list in the device removed diagnostics
 		D3D12_SetDebugName(m_cmdList.Get(), fmt::format("Cemu submission #{}", m_lastSubmittedFenceValue + 1));
 	m_drawsInCommandList = 0;
@@ -417,12 +426,42 @@ void D3D12Renderer::SubmitCommandList(bool waitIdle)
 {
 	occlusionQuery_notifyEndCommandList();
 	FlushBarriers();
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// CEMU_D3D12_TEST_INVALID_LIST=1: every 500th command list gets an invalid barrier (same before and after state), to
+	// exercise the skip below on a PC
+	static const bool s_testInvalid = [] { char* v = nullptr; size_t n = 0; const bool on = _dupenv_s(&v, &n, "CEMU_D3D12_TEST_INVALID_LIST") == 0 && v && v[0] == '1'; free(v); return on; }();
+	if (s_testInvalid && (m_lastSubmittedFenceValue + 1) % 500 == 0)
+	{
+		D3D12_RESOURCE_BARRIER b{};
+		b.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+		b.Transition.pResource = m_bufferCache.Get();
+		b.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+		b.Transition.StateBefore = m_bufferCacheState;
+		b.Transition.StateAfter = m_bufferCacheState;
+		m_cmdList->ResourceBarrier(1, &b);
+	}
+#endif
 	HRESULT hr = m_cmdList->Close();
-	if (FAILED(hr))
+	// E_INVALIDARG with a healthy device: one recorded command was invalid (#146, MK8 course loads on PC and Xbox, cause
+	// not found yet). The list can't be executed, but the app doesn't have to end: skip its work (one frame may miss some
+	// drawing) and still signal its submission id, which uploads, queries and readbacks wait for
+	const bool skipList = hr == E_INVALIDARG && SUCCEEDED(m_device->GetDeviceRemovedReason());
+	if (skipList)
+	{
+		m_cmdListBroken = true;
+		static uint32 s_skipped = 0;
+		if (s_skipped++ < 10)
+		{
+			cemuLog_log(LogType::Force, "D3D12: command list #{} was invalid (Close returned E_INVALIDARG, {} draws), its work is dropped", m_lastSubmittedFenceValue + 1, m_drawsInCommandList);
+			LogDebugLayerMessages();
+		}
+	}
+	else if (FAILED(hr))
 		HandleDeviceError(hr, "ID3D12GraphicsCommandList::Close");
 	ID3D12CommandList* lists[] = { m_cmdList.Get() };
 	D3D12_Checkpoint(m_device.Get(), "command list closed");
-	m_queue->ExecuteCommandLists(1, lists);
+	if (!skipList)
+		m_queue->ExecuteCommandLists(1, lists);
 	const uint64 submissionId = m_lastSubmittedFenceValue + 1;
 	hr = m_queue->Signal(m_fence.Get(), submissionId);
 	if (FAILED(hr))
@@ -493,6 +532,12 @@ void D3D12Renderer::HandleDeviceError(HRESULT hr, const char* what)
 	cemuLog_log(LogType::Force, "{}", msg);
 	if (FAILED(reason))
 		LogDeviceRemovedData();
+	LogDebugLayerMessages();
+	throw std::runtime_error(msg);
+}
+
+void D3D12Renderer::LogDebugLayerMessages()
+{
 	// with the debug layer (CEMU_D3D12_DEBUG=1) the call that made e.g. Close fail is in the info queue, which otherwise
 	// only goes to an attached debugger
 	ComPtr<ID3D12InfoQueue> infoQueue;
@@ -509,8 +554,8 @@ void D3D12Renderer::HandleDeviceError(HRESULT hr, const char* what)
 			if (SUCCEEDED(infoQueue->GetMessage(i, message, &size)) && message->Severity <= D3D12_MESSAGE_SEVERITY_WARNING)
 				cemuLog_log(LogType::Force, "D3D12 debug layer: {}", std::string_view(message->pDescription, message->DescriptionByteLength ? message->DescriptionByteLength - 1 : 0));
 		}
+		infoQueue->ClearStoredMessages();
 	}
-	throw std::runtime_error(msg);
 }
 
 namespace
