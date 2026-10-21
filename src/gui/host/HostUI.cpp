@@ -17,6 +17,8 @@
 #include <imgui.h>
 
 #include <mutex>
+#include <chrono>
+#include <cmath>
 #include <fstream>
 #include <unordered_set>
 #include <boost/algorithm/string.hpp>
@@ -329,21 +331,82 @@ namespace
 		if (!newer.empty() && !s_updateDismissed)
 		{
 			ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "A newer build is available: %s", newer.c_str());
-			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s", HostTools::GetDownloadUrl());
+			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s   (View hides this)", HostTools::GetDownloadUrl());
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Hide"))
 				s_updateDismissed = true;
 		}
 	}
 
+	// game carousel: one row of cover cards like a console dashboard (Dolphin UWP style). Left/right (D-pad, stick, arrow
+	// keys) moves the selection, the row glides to it; A / Enter starts the game. ImGui's own navigation is off while the
+	// carousel has the input, the cards aren't ImGui items
+	bool s_carouselActive = false; // read at the start of the next frame
+	float s_carouselScroll = 0.0f; // eased towards s_selectedGame
+	std::chrono::steady_clock::time_point s_carouselLastFrame;
+
+	bool _CarouselKey(ImGuiKey gamepad, ImGuiKey stick, ImGuiKey keyboard)
+	{
+		return ImGui::IsKeyPressed(gamepad, true) || ImGui::IsKeyPressed(stick, true) || ImGui::IsKeyPressed(keyboard, true);
+	}
+
+	// a card: the title's icon on top, its name on a band below (the Wii U case shape, 3:4)
+	void _DrawCard(ImDrawList* drawList, const GameEntry& game, ImVec2 min, float width, bool selected, float alpha)
+	{
+		const float height = width * 4.0f / 3.0f;
+		const ImVec2 max(min.x + width, min.y + height);
+		const float rounding = 10.0f * s_scale;
+		const ImU32 a = (ImU32)(alpha * 255.0f) << IM_COL32_A_SHIFT;
+		if (selected)
+		{
+			// glow: a few widening translucent outlines
+			for (int i = 3; i >= 1; i--)
+			{
+				const float g = i * 4.0f * s_scale;
+				drawList->AddRect(ImVec2(min.x - g, min.y - g), ImVec2(max.x + g, max.y + g), IM_COL32(80, 170, 255, 80 / i), rounding + g, 0, 3.0f * s_scale);
+			}
+		}
+		drawList->AddRectFilled(min, max, IM_COL32(30, 34, 42, 0) | a, rounding);
+		void* texture = nullptr;
+		if (const HostIcons::Icon* icon = HostIcons::Get(game.titleId); icon && s_textureProvider)
+			texture = s_textureProvider(game.titleId, icon->rgba.data(), icon->width, icon->height);
+		const ImVec2 artMax(max.x, min.y + width);
+		if (texture)
+			drawList->AddImageRounded(texture, min, artMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 0) | a, rounding, ImDrawFlags_RoundCornersTop);
+		else
+		{
+			// no art: the initials of the title, big
+			std::string initials;
+			for (size_t i = 0; i < game.name.size() && initials.size() < 2; i++)
+				if (std::isalnum((unsigned char)game.name[i]) && (i == 0 || game.name[i - 1] == ' '))
+					initials += (char)std::toupper((unsigned char)game.name[i]);
+			ImGui::PushFont(s_fontLarge);
+			const ImVec2 size = ImGui::CalcTextSize(initials.c_str());
+			drawList->AddText(ImVec2(min.x + (width - size.x) * 0.5f, min.y + (width - size.y) * 0.5f), IM_COL32(150, 160, 175, 0) | a, initials.c_str());
+			ImGui::PopFont();
+		}
+		// name band, the name wrapped into the card
+		const float pad = 8.0f * s_scale;
+		drawList->AddRectFilled(ImVec2(min.x, artMax.y), max, (selected ? IM_COL32(28, 92, 170, 0) : IM_COL32(44, 50, 62, 0)) | a, rounding, ImDrawFlags_RoundCornersBottom);
+		const ImVec4 clip(min.x + pad, artMax.y + pad, max.x - pad, max.y - pad);
+		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(clip.x, clip.y), IM_COL32(235, 238, 245, 0) | a, game.name.c_str(), nullptr, width - pad * 2.0f, &clip);
+		if (selected)
+			drawList->AddRect(min, max, IM_COL32(120, 200, 255, 255), rounding, 0, 3.0f * s_scale);
+	}
+
 	std::optional<fs::path> _DrawGamesTab()
 	{
 		std::optional<fs::path> launch;
+		// the crash notice has buttons that need ImGui's navigation, the update notice is hidden with View
+		const bool notices = s_lastSessionProblem.has_value();
+		if (!HostTools::GetNewerBuild().empty() && !s_updateDismissed && ImGui::IsKeyPressed(ImGuiKey_GamepadBack, false))
+			s_updateDismissed = true;
 		_DrawNotices();
 		if (CafeTitleList::IsScanning())
 			ImGui::TextDisabled("Scanning game folders...");
 		if (s_games.empty())
 		{
+			s_carouselActive = false;
 			ImGui::TextWrapped("No games found.");
 			ImGui::Spacing();
 			ImGui::TextWrapped("Add a folder that contains your games (WUD, WUX, WUA, RPX or extracted folders) under Settings, or install titles into the mlc folder:");
@@ -351,64 +414,100 @@ namespace
 		}
 		else
 		{
-			const float footer = ImGui::GetFrameHeightWithSpacing() * 2.0f;
-			if (ImGui::BeginChild("##gamelist", ImVec2(0.0f, -footer), true))
+			// the notices have buttons, ImGui's navigation reaches them only while the carousel lets go
+			s_carouselActive = !notices;
+			const int count = (int)s_games.size();
+			s_selectedGame = std::clamp(s_selectedGame, 0, count - 1);
+			if (!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
 			{
-				const float rowHeight = ImGui::GetTextLineHeight() * 2.8f;
-				const float iconSize = rowHeight;
-				const float textX = iconSize + ImGui::GetStyle().ItemSpacing.x;
-				for (int i = 0; i < (int)s_games.size(); i++)
+				if (_CarouselKey(ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft, ImGuiKey_LeftArrow) && s_selectedGame > 0)
+					s_selectedGame--;
+				if (_CarouselKey(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight, ImGuiKey_RightArrow) && s_selectedGame < count - 1)
+					s_selectedGame++;
+				if (s_carouselActive && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
+					launch = s_games[s_selectedGame].path;
+				if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false))
 				{
-					const GameEntry& game = s_games[i];
-					ImGui::PushID(i);
-					const bool selected = i == s_selectedGame;
-					const ImVec2 rowStart = ImGui::GetCursorScreenPos();
-					const bool activated = ImGui::Selectable("##game", selected, ImGuiSelectableFlags_AllowDoubleClick, ImVec2(0.0f, rowHeight));
-					// the game's own icon (box art) left of its name, a placeholder until it's loaded
-					ImDrawList* drawList = ImGui::GetWindowDrawList();
-					const ImVec2 iconMin = rowStart;
-					const ImVec2 iconMax(rowStart.x + iconSize, rowStart.y + iconSize);
-					void* texture = nullptr;
-					if (const HostIcons::Icon* icon = HostIcons::Get(game.titleId); icon && s_textureProvider)
-						texture = s_textureProvider(game.titleId, icon->rgba.data(), icon->width, icon->height);
-					if (texture)
-						drawList->AddImageRounded(texture, iconMin, iconMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8.0f * s_scale);
-					else
-						drawList->AddRectFilled(iconMin, iconMax, IM_COL32(40, 44, 52, 255), 8.0f * s_scale);
-					const float lineHeight = ImGui::GetTextLineHeightWithSpacing();
-					const float textY = rowStart.y + (rowHeight - lineHeight * 2.0f) * 0.5f;
-					drawList->AddText(ImVec2(rowStart.x + textX, textY), ImGui::GetColorU32(ImGuiCol_Text), game.name.c_str());
-					const std::string details = fmt::format("{:016x}  v{}{}{}", game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "");
-					drawList->AddText(ImVec2(rowStart.x + textX, textY + lineHeight), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
-					if (activated)
-					{
-						s_selectedGame = i;
-						launch = game.path;
-					}
-					if (ImGui::IsItemFocused())
-						s_selectedGame = i;
-					if (ImGui::IsItemHovered() && !game.location.empty())
-						ImGui::SetTooltip("%s", game.location.c_str());
-					ImGui::PopID();
+					CafeTitleList::Refresh();
+					HostUI::RequestGameListRefresh();
 				}
 			}
-			ImGui::EndChild();
+
+			// ease the row towards the selection (frame rate independent)
+			const auto now = std::chrono::steady_clock::now();
+			const float dt = std::clamp(std::chrono::duration<float>(now - s_carouselLastFrame).count(), 0.0f, 0.1f);
+			s_carouselLastFrame = now;
+			s_carouselScroll += ((float)s_selectedGame - s_carouselScroll) * (1.0f - std::exp(-dt * 12.0f));
+			if (std::abs((float)s_selectedGame - s_carouselScroll) < 0.001f)
+				s_carouselScroll = (float)s_selectedGame;
+
+			ImVec2 area = ImGui::GetContentRegionAvail();
+			if (!s_carouselActive)
+				area.y -= ImGui::GetFrameHeightWithSpacing(); // the buttons below
+			const ImVec2 origin = ImGui::GetCursorScreenPos();
+			ImDrawList* drawList = ImGui::GetWindowDrawList();
+			const float footer = ImGui::GetTextLineHeightWithSpacing() * 1.5f;
+			const float infoHeight = ImGui::GetTextLineHeightWithSpacing() * 3.5f;
+			// card size from the space: cards are 3:4, the selected one 15% larger
+			const float cardWidth = std::min(area.x / 5.2f, (area.y - footer - infoHeight) / (4.0f / 3.0f) / 1.2f);
+			const float spacing = cardWidth * 0.18f;
+			const float centerX = origin.x + area.x * 0.5f;
+			const float rowCenterY = origin.y + (area.y - footer - infoHeight) * 0.5f;
+			for (int i = 0; i < count; i++)
+			{
+				const float offset = (float)i - s_carouselScroll;
+				const float x = centerX + offset * (cardWidth + spacing);
+				if (x + cardWidth < origin.x - cardWidth || x - cardWidth > origin.x + area.x + cardWidth)
+					continue;
+				const float closeness = std::max(0.0f, 1.0f - std::abs(offset)); // 1 for the selected card
+				const float width = cardWidth * (1.0f + 0.15f * closeness);
+				const float height = width * 4.0f / 3.0f;
+				const float alpha = std::clamp(1.0f - std::abs(offset) * 0.12f, 0.45f, 1.0f);
+				const ImVec2 min(x - width * 0.5f, rowCenterY - height * 0.5f);
+				_DrawCard(drawList, s_games[i], min, width, i == s_selectedGame, alpha);
+				// mouse/touch: a click selects, a click on the selected card starts it
+				const ImVec2 max(min.x + width, min.y + height);
+				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsMouseHoveringRect(min, max) && ImGui::IsWindowHovered())
+				{
+					if (i == s_selectedGame)
+						launch = s_games[i].path;
+					s_selectedGame = i;
+				}
+			}
+
+			// name and details of the selected game under the row
+			const GameEntry& game = s_games[s_selectedGame];
+			const float infoY = rowCenterY + cardWidth * 1.15f * (4.0f / 3.0f) * 0.5f + spacing;
+			ImGui::PushFont(s_fontLarge);
+			const ImVec2 nameSize = ImGui::CalcTextSize(game.name.c_str());
+			drawList->AddText(ImVec2(centerX - nameSize.x * 0.5f, infoY), ImGui::GetColorU32(ImGuiCol_Text), game.name.c_str());
+			ImGui::PopFont();
+			const std::string details = fmt::format("{:016x}   v{}{}{}   {} / {}", game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+			const ImVec2 detailsSize = ImGui::CalcTextSize(details.c_str());
+			drawList->AddText(ImVec2(centerX - detailsSize.x * 0.5f, infoY + nameSize.y + 4.0f * s_scale), ImGui::GetColorU32(ImGuiCol_TextDisabled), details.c_str());
+
+			// button hints at the bottom
+			const char* hints = "A  Start        X  Refresh        Y  Settings        LB / RB  Tabs";
+			const ImVec2 hintsSize = ImGui::CalcTextSize(hints);
+			drawList->AddText(ImVec2(centerX - hintsSize.x * 0.5f, origin.y + area.y - footer * 0.8f), ImGui::GetColorU32(ImGuiCol_TextDisabled), hints);
+			ImGui::Dummy(area);
 		}
-		if (ImGui::Button("Open file..."))
+		if (!s_carouselActive)
 		{
-			HostPlatform::PickFile([](const fs::path& path) {
-				if (!path.empty())
-					s_pendingLaunch = path;
-			});
+			if (ImGui::Button("Open file..."))
+			{
+				HostPlatform::PickFile([](const fs::path& path) {
+					if (!path.empty())
+						s_pendingLaunch = path;
+				});
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Refresh"))
+			{
+				CafeTitleList::Refresh();
+				HostUI::RequestGameListRefresh();
+			}
 		}
-		ImGui::SameLine();
-		if (ImGui::Button("Refresh"))
-		{
-			CafeTitleList::Refresh();
-			HostUI::RequestGameListRefresh();
-		}
-		ImGui::SameLine();
-		ImGui::TextDisabled("A: start   Y: settings");
 		return launch;
 	}
 
@@ -1024,6 +1123,15 @@ std::optional<fs::path> HostUI::DrawLauncher()
 	}
 
 	std::optional<fs::path> launch;
+	{
+		// the game carousel reads the D-pad and the arrow keys itself (s_carouselActive is from the last frame)
+		ImGuiIO& io = ImGui::GetIO();
+		const ImGuiConfigFlags nav = ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
+		if (s_carouselActive && s_tab == kTabGames && !s_showSetup)
+			io.ConfigFlags &= ~nav;
+		else
+			io.ConfigFlags |= nav;
+	}
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 	ImGui::SetNextWindowPos(viewport->WorkPos);
 	ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -1113,7 +1221,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 					ImGui::PopFont();
 					ImGui::TextWrapped("%s", msg.text.c_str());
 					ImGui::Spacing();
-					if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))
+					if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
 					{
 						std::unique_lock _l2(s_mutex);
 						if (!s_messages.empty())
