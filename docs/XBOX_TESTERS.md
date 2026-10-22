@@ -58,8 +58,10 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **Blow into the microphone** (Super Mario 3D World and others): under Button mapping for the GamePad player, map
   **Blow into mic (hold)** to a button you don't need (for example the right stick click); holding it blows.
 
-**In-game menu**: click both sticks, or hold View + Menu for 1 s. It has: switch to the GamePad screen, a **touch cursor**
-(right stick moves it, RT taps, for games like Super Mario Maker), the FPS counter, and exit to the game list.
+**In-game menu**: click both sticks, or hold View + Menu for 1 s (a hint says so for a few seconds when a game starts).
+It has: switch to the GamePad screen, a **touch cursor** (right stick moves it, RT taps, for games like Super Mario Maker),
+the FPS counter, VSync, volume and player 1's stick deadzone (left/right changes them, they apply right away), and exit
+to the game list.
 **Motion controls** (gyro puzzles, e.g. BOTW shrines): in the in-game menu set **Motion: On**. The right stick then tilts
 the GamePad (let go = flat). Turn it off again to get the camera back on the right stick. Real gyro: install a DSU/cemuhook motion app on
 your phone (same Wi-Fi), type the IP it shows under **Controllers → Phone motion (DSU) IP** for the GamePad player and

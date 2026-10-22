@@ -50,6 +50,9 @@ namespace
 		kMenuGamePadScreen,
 		kMenuTouchCursor,
 		kMenuShowFPS,
+		kMenuVSync,
+		kMenuVolume,
+		kMenuDeadzone,
 		kMenuStickTilt,
 		kMenuAmiibo,
 		kMenuSkylander,
@@ -70,6 +73,11 @@ namespace
 	// in-game menu, read by the GPU thread
 	std::atomic_bool s_menuOpen = false;
 	std::atomic_int s_menuSelection = 0;
+	// "Menu: click both sticks" is shown for a few seconds when the first game of the session starts (issue #4: the menu
+	// wasn't found)
+	std::atomic_bool s_menuHintPending = false; // set when the game starts, the GPU thread starts the timer on its first in-game frame
+	std::chrono::steady_clock::time_point s_menuHintUntil{};
+	bool s_menuHintShown = false;
 	uint32 s_lastPadButtons = 0;
 	// touch cursor: stands in for the GamePad's touch screen (Super Mario Maker can't be played without it). The right
 	// stick moves it over the GamePad screen, RT touches. Position is 0..1 of the GamePad image, drawn by the GPU thread
@@ -261,6 +269,11 @@ namespace
 		CafeSystem::LaunchForegroundTitle();
 		s_state = State::Running;
 		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());
+		if (!s_menuHintShown)
+		{
+			s_menuHintShown = true;
+			s_menuHintPending = true;
+		}
 	}
 
 	void _RenderLauncherFrame()
@@ -525,6 +538,44 @@ namespace
 		mouse.right_down = active;
 	}
 
+	// left/right on a menu item with a value
+	void _StepMenuItem(int item, int direction)
+	{
+		auto& config = GetConfig();
+		switch (item)
+		{
+		case kMenuAmiibo:
+			_StepAmiibo(direction);
+			break;
+		case kMenuSkylander:
+			_StepSkylander(direction);
+			break;
+		case kMenuVSync:
+			config.vsync = config.vsync.GetValue() != 0 ? 0 : 1;
+			GetConfigHandle().Save();
+			break;
+		case kMenuVolume:
+		{
+			config.tv_volume = std::clamp<int>(config.tv_volume + direction * 10, 0, 100);
+			std::shared_lock lock(g_audioMutex);
+			if (g_tvAudio)
+				g_tvAudio->SetVolume(config.tv_volume);
+			GetConfigHandle().Save();
+			break;
+		}
+		case kMenuDeadzone:
+		{
+			const auto info = HostControllers::GetPlayer(0);
+			const float deadzone = std::clamp(std::round(info.deadzone[0] * 20.0f + direction) / 20.0f, 0.0f, 0.9f);
+			HostControllers::SetDeadzone(0, 0, deadzone);
+			HostControllers::SetDeadzone(0, 1, std::clamp(std::round(info.deadzone[1] * 20.0f + direction) / 20.0f, 0.0f, 0.9f));
+			break;
+		}
+		default:
+			break;
+		}
+	}
+
 	void _ExecuteMenuItem(int item)
 	{
 		auto& config = GetConfig();
@@ -562,6 +613,9 @@ namespace
 				if (s_touchRestoreTVScreen)
 					LatteGPUState.isDRCPrimary = false;
 			}
+			break;
+		case kMenuVSync:
+			_StepMenuItem(item, 1);
 			break;
 		case kMenuShowFPS:
 		{
@@ -742,10 +796,8 @@ namespace
 			s_menuSelection = (s_menuSelection + 1) % kMenuCount;
 		if (pressed & HostGamepad::kB)
 			s_menuOpen = false;
-		if (s_menuSelection == kMenuAmiibo && (pressed & (HostGamepad::kLeft | HostGamepad::kRight)))
-			_StepAmiibo((pressed & HostGamepad::kLeft) ? -1 : 1);
-		if (s_menuSelection == kMenuSkylander && (pressed & (HostGamepad::kLeft | HostGamepad::kRight)))
-			_StepSkylander((pressed & HostGamepad::kLeft) ? -1 : 1);
+		if (pressed & (HostGamepad::kLeft | HostGamepad::kRight))
+			_StepMenuItem(s_menuSelection, (pressed & HostGamepad::kLeft) ? -1 : 1);
 		if (pressed & HostGamepad::kA)
 			_ExecuteMenuItem(s_menuSelection);
 	}
@@ -1010,10 +1062,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 				s_menuSelection = (s_menuSelection + kMenuCount - 1) % kMenuCount;
 			else if (virtualKey == VK_DOWN)
 				s_menuSelection = (s_menuSelection + 1) % kMenuCount;
-			else if ((virtualKey == VK_LEFT || virtualKey == VK_RIGHT) && s_menuSelection == kMenuAmiibo)
-				_StepAmiibo(virtualKey == VK_LEFT ? -1 : 1);
-			else if ((virtualKey == VK_LEFT || virtualKey == VK_RIGHT) && s_menuSelection == kMenuSkylander)
-				_StepSkylander(virtualKey == VK_LEFT ? -1 : 1);
+			else if (virtualKey == VK_LEFT || virtualKey == VK_RIGHT)
+				_StepMenuItem(s_menuSelection, virtualKey == VK_LEFT ? -1 : 1);
 			else if (virtualKey == VK_RETURN)
 				_ExecuteMenuItem(s_menuSelection);
 			else if (virtualKey == VK_ESCAPE)
@@ -1089,10 +1139,26 @@ void HostApp::DrawInGameMenu()
 		draw->AddCircle(p, r, IM_COL32(0, 0, 0, 220), 0, std::max(2.0f, r / 5.0f));
 	}
 	const bool pairing = HostControllers::IsPairing();
-	if (!s_menuOpen && !pairing)
-		return;
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 	const float scale = std::max(1.0f, viewport->Size.y / 1080.0f);
+	if (s_menuHintPending.exchange(false))
+		s_menuHintUntil = std::chrono::steady_clock::now() + std::chrono::seconds(6);
+	if (!s_menuOpen && !pairing && std::chrono::steady_clock::now() < s_menuHintUntil)
+	{
+		// bottom center, small and out of the way of the game's own HUD
+		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y - 60.0f * scale), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+		ImGui::SetNextWindowBgAlpha(0.75f);
+		ImFont* hintFont = ImGui_GetFont(24.0f * scale);
+		if (hintFont)
+			ImGui::PushFont(hintFont);
+		if (ImGui::Begin("##menuhint", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
+			ImGui::TextUnformatted("Menu: click both sticks (or hold View + Menu)");
+		ImGui::End();
+		if (hintFont)
+			ImGui::PopFont();
+	}
+	if (!s_menuOpen && !pairing)
+		return;
 	if (pairing)
 	{
 		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -1141,6 +1207,9 @@ void HostApp::DrawInGameMenu()
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
+			std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
+			fmt::format("Volume: < {}% >", std::clamp<int>(config.tv_volume, 0, 100)),
+			fmt::format("Stick deadzone (player 1): < {}% >", (int)std::lround(HostControllers::GetPlayer(0).deadzone[0] * 100.0f)),
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
 			_AmiiboLabel(),
 			_SkylanderLabel(),
@@ -1158,7 +1227,7 @@ void HostApp::DrawInGameMenu()
 				ImGui::Text("  %s", labels[i].c_str());
 		}
 		ImGui::Separator();
-		ImGui::TextDisabled("A: select   B: close");
+		ImGui::TextDisabled("A: select   Left/Right: change   B: close");
 	}
 	ImGui::End();
 	if (font)

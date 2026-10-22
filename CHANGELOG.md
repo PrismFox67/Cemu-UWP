@@ -6,6 +6,11 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-10-22
+### Xbox app
+- **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it
+  (click both sticks, or hold View + Menu). The menu now also has VSync, volume and player 1's stick deadzone; change
+  them with left/right, they apply right away.
+
 ### Direct3D 12
 - **BOTW Magnesis / Stasis, second attempt:** BOTW tests what its runes can target against a small copy of the depth
   buffer. That copy covered only part of the buffer, which Direct3D 12 can't do with a plain copy, so it was dropped and
