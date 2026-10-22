@@ -26,6 +26,11 @@ uint64 latestQueryFinishedEventId = 0;
 
 LatteQueryObject* _currentlyActiveRendererQuery = {0};
 
+bool LatteQuery_IsOcclusionQueryActive()
+{
+	return _currentlyActiveRendererQuery != nullptr;
+}
+
 uint64 LatteQuery_getNextEventId()
 {
 	uint64 ev = queryEventCounter;

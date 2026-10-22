@@ -153,6 +153,7 @@ void LatteQuery_EndOcclusionQuery(MPTR queryMPTR);
 void LatteQuery_UpdateFinishedQueries();
 void LatteQuery_UpdateFinishedQueriesForceFinishAll();
 void LatteQuery_CancelActiveGPU7Queries();
+bool LatteQuery_IsOcclusionQueryActive(); // draws now are counted by a query of the game
 
 // streamout
 

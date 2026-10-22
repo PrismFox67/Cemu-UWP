@@ -167,18 +167,26 @@ void D3D12Renderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 		return;
 	}
 	cemu_assert_debug(srcTex != dstTex);
+	if (RecordSurfaceCopyDraw(srcTex, srcMip, srcSlice, 0, 0, dstTex, dstMip, dstSlice, 0, 0, effectiveCopyWidth, effectiveCopyHeight))
+		LatteTexture_TrackTextureGPUWrite(dstTex, dstSlice, dstMip, LatteTexture_getNextUpdateEventCounter());
+}
 
+// Draws a width x height region of srcTex at (srcX, srcY) to (dstX, dstY) of dstTex: a depth target gets the source's
+// first channel as depth (depth <-> color conversions, and depth copies D3D12 can't do with CopyTextureRegion: those
+// must cover whole subresources), a color target gets it in red
+bool D3D12Renderer::RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, LatteTextureD3D12* dstTex, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 width, sint32 height)
+{
 	RendererShaderD3D12* ps = dstTex->isDepth ? m_internal->copyPSColorToDepth.get() : m_internal->copyPSDepthToColor.get();
 	const DXGI_FORMAT rtvFormat = dstTex->isDepth ? DXGI_FORMAT_UNKNOWN : dstTex->GetFormatInfo().rtvFormat;
 	const DXGI_FORMAT dsvFormat = dstTex->isDepth ? dstTex->GetFormatInfo().dsvFormat : DXGI_FORMAT_UNKNOWN;
 	if (!dstTex->isDepth && rtvFormat == DXGI_FORMAT_UNKNOWN)
 	{
 		cemuLog_logDebugOnce(LogType::Force, "D3D12: Surface copy into non-renderable format {:04x}", (uint32)dstTex->format);
-		return;
+		return false;
 	}
 	ID3D12PipelineState* pso = m_pipelineCache->GetInternalPipeline(m_internal->copyVS.get(), ps, rtvFormat, dsvFormat, dstTex->isDepth, false);
 	if (!pso || !srcTex->GetResource() || !dstTex->GetResource())
-		return;
+		return false;
 	// acquire the sampler table before recording any state (see GetSamplerTable)
 	D3D12_SAMPLER_DESC sampler = _MakeSampler(false);
 	const D3D12_GPU_DESCRIPTOR_HANDLE samplerTable = GetSamplerTable(&sampler, 1);
@@ -234,8 +242,8 @@ void D3D12Renderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 
 	if (!m_state.rootSignatureBound)
 		BindRootSignatureAndHeaps();
-	D3D12_VIEWPORT vp{ 0.0f, 0.0f, (float)effectiveCopyWidth, (float)effectiveCopyHeight, 0.0f, 1.0f };
-	D3D12_RECT scissor{ 0, 0, effectiveCopyWidth, effectiveCopyHeight };
+	D3D12_VIEWPORT vp{ (float)dstX, (float)dstY, (float)width, (float)height, 0.0f, 1.0f };
+	D3D12_RECT scissor{ dstX, dstY, dstX + width, dstY + height };
 	m_cmdList->RSSetViewports(1, &vp);
 	m_cmdList->RSSetScissorRects(1, &scissor);
 	m_cmdList->SetPipelineState(pso);
@@ -245,7 +253,7 @@ void D3D12Renderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 	{
 		float vertexOffsets[4 * 2];
 		sint32 srcTexelOffset[2];
-	} pushConstants = { { -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f }, { 0, 0 } };
+	} pushConstants = { { -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f }, { srcX - dstX, srcY - dstY } }; // the shader adds the target pixel position
 	SetPushConstants(&pushConstants, sizeof(pushConstants));
 
 	const D3D12BindingRemap& remap = ps->GetBindingRemap();
@@ -268,5 +276,5 @@ void D3D12Renderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 
 	InvalidateDrawState();
 	m_hasRecordedWork = true;
-	LatteTexture_TrackTextureGPUWrite(dstTex, dstSlice, dstMip, LatteTexture_getNextUpdateEventCounter());
+	return true;
 }

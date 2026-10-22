@@ -415,6 +415,7 @@ void D3D12Renderer::ResetCommandList()
 	if (m_dredEnabled) // identifies the command list in the device removed diagnostics
 		D3D12_SetDebugName(m_cmdList.Get(), fmt::format("Cemu submission #{}", m_lastSubmittedFenceValue + 1));
 	m_drawsInCommandList = 0;
+	m_submitThreshold = kDrawsPerSubmission;
 	m_hasRecordedWork = false;
 	InvalidateDrawState();
 	BindRootSignatureAndHeaps();
@@ -1911,6 +1912,25 @@ void D3D12Renderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 		{
 			cemuLog_logOnce(LogType::Force, "D3D12: Texture copy slice {} -> {} outside the texture, skipped", sSlice, dSlice);
 			continue;
+		}
+		// D3D12 copies depth (and stencil) only as whole subresources and drops a partial copy. Games copy parts of depth
+		// buffers between sizes, BOTW does it for the small depth buffer its occlusion queries test against: with the
+		// copy dropped every query counted 0 samples and Magnesis/Stasis found no targets (#71). Copy those with a draw
+		if (sameFamily && planeCompatible && dstTex->isDepth && srcTex != dstTex && !srcIs3D && !dstIs3D)
+		{
+			const auto mipSize = [](LatteTextureD3D12* tex, sint32 mip, bool height) {
+				return (sint32)std::max<uint64>(1, (height ? tex->GetDesc().Height : tex->GetDesc().Width) >> mip);
+			};
+			const bool wholeSubresources = effectiveSrcX == 0 && effectiveSrcY == 0 && effectiveDstX == 0 && effectiveDstY == 0 &&
+				effectiveCopyWidth == mipSize(srcTex, srcMip, false) && effectiveCopyHeight == mipSize(srcTex, srcMip, true) &&
+				effectiveCopyWidth == mipSize(dstTex, dstMip, false) && effectiveCopyHeight == mipSize(dstTex, dstMip, true);
+			if (!wholeSubresources)
+			{
+				if (dstFmt.hasStencil)
+					cemuLog_logOnce(LogType::Force, "D3D12: partial depth/stencil copies are drawn, the stencil is not copied");
+				RecordSurfaceCopyDraw(srcTex, srcMip, sSlice, effectiveSrcX, effectiveSrcY, dstTex, dstMip, dSlice, effectiveDstX, effectiveDstY, effectiveCopyWidth, effectiveCopyHeight);
+				continue;
+			}
 		}
 		if (sameFamily && planeCompatible)
 		{

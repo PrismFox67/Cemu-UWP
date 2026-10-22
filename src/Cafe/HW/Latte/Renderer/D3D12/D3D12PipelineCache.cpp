@@ -7,6 +7,7 @@
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "config/CemuConfig.h"
 #include "config/ActiveSettings.h"
@@ -1415,6 +1416,10 @@ uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, co
 // render targets that are probably drawn once (see GetOrCreate): cube maps, texture arrays, and anything up to 256x256
 static bool IsLikelyOneOffTarget(CachedFBOD3D12* fbo)
 {
+	// a draw counted by an occlusion query must not be skipped: the game would read 0 samples and think the object is
+	// hidden (BOTW's Magnesis/Stasis targeting, #71)
+	if (LatteQuery_IsOcclusionQueryActive())
+		return true;
 	if (!fbo)
 		return false;
 	if ((sint64)fbo->m_size.x * fbo->m_size.y <= 256 * 256)
@@ -1516,6 +1521,9 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 			timeout = std::chrono::milliseconds(0);
 		else if (waitMode == 2)
 			timeout = std::chrono::hours(1);
+		// draws counted by an occlusion query wait outside the budget too, a skipped one reads as hidden
+		if (LatteQuery_IsOcclusionQueryActive())
+			timeout = std::max(timeout, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(10)));
 		const bool ready = m_compileQueue->WaitForReady(result, timeout);
 		m_waitedInWindow += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
 		if (!ready)

@@ -83,7 +83,7 @@ void D3D12Renderer::draw_endSequence()
 	if (pixelShader)
 		LatteRenderTarget_trackUpdates();
 	const bool hasReadback = LatteTextureReadback_Update();
-	if (m_drawsInCommandList >= kDrawsPerSubmission || hasReadback || m_uploadRing->GetRecordingOverflowBytes() > 0)
+	if (m_drawsInCommandList >= m_submitThreshold || hasReadback || m_uploadRing->GetRecordingOverflowBytes() > 0)
 		SubmitCommandList(false);
 }
 
