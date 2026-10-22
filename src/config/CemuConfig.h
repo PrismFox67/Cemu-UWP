@@ -439,6 +439,8 @@ struct CemuConfig
 
 	ConfigValueBounds<CPUMode> cpu_mode{ CPUMode::Auto };
 	ConfigValueBounds<CafeConsoleLanguage> console_language{ CafeConsoleLanguage::EN };
+	ConfigValue<CafeConsoleRegion> console_region{ CafeConsoleRegion::Auto }; // Auto: the platform region follows the title's region
+	ConfigValue<std::string> host_ui_language{}; // Xbox frontend texts: "" follows the console language, else "en", "pt", "es"
 
 	// graphics
 	ConfigValue<GraphicAPI> graphic_api{ kDefaultGraphicsAPI };

@@ -1055,6 +1055,9 @@ namespace CafeSystem
 	// pick platform region based on title region
 	CafeConsoleRegion GetPlatformRegion()
 	{
+		const CafeConsoleRegion configRegion = GetConfig().console_region.GetValue();
+		if (configRegion == CafeConsoleRegion::JPN || configRegion == CafeConsoleRegion::USA || configRegion == CafeConsoleRegion::EUR)
+			return configRegion;
 		CafeConsoleRegion titleRegion = GetForegroundTitleRegion();
 		CafeConsoleRegion platformRegion = CafeConsoleRegion::USA;
 		if (HAS_FLAG(titleRegion, CafeConsoleRegion::JPN))

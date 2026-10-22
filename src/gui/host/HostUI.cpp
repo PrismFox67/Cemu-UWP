@@ -7,6 +7,7 @@
 #include "gui/host/HostTools.h"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
+#include "gui/host/HostTranslation.h"
 
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -34,6 +35,7 @@ namespace
 		uint16 version; // of the update if one is installed
 		bool hasUpdate = false;
 		bool hasDLC = false;
+		CafeConsoleRegion region = CafeConsoleRegion::Auto; // from meta.xml
 		fs::path path;
 		std::string location;
 	};
@@ -149,6 +151,25 @@ namespace
 		ImGui::GetStyle() = style;
 	}
 
+	// meta.xml regions are a bitmask, a game sold in several regions shows them all
+	std::string _RegionName(CafeConsoleRegion region)
+	{
+		if (region == CafeConsoleRegion::Auto)
+			return _TR("Region free");
+		std::string name;
+		const std::pair<CafeConsoleRegion, const char*> names[] = { { CafeConsoleRegion::JPN, "JPN" }, { CafeConsoleRegion::USA, _TR("USA") }, { CafeConsoleRegion::EUR, "EUR" },
+			{ CafeConsoleRegion::AUS_DEPR, "AUS" }, { CafeConsoleRegion::CHN, "CHN" }, { CafeConsoleRegion::KOR, "KOR" }, { CafeConsoleRegion::TWN, "TWN" } };
+		for (const auto& [flag, text] : names)
+		{
+			if (!HAS_FLAG(region, flag))
+				continue;
+			if (!name.empty())
+				name += "/";
+			name += text;
+		}
+		return name.empty() ? _TR("Unknown region") : name;
+	}
+
 	void _RefreshGameList()
 	{
 		std::vector<GameEntry> games;
@@ -166,6 +187,7 @@ namespace
 			e.name = info->GetMetaTitleName();
 			if (e.name.empty())
 				e.name = fmt::format("{:016x}", e.titleId);
+			e.region = info->GetMetaRegion();
 			e.path = info->GetPath();
 			e.location = info->GetPrintPath();
 			// the same title can be found in several locations, keep the first
@@ -320,11 +342,11 @@ namespace
 	{
 		const bool busy = HostTools::IsBusy();
 		ImGui::BeginDisabled(busy);
-		if (logs && ImGui::Button("Save logs to USB"))
+		if (logs && ImGui::Button(_TR("Save logs to USB")))
 			s_deferred.emplace_back([]() { HostTools::StartSaveLogs(); });
 		if (logs && saves)
 			ImGui::SameLine();
-		if (saves && ImGui::Button("Back up saves to USB"))
+		if (saves && ImGui::Button(_TR("Back up saves to USB")))
 			s_deferred.emplace_back([]() { HostTools::StartBackupSaves(); });
 		ImGui::EndDisabled();
 		if (busy)
@@ -343,10 +365,10 @@ namespace
 			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", s_lastSessionProblem->title.c_str());
 			ImGui::PopFont();
 			ImGui::TextWrapped("%s", s_lastSessionProblem->text.c_str());
-			ImGui::TextWrapped("To report it, save the logs to your USB drive and attach them to a bug report on GitHub.");
+			ImGui::TextWrapped(_TR("To report it, save the logs to your USB drive and attach them to a bug report on GitHub."));
 			_DrawToolButtons(true, false);
 			ImGui::SameLine();
-			if (ImGui::Button("Dismiss"))
+			if (ImGui::Button(_TR("Dismiss")))
 				s_lastSessionProblem.reset();
 			ImGui::Separator();
 		}
@@ -356,7 +378,7 @@ namespace
 			ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "A newer build is available: %s", newer.c_str());
 			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s   (View hides this)", HostTools::GetDownloadUrl());
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Hide"))
+			if (ImGui::SmallButton(_TR("Hide")))
 				s_updateDismissed = true;
 		}
 	}
@@ -441,13 +463,13 @@ namespace
 			s_updateDismissed = true;
 		_DrawNotices();
 		if (CafeTitleList::IsScanning())
-			ImGui::TextDisabled("Scanning game folders...");
+			ImGui::TextDisabled(_TR("Scanning game folders..."));
 		if (s_games.empty())
 		{
 			s_carouselActive = false;
-			ImGui::TextWrapped("No games found.");
+			ImGui::TextWrapped(_TR("No games found."));
 			ImGui::Spacing();
-			ImGui::TextWrapped("Add a folder that contains your games (WUD, WUX, WUA, RPX or extracted folders) under Settings, or install titles into the mlc folder:");
+			ImGui::TextWrapped(_TR("Add a folder that contains your games (WUD, WUX, WUA, RPX or extracted folders) under Settings, or install titles into the mlc folder:"));
 			ImGui::TextWrapped("%s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
 		}
 		else
@@ -515,14 +537,14 @@ namespace
 
 			// details of the selected game at the bottom of the panel
 			const GameEntry& game = s_games[s_selectedGame];
-			const std::string details = fmt::format("{}   {:016x}   v{}{}{}   {} / {}", game.name, game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+			const std::string details = fmt::format("{}   {}   {:016x}   v{}{}{}   {} / {}", game.name, _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
 			const ImVec2 detailsSize = ImGui::CalcTextSize(details.c_str());
 			drawList->AddText(ImVec2(centerX - detailsSize.x * 0.5f, origin.y + area.y - footer), HostTheme::PanelTextDim(), details.c_str());
 			ImGui::Dummy(area);
 		}
 		if (!s_carouselActive)
 		{
-			if (ImGui::Button("Open file..."))
+			if (ImGui::Button(_TR("Open file...")))
 			{
 				HostPlatform::PickFile([](const fs::path& path) {
 					if (!path.empty())
@@ -530,7 +552,7 @@ namespace
 				});
 			}
 			ImGui::SameLine();
-			if (ImGui::Button("Refresh"))
+			if (ImGui::Button(_TR("Refresh")))
 			{
 				CafeTitleList::Refresh();
 				HostUI::RequestGameListRefresh();
@@ -649,7 +671,7 @@ namespace
 		for (size_t i = 0; i < config.game_paths.size(); i++)
 		{
 			ImGui::PushID((int)i);
-			if (ImGui::Button("Remove"))
+			if (ImGui::Button(_TR("Remove")))
 			{
 				const size_t index = i;
 				s_deferred.emplace_back([index]() { _RemoveGamePath(index); });
@@ -658,7 +680,7 @@ namespace
 			ImGui::TextUnformatted(config.game_paths[i].c_str());
 			ImGui::PopID();
 		}
-		if (ImGui::Button("Add folder..."))
+		if (ImGui::Button(_TR("Add folder...")))
 		{
 			HostPlatform::PickFolder([](const fs::path& path) {
 				if (!path.empty())
@@ -666,13 +688,13 @@ namespace
 			});
 		}
 		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-		const bool entered = ImGui::InputTextWithHint("##newpath", "or type a path, e.g. E:\\WiiU\\games", s_newPathBuffer, sizeof(s_newPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+		const bool entered = ImGui::InputTextWithHint("##newpath", _TR("or type a path, e.g. E:\\WiiU\\games"), s_newPathBuffer, sizeof(s_newPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
 		if (ImGui::IsItemActivated())
 			HostPlatform::ShowTextInput(true);
 		if (ImGui::IsItemDeactivated())
 			HostPlatform::ShowTextInput(false);
 		ImGui::SameLine();
-		if ((ImGui::Button("Add path") || entered) && s_newPathBuffer[0])
+		if ((ImGui::Button(_TR("Add path")) || entered) && s_newPathBuffer[0])
 		{
 			const fs::path path = _utf8ToPath(s_newPathBuffer);
 			s_newPathBuffer[0] = '\0';
@@ -693,23 +715,23 @@ namespace
 		ImGui::PushFont(s_fontLarge);
 		ImGui::TextUnformatted("Welcome! Three steps to get started");
 		ImGui::PopFont();
-		ImGui::TextDisabled("You can change all of this later under Settings and Graphic packs.");
+		ImGui::TextDisabled(_TR("You can change all of this later under Settings and Graphic packs."));
 
-		ImGui::SeparatorText("1. Your games");
+		ImGui::SeparatorText(_TR("1. Your games"));
 		ImGui::TextWrapped("Add the folder or USB drive with your games (decrypted dumps, .wua, or .wud/.wux disc images). Keep updates and DLC "
 			"as their own folders next to the game, they're found automatically.");
 		_DrawGameFolderControls();
 		if (CafeTitleList::IsScanning())
-			ImGui::TextDisabled("Scanning game folders...");
+			ImGui::TextDisabled(_TR("Scanning game folders..."));
 		else if (!GetConfig().game_paths.empty())
 			ImGui::TextColored(s_games.empty() ? ImVec4(1.0f, 0.6f, 0.45f, 1.0f) : ImVec4(0.4f, 0.85f, 0.4f, 1.0f), s_games.empty() ? "No games found in these folders yet" : "%d game(s) found", (int)s_games.size());
 
-		ImGui::SeparatorText("2. Disc keys (only for .wud / .wux)");
+		ImGui::SeparatorText(_TR("2. Disc keys (only for .wud / .wux)"));
 		ImGui::TextWrapped("Disc images need their key. Put keys.txt in your game folder or at the root of the drive, then import it. Skip this for decrypted dumps.");
-		if (ImGui::Button("Import keys.txt from game folders"))
+		if (ImGui::Button(_TR("Import keys.txt from game folders")))
 			s_deferred.emplace_back([]() { _ImportKeys(); });
 
-		ImGui::SeparatorText("3. Community graphic packs");
+		ImGui::SeparatorText(_TR("3. Community graphic packs"));
 		ImGui::TextWrapped("Resolution packs (1440p / 4K) and fixes for games that crash without them, like New Super Mario Bros. U.");
 		const auto status = HostGraphicPacks::GetStatus();
 		const bool busy = HostGraphicPacks::IsBusy();
@@ -730,7 +752,7 @@ namespace
 
 		ImGui::Spacing();
 		ImGui::Separator();
-		if (ImGui::Button("Done"))
+		if (ImGui::Button(_TR("Done")))
 			s_deferred.emplace_back([]() { _FinishSetup(); });
 		ImGui::SameLine();
 		ImGui::TextDisabled("Tip: for Mario Kart 8 set Graphic packs > TV Resolution to 2560x1440.");
@@ -750,7 +772,7 @@ namespace
 			const float progress = snapshot.requiredBytes ? (float)((double)snapshot.copiedBytes / (double)snapshot.requiredBytes) : 0.0f;
 			ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), fmt::format("{} / {} files", snapshot.copiedFiles, snapshot.fileCount).c_str());
 			ImGui::TextDisabled("%s", snapshot.currentFile.c_str());
-			if (snapshot.state == State::Installing && ImGui::Button("Cancel install"))
+			if (snapshot.state == State::Installing && ImGui::Button(_TR("Cancel install")))
 				RequestCancel();
 			s_installRefreshPending = true;
 			return;
@@ -783,8 +805,8 @@ namespace
 #endif
 		if (!s_installPlan)
 		{
-			ImGui::TextWrapped("Copies a game, update or DLC folder (the one with code, content and meta in it) into Cemu's mlc folder, where games find their updates and DLC.");
-			if (ImGui::Button("Install update / DLC from folder..."))
+			ImGui::TextWrapped(_TR("Copies a game, update or DLC folder (the one with code, content and meta in it) into Cemu's mlc folder, where games find their updates and DLC."));
+			if (ImGui::Button(_TR("Install update / DLC from folder...")))
 			{
 				HostPlatform::PickFolder([](const fs::path& path) {
 					if (path.empty())
@@ -816,13 +838,13 @@ namespace
 		if (plan.availableBytes && plan.availableBytes < plan.requiredBytes)
 			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "Not enough space: %.1f MB free", plan.availableBytes / 1048576.0);
 		ImGui::TextDisabled("To %s", _pathToUtf8(plan.targetPath).c_str());
-		if (ImGui::Button("Install"))
+		if (ImGui::Button(_TR("Install")))
 		{
 			Start(plan);
 			s_installPlan.reset();
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Cancel"))
+		if (ImGui::Button(_TR("Cancel")))
 			s_installPlan.reset();
 	}
 
@@ -830,24 +852,75 @@ namespace
 	{
 		auto& config = GetConfig();
 		bool changed = false;
-		ImGui::SeparatorText("Game folders");
+		ImGui::SeparatorText(_TR("Game folders"));
 		_DrawGameFolderControls();
 
-		ImGui::SeparatorText("Install updates and DLC");
+		ImGui::SeparatorText(_TR("Install updates and DLC"));
 		_DrawInstallSection();
 
-		ImGui::SeparatorText("Look");
+		ImGui::SeparatorText(_TR("Look"));
 		{
 			int panel = HostTheme::IsLightPanel() ? 0 : 1;
-			if (ImGui::RadioButton("Light panel", panel == 0))
+			if (ImGui::RadioButton(_TR("Light panel"), panel == 0))
 				HostTheme::SetLightPanel(true);
 			ImGui::SameLine();
-			if (ImGui::RadioButton("Dark panel", panel == 1))
+			if (ImGui::RadioButton(_TR("Dark panel"), panel == 1))
 				HostTheme::SetLightPanel(false);
 			ImGui::TextDisabled("Background picture: put background.png or background.jpg into %s and restart Cemu", _pathToUtf8(ActiveSettings::GetUserDataPath("theme")).c_str());
 		}
 
-		ImGui::SeparatorText("Graphics");
+		ImGui::SeparatorText(_TR("Language and region"));
+		{
+			// the Wii U system language: games pick their text and voices from it, it is read when a game starts
+			const char* languages[] = { _TR("Japanese"), _TR("English"), _TR("French"), _TR("German"), _TR("Italian"), _TR("Spanish"), _TR("Chinese"), _TR("Korean"), _TR("Dutch"), _TR("Portuguese"), _TR("Russian"), _TR("Taiwanese") };
+			int language = std::clamp<int>((int)config.console_language.GetValue(), 0, 11);
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::Combo(_TR("Console language (next game start)"), &language, languages, 12))
+			{
+				config.console_language = (CafeConsoleLanguage)language;
+				changed = true;
+				// game names in the list come from meta.xml in the console language
+				std::unique_lock _l(s_mutex);
+				s_refreshRequested = true;
+			}
+			// Auto takes the region of the game, like Cemu always did. A fixed region only changes the console's region,
+			// a game from another region can refuse to start or show the wrong languages
+			const char* regions[] = { _TR("Auto (follow the game)"), _TR("Japan"), _TR("USA"), _TR("Europe") };
+			const CafeConsoleRegion regionValues[] = { CafeConsoleRegion::Auto, CafeConsoleRegion::JPN, CafeConsoleRegion::USA, CafeConsoleRegion::EUR };
+			int region = 0;
+			for (int i = 0; i < 4; i++)
+				if (config.console_region.GetValue() == regionValues[i])
+					region = i;
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::Combo(_TR("Console region (next game start)"), &region, regions, 4))
+			{
+				config.console_region = regionValues[region];
+				changed = true;
+			}
+			ImGui::TextDisabled(_TR("Keep the region on Auto unless a game needs another one. Each game's region is shown under the game list."));
+			// the texts of this frontend, _TR("Follow console language") picks Portuguese or Spanish when the console uses it
+			const auto& uiLanguages = HostTranslation::GetLanguages();
+			int uiLanguage = 0;
+			for (size_t i = 0; i < uiLanguages.size(); i++)
+				if (config.host_ui_language.GetValue() == uiLanguages[i].code)
+					uiLanguage = (int)i;
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			auto uiLanguageName = [&](int i) { return i == 0 ? _TR(uiLanguages[0].name) : uiLanguages[i].name; };
+			if (ImGui::BeginCombo(_TR("Interface language"), uiLanguageName(uiLanguage)))
+			{
+				for (int i = 0; i < (int)uiLanguages.size(); i++)
+				{
+					if (ImGui::Selectable(uiLanguageName(i), i == uiLanguage))
+					{
+						config.host_ui_language = std::string(uiLanguages[i].code);
+						changed = true;
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
+
+		ImGui::SeparatorText(_TR("Graphics"));
 		bool vsync = config.vsync.GetValue() != 0;
 		if (ImGui::Checkbox("VSync", &vsync))
 		{
@@ -858,7 +931,7 @@ namespace
 		{
 			bool interpolation = config.frame_interpolation.GetValue();
 			ImGui::Indent(40.0f * s_scale);
-			if (ImGui::Checkbox("Frame interpolation: 120 FPS from 60 (needs a 120 Hz TV, adds a little lag, can smear)", &interpolation))
+			if (ImGui::Checkbox(_TR("Frame interpolation: 120 FPS from 60 (needs a 120 Hz TV, adds a little lag, can smear)"), &interpolation))
 			{
 				config.frame_interpolation = interpolation;
 				changed = true;
@@ -866,13 +939,13 @@ namespace
 			ImGui::Unindent(40.0f * s_scale);
 		}
 		bool asyncCompile = config.async_compile.GetValue();
-		if (ImGui::Checkbox("Compile shaders asynchronously (less stutter, brief glitches)", &asyncCompile))
+		if (ImGui::Checkbox(_TR("Compile shaders asynchronously (less stutter, brief glitches)"), &asyncCompile))
 		{
 			config.async_compile = asyncCompile;
 			changed = true;
 		}
 		bool precompile = config.precompile_pipelines.GetValue();
-		if (ImGui::Checkbox("Compile pipelines while the game loads (longer loading, less stutter)", &precompile))
+		if (ImGui::Checkbox(_TR("Compile pipelines while the game loads (longer loading, less stutter)"), &precompile))
 		{
 			config.precompile_pipelines = precompile;
 			changed = true;
@@ -883,7 +956,7 @@ namespace
 			ImGui::Indent(40.0f * s_scale);
 			// quick start: the loading screen only creates the pipelines earlier sessions needed for the menus and the start
 			// of a race, the rest are created in the background
-			if (ImGui::Checkbox("Quick start: load menu and race-start pipelines first, the rest in the background", &background))
+			if (ImGui::Checkbox(_TR("Quick start: load menu and race-start pipelines first, the rest in the background"), &background))
 			{
 				config.precompile_in_background = background;
 				changed = true;
@@ -892,10 +965,10 @@ namespace
 		}
 		if (asyncCompile)
 		{
-			const char* waitModes[] = { "Smooth: never wait, new effects can pop in", "Balanced: short waits, rarely misses an effect", "Accurate: always wait, stutters" };
+			const char* waitModes[] = { _TR("Smooth: never wait, new effects can pop in"), _TR("Balanced: short waits, rarely misses an effect"), _TR("Accurate: always wait, stutters") };
 			int waitMode = std::clamp<int>(config.pipeline_wait.GetValue(), 0, 2);
 			ImGui::SetNextItemWidth(620.0f * s_scale);
-			if (ImGui::Combo("New shaders", &waitMode, waitModes, 3))
+			if (ImGui::Combo(_TR("New shaders"), &waitMode, waitModes, 3))
 			{
 				config.pipeline_wait = waitMode;
 				changed = true;
@@ -910,7 +983,7 @@ namespace
 #endif
 		int compiler = std::clamp<int>(config.d3d12_shader_compiler.GetValue(), 0, 1);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::Combo("Shader compiler (next game start)", &compiler, compilers, 2))
+		if (ImGui::Combo(_TR("Shader compiler (next game start)"), &compiler, compilers, 2))
 		{
 			config.d3d12_shader_compiler = compiler;
 			changed = true;
@@ -918,60 +991,60 @@ namespace
 		const char* filters[] = { "Bilinear", "Bicubic", "Hermite", "Nearest neighbor" };
 		int upscale = std::clamp<int>(config.upscale_filter.GetValue(), 0, 3);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::Combo("Upscale filter", &upscale, filters, 4))
+		if (ImGui::Combo(_TR("Upscale filter"), &upscale, filters, 4))
 		{
 			config.upscale_filter = upscale;
 			changed = true;
 		}
-		const char* scalings[] = { "Keep aspect ratio", "Stretch" };
+		const char* scalings[] = { _TR("Keep aspect ratio"), _TR("Stretch") };
 		int scaling = std::clamp<int>(config.fullscreen_scaling.GetValue(), 0, 1);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::Combo("Scaling", &scaling, scalings, 2))
+		if (ImGui::Combo(_TR("Scaling"), &scaling, scalings, 2))
 		{
 			config.fullscreen_scaling = scaling;
 			changed = true;
 		}
 		bool showFPS = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
-		if (ImGui::Checkbox("Show FPS", &showFPS))
+		if (ImGui::Checkbox(_TR("Show FPS"), &showFPS))
 		{
 			config.overlay.position = showFPS ? ScreenPosition::kTopLeft : ScreenPosition::kDisabled;
 			config.overlay.fps = showFPS;
 			changed = true;
 		}
 
-		ImGui::SeparatorText("Audio");
+		ImGui::SeparatorText(_TR("Audio"));
 		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
 		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
-		const char* channelNames[] = { "Mono", "Stereo", "5.1 surround" };
+		const char* channelNames[] = { "Mono", _TR("Stereo"), "5.1 surround" };
 		int channels = std::clamp<int>(config.tv_channels, 0, 2);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::Combo("Sound output (applies when a game starts)", &channels, channelNames, 3))
+		if (ImGui::Combo(_TR("Sound output (applies when a game starts)"), &channels, channelNames, 3))
 		{
 			config.tv_channels = (AudioChannels)channels;
 			changed = true;
 		}
 		int volume = std::clamp<int>(config.tv_volume, 0, 100);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::SliderInt("Volume", &volume, 0, 100, "%d%%"))
+		if (ImGui::SliderInt(_TR("Volume"), &volume, 0, 100, "%d%%"))
 		{
 			config.tv_volume = volume;
 			changed = true;
 		}
 
-		ImGui::SeparatorText("Folders");
+		ImGui::SeparatorText(_TR("Folders"));
 		ImGui::TextWrapped("Data (settings, mlc01, shader caches, keys.txt): %s", _pathToUtf8(ActiveSettings::GetUserDataPath()).c_str());
 		// WUD/WUX disc images need their disc key
-		if (ImGui::Button("Import keys.txt from game folders"))
+		if (ImGui::Button(_TR("Import keys.txt from game folders")))
 			s_deferred.emplace_back([]() { _ImportKeys(); });
 		ImGui::SameLine();
-		ImGui::TextDisabled("needed for WUD/WUX disc images");
+		ImGui::TextDisabled(_TR("needed for WUD/WUX disc images"));
 		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
 
-		ImGui::SeparatorText("Logs and backups");
+		ImGui::SeparatorText(_TR("Logs and backups"));
 		const fs::path exportRoot = HostTools::GetExportRoot();
-		ImGui::TextWrapped("Copies go to %s", exportRoot.empty() ? "the drive of your game folder (add one first)" : _pathToUtf8(exportRoot).c_str());
+		ImGui::TextWrapped(_TR("Copies go to %s"), exportRoot.empty() ? "the drive of your game folder (add one first)" : _pathToUtf8(exportRoot).c_str());
 		_DrawToolButtons(true, true);
-		if (ImGui::Button("Run first-time setup again"))
+		if (ImGui::Button(_TR("Run first-time setup again")))
 			s_showSetup = true;
 		if (changed)
 			GetConfigHandle().Save();
@@ -1016,10 +1089,10 @@ namespace
 			}
 			ImGui::EndTable();
 		}
-		if (ImGui::Button("Nintendo layout (A<->B, X<->Y)"))
+		if (ImGui::Button(_TR("Nintendo layout (A<->B, X<->Y)")))
 			s_deferred.emplace_back([player]() { UseNintendoLayout(player); });
 		ImGui::SameLine();
-		if (ImGui::Button("Reset to Xbox layout"))
+		if (ImGui::Button(_TR("Reset to Xbox layout")))
 			s_deferred.emplace_back([player]() { ResetButtonMapping(player); });
 		// profile slots: the whole player setup, to keep a layout or move it to another player
 		for (int slot = 0; slot < kProfileSlots; slot++)
@@ -1046,11 +1119,11 @@ namespace
 		{
 			const int next = GetPairingPlayer();
 			ImGui::PushFont(s_fontLarge);
-			ImGui::Text("Press A on the controller for player %d", next + 1);
+			ImGui::Text(_TR("Press A on the controller for player %d"), next + 1);
 			ImGui::PopFont();
 			ImGui::TextWrapped(next > 0 ? "Press Menu (Start) when everyone is paired. Players without a controller are disconnected." : "Each controller becomes the next player when its A button is pressed.");
 		}
-		else if (ImGui::Button("Pair controllers (press A on each)"))
+		else if (ImGui::Button(_TR("Pair controllers (press A on each)")))
 			s_deferred.emplace_back([]() { BeginPairing(false); });
 		ImGui::Spacing();
 
@@ -1212,7 +1285,7 @@ namespace
 		ImGui::BulletText("Controller 1 is the Wii U GamePad, controllers 2-4 are Pro Controllers for players 2-4");
 		ImGui::BulletText("Change this under Controllers, or pick \"Pair controllers\" in the in-game menu");
 		ImGui::Spacing();
-		ImGui::TextWrapped("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own.");
+		ImGui::TextWrapped(_TR("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own."));
 	}
 }
 
@@ -1441,7 +1514,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 				s_updateDismissed = true;
 
 			// category bar: < [LB] previous   CURRENT   next [RB] >
-			const char* tabNames[kTabCount] = { "Games", "Graphic packs", "Controllers", "Settings", "About" };
+			const char* tabNames[kTabCount] = { _TR("Games"), _TR("Graphic packs"), _TR("Controllers"), _TR("Settings"), _TR("About") };
 			const float barY = panelMin.y + pad;
 			const float barH = 34.0f * unit;
 			const int prev = (s_tab + kTabCount - 1) % kTabCount, next = (s_tab + 1) % kTabCount;
@@ -1499,9 +1572,9 @@ std::optional<fs::path> HostUI::DrawLauncher()
 			struct Hint { const char* glyph; ImU32 color; const char* text; };
 			std::vector<Hint> hints;
 			if (s_tab == kTabGames && !s_showSetup)
-				hints = { { "A", IM_COL32(40, 170, 60, 255), "Start" }, { "X", IM_COL32(30, 110, 220, 255), "Refresh" }, { "L3+R3", 0, "In-Game Menu" }, { "Y", IM_COL32(220, 170, 20, 255), "Settings" } };
+				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Start") }, { "X", IM_COL32(30, 110, 220, 255), _TR("Refresh") }, { "L3+R3", 0, _TR("In-Game Menu") }, { "Y", IM_COL32(220, 170, 20, 255), _TR("Settings") } };
 			else
-				hints = { { "A", IM_COL32(40, 170, 60, 255), "Select" }, { "B", IM_COL32(210, 50, 50, 255), "Back" }, { "LB/RB", 0, "Switch" } };
+				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Select") }, { "B", IM_COL32(210, 50, 50, 255), _TR("Back") }, { "LB/RB", 0, _TR("Switch") } };
 			float total = 0.0f;
 			std::vector<float> widths;
 			for (const Hint& hint : hints)
@@ -1536,7 +1609,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 					ImGui::PopFont();
 					ImGui::TextWrapped("%s", msg.text.c_str());
 					ImGui::Spacing();
-					if (ImGui::Button("OK") || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
+					if (ImGui::Button(_TR("OK")) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
 					{
 						std::unique_lock _l2(s_mutex);
 						if (!s_messages.empty())

@@ -19,6 +19,8 @@ add_library(CemuHostFrontend
 	HostTheme.h
 	HostTools.cpp
 	HostTools.h
+	HostTranslation.cpp
+	HostTranslation.h
 	HostUI.cpp
 	HostUI.h
 	HostWindowSystem.cpp
