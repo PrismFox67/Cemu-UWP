@@ -397,31 +397,33 @@ namespace
 
 	// a Wii U case: spine on the left, the blue Wii U header band, the title's art filling the front (cropped from the
 	// square icon until scraped covers exist), a soft shadow. Proportions of the real case (about 0.72:1)
-	constexpr float kCaseAspect = 0.72f;
+	constexpr float kCaseAspect = 0.75f; // flat 3:4 covers
 
 	void _DrawCard(ImDrawList* drawList, const GameEntry& game, ImVec2 min, float width, bool selected, float alpha)
 	{
 		const float height = width / kCaseAspect;
 		const ImVec2 max(min.x + width, min.y + height);
-		const float r = 4.0f * s_scale;
+		const float r = 6.0f * s_scale;
 		const ImU32 a = (ImU32)(alpha * 255.0f) << IM_COL32_A_SHIFT;
 		auto rgb = [&](int cr, int cg, int cb) { return IM_COL32(cr, cg, cb, 0) | a; };
-		// shadow
-		drawList->AddRectFilled(ImVec2(min.x + width * 0.04f, min.y + height * 0.03f), ImVec2(max.x + width * 0.05f, max.y + height * 0.03f), IM_COL32(0, 30, 70, (int)(60 * alpha)), r * 2.0f);
-		// case
+		// soft shadow: a few widening, fainter layers below the cover
+		for (int i = 3; i >= 1; i--)
+		{
+			const float grow = i * 2.5f * s_scale;
+			drawList->AddRectFilled(ImVec2(min.x - grow * 0.5f, min.y + grow), ImVec2(max.x + grow * 0.5f, max.y + grow * 1.2f), IM_COL32(0, 30, 70, (int)(22 * alpha)), r + grow);
+		}
+		// a flat cover: blue Wii U band on top, the title's art below
 		drawList->AddRectFilled(min, max, rgb(232, 238, 245), r);
-		const float spine = width * 0.07f;
-		drawList->AddRectFilled(min, ImVec2(min.x + spine, max.y), rgb(196, 206, 220), r, ImDrawFlags_RoundCornersLeft);
-		const ImVec2 frontMin(min.x + spine, min.y), frontMax = max;
+		const ImVec2 frontMin = min, frontMax = max;
 		const float band = height * 0.085f;
-		drawList->AddRectFilled(frontMin, ImVec2(frontMax.x, frontMin.y + band), rgb(0, 140, 215), r, ImDrawFlags_RoundCornersTopRight);
+		drawList->AddRectFilled(frontMin, ImVec2(frontMax.x, frontMin.y + band), rgb(0, 140, 215), r, ImDrawFlags_RoundCornersTop);
 		{
 			const char* label = "Wii U";
 			const float size = band * 0.62f;
 			const ImVec2 ts = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.0f, label);
 			drawList->AddText(ImGui::GetFont(), size, ImVec2(frontMin.x + (frontMax.x - frontMin.x - ts.x) * 0.5f, frontMin.y + (band - ts.y) * 0.5f), rgb(255, 255, 255), label);
 		}
-		const ImVec2 artMin(frontMin.x, frontMin.y + band), artMax(frontMax.x, frontMax.y - height * 0.03f);
+		const ImVec2 artMin(frontMin.x, frontMin.y + band), artMax = frontMax;
 		void* texture = nullptr;
 		if (const HostIcons::Icon* icon = HostIcons::Get(game.titleId); icon && s_textureProvider)
 			texture = s_textureProvider(game.titleId, icon->rgba.data(), icon->width, icon->height);
@@ -430,11 +432,11 @@ namespace
 			// crop the square icon to the portrait front
 			const float aspect = (artMax.x - artMin.x) / (artMax.y - artMin.y);
 			const float crop = (1.0f - aspect) * 0.5f;
-			drawList->AddImage(texture, artMin, artMax, ImVec2(crop, 0.0f), ImVec2(1.0f - crop, 1.0f), IM_COL32(255, 255, 255, 0) | a);
+			drawList->AddImageRounded(texture, artMin, artMax, ImVec2(crop, 0.0f), ImVec2(1.0f - crop, 1.0f), IM_COL32(255, 255, 255, 0) | a, r, ImDrawFlags_RoundCornersBottom);
 		}
 		else
 		{
-			drawList->AddRectFilled(artMin, artMax, rgb(60, 70, 90));
+			drawList->AddRectFilled(artMin, artMax, rgb(60, 70, 90), r, ImDrawFlags_RoundCornersBottom);
 			std::string initials;
 			for (size_t i = 0; i < game.name.size() && initials.size() < 2; i++)
 				if (std::isalnum((unsigned char)game.name[i]) && (i == 0 || game.name[i - 1] == ' '))
@@ -444,11 +446,9 @@ namespace
 			drawList->AddText(ImVec2((artMin.x + artMax.x - ts.x) * 0.5f, (artMin.y + artMax.y - ts.y) * 0.5f), rgb(200, 210, 225), initials.c_str());
 			ImGui::PopFont();
 		}
-		// a light sheen on the plastic
-		drawList->AddRectFilledMultiColor(frontMin, ImVec2(frontMin.x + (frontMax.x - frontMin.x) * 0.35f, frontMax.y), IM_COL32(255, 255, 255, (int)(40 * alpha)), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, (int)(40 * alpha)));
 		if (selected)
 			drawList->AddRect(ImVec2(min.x - 3.0f * s_scale, min.y - 3.0f * s_scale), ImVec2(max.x + 3.0f * s_scale, max.y + 3.0f * s_scale), IM_COL32(255, 255, 255, 255), r + 2.0f, 0, 3.5f * s_scale);
-		// title under the case, two lines at most
+		// title under the cover, two lines at most
 		const float textW = width + 20.0f * s_scale;
 		const ImVec4 clip(min.x - 10.0f * s_scale, max.y + 8.0f * s_scale, min.x - 10.0f * s_scale + textW, max.y + 8.0f * s_scale + ImGui::GetTextLineHeight() * 2.2f);
 		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(clip.x, clip.y), (HostTheme::PanelText() & 0x00FFFFFF) | ((ImU32)((selected ? 1.0f : 0.8f) * alpha * 255.0f) << IM_COL32_A_SHIFT), game.name.c_str(), nullptr, textW, &clip);
@@ -1375,9 +1375,38 @@ namespace
 		return x;
 	}
 
+	// "LS+RS" is drawn as two stick press glyphs, everything else as text in a circle or rounded box
+	constexpr const char* kGlyphSticks = "LS+RS";
+
+	float _GlyphWidth(const char* glyph, float h, float unit)
+	{
+		if (std::string_view(glyph) == kGlyphSticks)
+			return h * 0.72f * 2.0f + ImGui::CalcTextSize("+").x + 12.0f * unit;
+		return std::max(h * 0.72f, ImGui::CalcTextSize(glyph).x + 14.0f * unit);
+	}
+
+	// a stick like the Xbox's "left/right stick press" glyphs: a ring, the thumb cap with L or R on it, and a small
+	// arrow above pointing down at it (pressed in)
+	void _DrawStickGlyph(ImDrawList* dl, ImVec2 c, float h, char side, float unit)
+	{
+		const ImU32 color = IM_COL32(230, 235, 245, 255);
+		const float ring = h * 0.30f;
+		c.y += h * 0.05f;
+		dl->AddCircle(c, ring, color, 24, 1.5f * unit);
+		dl->AddCircleFilled(c, ring * 0.68f, color, 24);
+		const char label[2] = { side, 0 };
+		ImFont* font = ImGui::GetFont();
+		const float size = ImGui::GetFontSize() * 0.62f;
+		const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label);
+		dl->AddText(font, size, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), IM_COL32(20, 28, 40, 255), label);
+		const float top = c.y - ring - 2.0f * unit;
+		const float a = h * 0.09f;
+		dl->AddTriangleFilled(ImVec2(c.x - a, top - a), ImVec2(c.x + a, top - a), ImVec2(c.x, top), color);
+	}
+
 	float _HintPillWidth(const char* glyph, const char* text, float h, float unit)
 	{
-		const float glyphW = std::max(h * 0.72f, ImGui::CalcTextSize(glyph).x + 14.0f * unit);
+		const float glyphW = _GlyphWidth(glyph, h, unit);
 		return 12.0f * unit + glyphW + 10.0f * unit + ImGui::CalcTextSize(text).x + 16.0f * unit;
 	}
 
@@ -1388,10 +1417,18 @@ namespace
 		dl->AddRectFilled(min, ImVec2(min.x + w, min.y + h), IM_COL32(20, 28, 40, 170), h * 0.5f);
 		dl->AddRect(min, ImVec2(min.x + w, min.y + h), IM_COL32(255, 255, 255, 60), h * 0.5f, 0, 1.0f * unit);
 		const float cy = min.y + h * 0.5f;
-		const float glyphW = std::max(h * 0.72f, ImGui::CalcTextSize(glyph).x + 14.0f * unit);
+		const float glyphW = _GlyphWidth(glyph, h, unit);
 		const float gx = min.x + 12.0f * unit;
 		const ImVec2 gts = ImGui::CalcTextSize(glyph);
-		if (glyphColor != 0)
+		if (std::string_view(glyph) == kGlyphSticks)
+		{
+			const float stickW = h * 0.72f;
+			const ImVec2 plus = ImGui::CalcTextSize("+");
+			_DrawStickGlyph(dl, ImVec2(gx + stickW * 0.5f, cy), h, 'L', unit);
+			dl->AddText(ImVec2(gx + stickW + 6.0f * unit, cy - plus.y * 0.5f), IM_COL32(230, 235, 245, 255), "+");
+			_DrawStickGlyph(dl, ImVec2(gx + stickW * 1.5f + plus.x + 12.0f * unit, cy), h, 'R', unit);
+		}
+		else if (glyphColor != 0)
 		{
 			dl->AddCircleFilled(ImVec2(gx + glyphW * 0.5f, cy), h * 0.36f, IM_COL32(15, 15, 18, 255), 24);
 			dl->AddText(ImVec2(gx + (glyphW - gts.x) * 0.5f, cy - gts.y * 0.5f), glyphColor, glyph);
@@ -1572,7 +1609,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 			struct Hint { const char* glyph; ImU32 color; const char* text; };
 			std::vector<Hint> hints;
 			if (s_tab == kTabGames && !s_showSetup)
-				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Start") }, { "X", IM_COL32(30, 110, 220, 255), _TR("Refresh") }, { "L3+R3", 0, _TR("In-Game Menu") }, { "Y", IM_COL32(220, 170, 20, 255), _TR("Settings") } };
+				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Start") }, { "X", IM_COL32(30, 110, 220, 255), _TR("Refresh") }, { kGlyphSticks, 0, _TR("In-Game Menu") }, { "Y", IM_COL32(220, 170, 20, 255), _TR("Settings") } };
 			else
 				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Select") }, { "B", IM_COL32(210, 50, 50, 255), _TR("Back") }, { "LB/RB", 0, _TR("Switch") } };
 			float total = 0.0f;
