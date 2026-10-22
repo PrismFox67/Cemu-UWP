@@ -16,6 +16,24 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
    needs to be installed.
 4. Disc images (.wud/.wux) need their disc key. Put `keys.txt` in your game folder or at the root of the drive, then press
    **Settings → Import keys.txt from game folders**.
+5. Games in `E:\Games\wiiu`, `E:\WiiU\games` or `D:\DevelopmentFiles\Games\wiiu` are found without adding the folder.
+6. Updates and DLC that aren't next to the game can be installed into Cemu's mlc folder with **Settings → Install
+   updates and DLC**.
+
+## The launcher
+- **LB / RB** switch between Games, Graphic packs, Controllers, Settings and About.
+- **Games**: the covers scroll left and right. **A** starts the selected game, **X** refreshes the list, **Y** opens Settings.
+  The line under the covers shows the game's region, title ID, version, and whether an update or DLC was found.
+- **Settings → Look**: light or dark panel. For your own background, put `background.png` or `background.jpg` into
+  `LocalState/theme` and restart Cemu.
+- **Settings → Language and region**:
+  - **Console language** is the Wii U system language that games use for their text and voices. It applies the next
+    time a game starts.
+  - **Console region** should stay on **Auto** (it follows the game).
+  - **Interface language** sets the language of the launcher: English, Português (Brasil) or Español. By default it
+    follows the console language. To translate more texts or another language, put lines of the form
+    `English text<TAB>translation` into `LocalState/translations/<code>.txt` (for example `pt.txt`).
+- **Settings → Logs and backups** copies the logs and your saves to the drive of your game folder (a USB drive).
 
 ## Recommended settings (Series X)
 **Settings tab**
@@ -86,8 +104,9 @@ for that game. It applies the next time the game starts.
   screen. Expect some pop-in and short hitches the first time each track or effect appears. Each shader is compiled only once,
   so later runs don't have this.
 - **Later launches take about a minute of "pipelines" loading** (MK8: about 55 s on a Series X). The Xbox driver can't keep
-  compiled pipelines between launches, so they're rebuilt every time. If you'd rather start right away, enable "In the
-  background instead" under the pipeline option.
+  compiled pipelines between launches, so they're rebuilt every time. If you'd rather start sooner, enable **Quick start**
+  under the pipeline option: the menus and race start load first, the rest in the background. Pipelines a game hasn't
+  used for 20 sessions are skipped.
 - **In game:** a locked 60 FPS at 1440p or 4K in Mario Kart 8. Performance in other games varies, and reports are very welcome.
 - **Known issues:** 4K on the largest tracks can still run out of memory and close the app (use 1440p). Online play isn't
   supported.
