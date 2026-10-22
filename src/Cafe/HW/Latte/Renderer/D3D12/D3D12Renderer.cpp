@@ -412,6 +412,8 @@ void D3D12Renderer::ResetCommandList()
 	}
 	else
 		D3D12_ThrowIfFailed(m_cmdList->Reset(m_currentAllocator.Get(), nullptr), "ID3D12GraphicsCommandList::Reset");
+	m_cmdList2.Reset();
+	m_cmdList.As(&m_cmdList2);
 	if (m_dredEnabled) // identifies the command list in the device removed diagnostics
 		D3D12_SetDebugName(m_cmdList.Get(), fmt::format("Cemu submission #{}", m_lastSubmittedFenceValue + 1));
 	m_drawsInCommandList = 0;
@@ -589,11 +591,77 @@ namespace
 	}
 }
 
+void D3D12Renderer::WriteDrawBreadcrumb(uint64 vsHash, uint64 psHash, uint32 count, uint32 instances)
+{
+	if (!m_cmdList2)
+		return;
+	if (!m_breadcrumbBuffer)
+	{
+		D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_READBACK);
+		D3D12_RESOURCE_DESC desc = D3D12_BufferDesc(256);
+		void* mapped = nullptr;
+		if (FAILED(m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_breadcrumbBuffer))) ||
+			FAILED(m_breadcrumbBuffer->Map(0, nullptr, &mapped)))
+		{
+			m_breadcrumbBuffer.Reset();
+			m_cmdList2.Reset();
+			return;
+		}
+		m_breadcrumbMapped = (volatile uint32*)mapped;
+		m_breadcrumbs = std::make_unique<BreadcrumbSubmission[]>(kBreadcrumbSubmissions);
+	}
+	const uint64 submission = m_lastSubmittedFenceValue + 1;
+	BreadcrumbSubmission& s = m_breadcrumbs[submission % kBreadcrumbSubmissions];
+	if (s.id != submission)
+	{
+		s.id = submission;
+		s.draws = 0;
+	}
+	if (s.draws < kBreadcrumbDraws)
+	{
+		const Vector2i size = m_state.activeFBO ? m_state.activeFBO->m_size : Vector2i(0, 0);
+		s.draw[s.draws] = { vsHash, psHash, count, instances, (uint16)size.x, (uint16)size.y };
+	}
+	// written once the draw has finished (MARKER_OUT)
+	D3D12_WRITEBUFFERIMMEDIATE_PARAMETER params[2];
+	const D3D12_GPU_VIRTUAL_ADDRESS address = m_breadcrumbBuffer->GetGPUVirtualAddress();
+	params[0] = { address, (UINT)submission };
+	params[1] = { address + 4, s.draws + 1 };
+	const D3D12_WRITEBUFFERIMMEDIATE_MODE modes[2] = { D3D12_WRITEBUFFERIMMEDIATE_MODE_MARKER_OUT, D3D12_WRITEBUFFERIMMEDIATE_MODE_MARKER_OUT };
+	m_cmdList2->WriteBufferImmediate(2, params, modes);
+	s.draws++;
+}
+
+void D3D12Renderer::LogBreadcrumbs()
+{
+	if (!m_breadcrumbMapped || !m_breadcrumbs)
+		return;
+	const uint32 submission = m_breadcrumbMapped[0];
+	const uint32 finishedDraws = m_breadcrumbMapped[1];
+	const uint64 completed = m_fence ? m_fence->GetCompletedValue() : 0;
+	cemuLog_log(LogType::Force, "D3D12 breadcrumbs: last finished draw {} of submission #{} (completed #{})", finishedDraws, submission, completed);
+	// the draw after the last finished one is where the GPU is (or the next submission's first draw)
+	for (uint32 i = 0; i < kBreadcrumbSubmissions; i++)
+	{
+		const BreadcrumbSubmission& s = m_breadcrumbs[i];
+		if (s.id == 0 || s.id <= completed)
+			continue;
+		const uint32 next = (uint32)s.id == submission ? finishedDraws : 0;
+		cemuLog_log(LogType::Force, "D3D12 breadcrumbs: submission #{} has {} draws, not finished from draw {}", s.id, s.draws, next + 1);
+		for (uint32 d = next; d < std::min({ s.draws, next + 3, kBreadcrumbDraws }); d++)
+		{
+			const BreadcrumbDraw& b = s.draw[d];
+			cemuLog_log(LogType::Force, "D3D12 breadcrumbs:   draw {}: vs {:016x} ps {:016x} {} vertices x{} into {}x{}", d + 1, b.vs, b.ps, b.count, b.instances, b.width, b.height);
+		}
+	}
+}
+
 void D3D12Renderer::LogDeviceRemovedData()
 {
 	if (m_dredLogged)
 		return;
 	m_dredLogged = true;
+	LogBreadcrumbs();
 	ComPtr<ID3D12DeviceRemovedExtendedData> dred;
 	if (!m_dredEnabled || !m_device || FAILED(m_device.As(&dred)))
 	{
@@ -856,6 +924,7 @@ void D3D12Renderer::CheckGpuProgress()
 	cemuLog_log(LogType::Force, "D3D12: GPU hasn't finished a submission for {} ms (completed #{}, submitted #{}, device {})",
 		std::chrono::duration_cast<std::chrono::milliseconds>(now - s_progressTime).count(), completed, submitted,
 		SUCCEEDED(m_device->GetDeviceRemovedReason()) ? "ok" : "removed");
+	LogBreadcrumbs();
 }
 
 bool D3D12Renderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const

@@ -214,6 +214,10 @@ public:
 
 	[[noreturn]] void HandleDeviceError(HRESULT hr, const char* what);
 	void LogDeviceRemovedData(); // DRED breadcrumbs and page fault info, logged once
+	// own GPU breadcrumbs: DRED records nothing on the Xbox, so after every draw the GPU writes its submission and draw
+	// number into a CPU visible buffer. On a hang the draw after the last written one is the one that didn't finish
+	void WriteDrawBreadcrumb(uint64 vsHash, uint64 psHash, uint32 count, uint32 instances);
+	void LogBreadcrumbs();
 	void LogDebugLayerMessages(); // last debug layer warnings/errors (CEMU_D3D12_DEBUG=1)
 
 	// used by internal shaders (surface copy, output blit, imgui)
@@ -288,6 +292,13 @@ private:
 	bool m_dredEnabled = false;
 	bool m_dredLogged = false;
 	bool m_cmdListBroken = false; // Close failed, ResetCommandList creates a new list
+	ComPtr<ID3D12GraphicsCommandList2> m_cmdList2; // for WriteBufferImmediate, null if not supported
+	ComPtr<ID3D12Resource> m_breadcrumbBuffer;
+	volatile uint32* m_breadcrumbMapped = nullptr;
+	struct BreadcrumbDraw { uint64 vs; uint64 ps; uint32 count; uint32 instances; uint16 width; uint16 height; };
+	static constexpr uint32 kBreadcrumbSubmissions = 4, kBreadcrumbDraws = 2048;
+	struct BreadcrumbSubmission { uint64 id = 0; uint32 draws = 0; BreadcrumbDraw draw[kBreadcrumbDraws]; };
+	std::unique_ptr<BreadcrumbSubmission[]> m_breadcrumbs;
 	std::unordered_set<LatteTextureD3D12*> m_dumpCandidates;
 	uint32 m_dumpCheckFrames = 0;
 	void DumpArrayTexturesIfRequested();

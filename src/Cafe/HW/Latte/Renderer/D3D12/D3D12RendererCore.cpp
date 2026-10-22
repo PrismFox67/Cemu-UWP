@@ -657,6 +657,8 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 	else
 		m_cmdList->DrawInstanced(count, instanceCount, baseVertex, baseInstance);
 
+	WriteDrawBreadcrumb(vertexShader->baseHash, pixelShader ? pixelShader->baseHash : 0, isIndexed ? hostIndexCount : count, instanceCount);
+
 	if (usesStreamout)
 		UAVBarrier(m_xfbRingBuffer.Get());
 	LatteStreamout_FinishDrawcall(false);
