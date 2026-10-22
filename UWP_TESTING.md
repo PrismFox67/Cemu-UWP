@@ -88,6 +88,12 @@ A UWP app can only read folders that it's allowed to. Either keep games inside `
 the `ALL APPLICATION PACKAGES` permission as described in step 3 of the Xbox section below, then add its path under
 Settings → Game folders.
 
+To build the package locally instead of waiting for CI, run `tools/build-uwp-local.ps1`. The first run builds all
+dependencies (an hour or more); later runs only recompile what changed. The package ends up in
+`build-uwp-local/AppPackages/CemuBin_<version>_x64_Test/`, signed with a local certificate. With Visual Studio 18 it needs
+CMake 4.2 or newer on the PATH (`pip install cmake`), because the CMake that ships with VS 18.1 refuses Windows Store
+builds.
+
 ## 4. Xbox Series X|S (Developer Mode)
 
 ### One time setup
