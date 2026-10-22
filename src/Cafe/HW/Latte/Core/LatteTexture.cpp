@@ -385,7 +385,10 @@ void LatteTexture_CopySlice(LatteTexture* srcTexture, sint32 srcSlice, sint32 sr
 		sint32 effectiveHeight_src = srcTexture->overwriteInfo.hasResolutionOverwrite ? srcTexture->overwriteInfo.height : srcTexture->height;
 		sint32 effectiveWidth_dst = dstTexture->overwriteInfo.hasResolutionOverwrite ? dstTexture->overwriteInfo.width : dstTexture->width;
 		sint32 effectiveHeight_dst = dstTexture->overwriteInfo.hasResolutionOverwrite ? dstTexture->overwriteInfo.height : dstTexture->height;
-		if (cemuLog_isLoggingEnabled(LogType::TextureCache))
+		// logged a few times without the texture cache log too: a graphic pack that scales only one side of a copy loses
+		// the copy, which tester logs should show (BOTW Magnesis/shadows with BotW/Graphics, #224)
+		static uint32 s_mismatchLogs = 0;
+		if (cemuLog_isLoggingEnabled(LogType::TextureCache) || s_mismatchLogs++ < 10)
 		{
 			cemuLog_log(LogType::Force, "_copySlice(): Unable to sync textures with mismatching scale ratio (due to texture rule)");
 			float ratioWidth_src = (float)effectiveWidth_src / (float)srcTexture->width;
