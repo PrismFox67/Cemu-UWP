@@ -5,6 +5,19 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-22
+### Xbox app
+- **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it
+  (click both sticks, or hold View + Menu). The menu now also has VSync, volume and player 1's stick deadzone; change
+  them with left/right, they apply right away.
+
+### Direct3D 12
+- **BOTW Magnesis / Stasis, second attempt:** BOTW tests what its runes can target against a small copy of the depth
+  buffer. That copy covered only part of the buffer, which Direct3D 12 can't do with a plain copy, so it was dropped and
+  every test counted "hidden". Such copies are now drawn. Occlusion test results also reach the game within a few draws
+  instead of at the end of a frame, and draws inside a test always wait for their shader instead of being skipped.
+  Please report whether Magnesis and Stasis find their targets now.
+
 ## 2026-10-21
 ### Xbox app
 - **New launcher.** A console-style game row: flat 2D covers with each game's icon art on a Wii U-menu-style background
