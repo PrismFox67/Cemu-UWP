@@ -138,6 +138,8 @@ jobs:
         gh release upload ci-latest MK8_FirstPerson.zip --clobber
         # the title names the commit the files were built from (testers read it to tell builds apart)
         gh release edit ci-latest --title "CI build (d3d12-backend @ ${GITHUB_SHA::7})"
+        # what's new since the previous build: the newest CHANGELOG.md sections + the commits in between
+        bash tools/ci/release_notes.sh || true
 
   # wxWidgets-free ImGui frontend (the Xbox UI) as a Win32 executable, for testing it on a PC
   build-windows-host:
