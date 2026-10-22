@@ -13,7 +13,12 @@ function Log($text) { $text | Out-File $log -Append -Encoding utf8; $text }
 function Step($name, [scriptblock]$block) { Log "== $name $(Get-Date -Format T)"; $ErrorActionPreference = 'Continue'; & $block 2>&1 | ForEach-Object { "$_" } | Out-File $log -Append -Encoding utf8; if ($LASTEXITCODE) { throw "$name failed ($LASTEXITCODE), see $log" } }
 
 $vs = "C:\Program Files\Microsoft Visual Studio\18\Community"
+# the CMake bundled with VS 18.1 (4.1) refuses WindowsStore with VS 18 ("requires both the Windows Desktop SDK as well as
+# the Windows Store '10.0' SDK"), 4.2+ works: use a newer cmake from PATH (e.g. pip install cmake) when there is one
 $cmake = "$vs\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+$pathCmake = Get-Command cmake -ErrorAction SilentlyContinue
+if ($pathCmake -and ((& $pathCmake.Source --version | Select-Object -First 1) -match 'cmake version (\d+)\.(\d+)') -and ([int]$Matches[1] -gt 4 -or ([int]$Matches[1] -eq 4 -and [int]$Matches[2] -ge 2))) { $cmake = $pathCmake.Source }
+Log "cmake: $cmake"
 $env:VCPKG_ROOT = "$repo\dependencies\vcpkg"
 
 if (-not (Test-Path "$repo\dependencies\vcpkg\bootstrap-vcpkg.bat")) { Step 'submodules' { git submodule update --init --recursive } }
@@ -38,7 +43,7 @@ try {
 	if (-not (Test-Path "$repo\build-uwp-local\CemuBin.sln") -and -not (Test-Path "$repo\build-uwp-local\Cemu.sln")) {
 		Step 'cmake configure' { & $cmake -S $repo -B "$repo\build-uwp-local" -G "Visual Studio 18 2026" -A x64 -DCMAKE_SYSTEM_NAME=WindowsStore "-DCMAKE_SYSTEM_VERSION=10.0" }
 	}
-	Step 'build and package' { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m -p:GenerateAppxPackageOnBuild=true -p:AppxBundle=Never -p:UapAppxPackageBuildMode=SideloadOnly -p:AppxPackageSigningEnabled=true "-p:PackageCertificateKeyFile=$pfx" -p:PackageCertificatePassword=cemu "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages\\" }
+	Step 'build and package' { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m "-p:GenerateAppxPackageOnBuild=true" "-p:AppxBundle=Never" "-p:UapAppxPackageBuildMode=SideloadOnly" "-p:AppxPackageSigningEnabled=true" "-p:PackageCertificateKeyFile=$pfx" "-p:PackageCertificatePassword=cemu" "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages/" } # quoted: Windows PowerShell splits a bare -p:Name=value at the colon
 }
 finally { git -C $repo checkout -- src/gui/host/uwp/Package.appxmanifest } # never leave the stamped version for a commit
 Get-ChildItem "$repo\build-uwp-local\AppPackages" -Recurse -Filter *.msix | Sort-Object LastWriteTime | Select-Object -Last 1 | ForEach-Object { Log "package: $($_.FullName)" }
