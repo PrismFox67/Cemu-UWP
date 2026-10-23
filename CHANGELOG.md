@@ -34,6 +34,10 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
   37%; the selected game's title leads the info line below, shortened with "..." instead of wrapping.
 - **The Cemu logo** (grey "Cem" + cyan "U" on its navy gradient) replaces the plain text title on the home screen.
 
+### Mario Kart 8 first person pack
+- **The view follows downhill slopes and glider dives sooner** (after about 1/3 s instead of 3/4 s, and catches up
+  faster), so the road ahead stays in view going down hills and in the air. Throwing items still doesn't dip it.
+
 ## 2026-10-22
 ### Xbox app
 - **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it
