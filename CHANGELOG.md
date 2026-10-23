@@ -5,6 +5,27 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-23
+### Direct3D 12
+- **Fewer pipelines for depth-biased draws (shadows):** depth bias values that differ only slightly now share one
+  pipeline instead of each building its own, which should mean fewer new-shader hitches in games that animate their
+  shadow bias (reported for BOTW).
+- **A shader the game is waiting for comes first:** while a draw waits for its pipeline, background shader builds pause
+  and the waiting one runs at normal priority, so freezes like opening a new menu or ability should be shorter.
+
+### Xbox app
+- **Real box art:** the game list shows the Wii U cover of each game, downloaded in the background from GameTDB
+  (high-resolution where available) and kept in `covers` in the user folder. Turn it off or re-download under
+  Settings > Box art. Without internet the icon cards are shown as before.
+- **Menu music:** put your own `menu_music.ogg`, `.mp3`, `.wav` or `.flac` into `LocalState/theme` and it loops on
+  the menu screens (fades out when a game starts). Settings > Look: on/off and volume (60% by default). Nothing is
+  bundled, without a file the menu stays silent.
+- **About** names PrismFox67 as the author of Cemu UWP, with the Cemu team and danprice142 credits below.
+- **Dark panel by default** (Settings > Look still offers the light one; a light choice made before is kept).
+- **Bigger covers, no titles under them:** the selected cover takes about 45% of the screen height, the others about
+  37%; the selected game's title leads the info line below, shortened with "..." instead of wrapping.
+- **The Cemu logo** (grey "Cem" + cyan "U" on its navy gradient) replaces the plain text title on the home screen.
+
 ## 2026-10-22
 ### Xbox app
 - **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it
@@ -12,6 +33,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
   them with left/right, they apply right away.
 
 ### Direct3D 12
+- **BOTW Magnesis with the BotW Graphics pack (1080p and other resolutions):** the pack scales one small texture that
+  the rune's targeting shares with an unscaled one, and the copy between them was skipped, so metal objects weren't
+  found. Such copies are now drawn with scaling instead. Please report whether Magnesis highlights and grabs now.
 - **BOTW Magnesis / Stasis, second attempt:** BOTW tests what its runes can target against a small copy of the depth
   buffer. That copy covered only part of the buffer, which Direct3D 12 can't do with a plain copy, so it was dropped and
   every test counted "hidden". Such copies are now drawn. Occlusion test results also reach the game within a few draws
