@@ -1,6 +1,23 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
 
+// diagnostic (#231): draws the game issued while one of its occlusion queries was active and how many of them reached the
+// GPU. A query that reads 0 because its draws were dropped looks the same to the game as one the GPU counted as hidden
+static uint32 s_queryDrawsRequested = 0;
+static uint32 s_queryDrawsIssued = 0;
+// user/query_sync.txt at boot (A/B switch for #231): results are only read after the GPU went idle, not as soon as the
+// fence of their submission passed
+static bool s_querySyncReads = false;
+bool D3D12_UserDataFileExists(const char* fileName); // D3D12Renderer.cpp
+
+void D3D12Query_CountDraw(bool issued)
+{
+	if (issued)
+		s_queryDrawsIssued++;
+	else
+		s_queryDrawsRequested++;
+}
+
 // D3D12 queries cannot span command lists. Like the Vulkan backend, a Latte query is split into fragments, one per
 // command list, and the results are summed up once all fragments have completed.
 class LatteQueryObjectD3D12 final : public LatteQueryObject
@@ -14,6 +31,12 @@ public:
 	{
 		if (!m_ended)
 			return false;
+		if (s_querySyncReads)
+		{
+			if (m_finishSubmission > m_renderer->m_lastSubmittedFenceValue)
+				m_renderer->SubmitCommandList(false);
+			m_renderer->WaitForSubmission(m_renderer->m_lastSubmittedFenceValue);
+		}
 		if (m_finishSubmission > m_renderer->m_lastSubmittedFenceValue || m_renderer->GetCompletedSubmissionId() < m_finishSubmission)
 			return false;
 		HandleFinishedFragments();
@@ -115,8 +138,10 @@ public:
 		if (now >= s_nextLog)
 		{
 			s_nextLog = now + std::chrono::seconds(10);
-			cemuLog_log(LogType::Force, "D3D12: occlusion query fragments read: {}, zero: {}, last {}", s_reads, s_zeros, value);
+			cemuLog_log(LogType::Force, "D3D12: occlusion query fragments read: {}, zero: {}, last {}; draws inside queries: {}, issued to the GPU: {}{}",
+				s_reads, s_zeros, value, s_queryDrawsRequested, s_queryDrawsIssued, s_querySyncReads ? " (query_sync.txt: reads wait for GPU idle)" : "");
 			s_reads = s_zeros = 0;
+			s_queryDrawsRequested = s_queryDrawsIssued = 0;
 		}
 		return value;
 	}
@@ -169,6 +194,9 @@ LatteQueryObject* D3D12Renderer::occlusionQuery_create()
 		D3D12_ThrowIfFailed(oq.resultBuffer->Map(0, nullptr, &mapped), "Map (query results)");
 		oq.results = (uint64*)mapped;
 		oq.freeIndices.reserve(kOcclusionQueryCount);
+		s_querySyncReads = D3D12_UserDataFileExists("query_sync.txt");
+		if (s_querySyncReads)
+			cemuLog_log(LogType::Force, "D3D12: query_sync.txt found, occlusion query reads wait for the GPU to go idle");
 		for (uint32 i = kOcclusionQueryCount; i > 0; i--)
 			oq.freeIndices.push_back(i - 1);
 	}

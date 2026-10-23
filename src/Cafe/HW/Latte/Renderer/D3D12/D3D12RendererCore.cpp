@@ -475,9 +475,13 @@ void D3D12Renderer::draw_applyRenderTargets()
 
 /* --- draw --- */
 
+void D3D12Query_CountDraw(bool issued); // D3D12Query.cpp, diagnostic
+
 void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
 	LatteGPUState.drawCallCounter++;
+	if (LatteQuery_IsOcclusionQueryActive())
+		D3D12Query_CountDraw(false);
 	if (m_state.skipDrawSequence)
 		return;
 	if (LatteGPUState.contextNew.GetSpecialStateValues()[8] != 0)
@@ -656,6 +660,8 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		m_cmdList->DrawIndexedInstanced(hostIndexCount, instanceCount, 0, (INT)baseVertex, baseInstance);
 	else
 		m_cmdList->DrawInstanced(count, instanceCount, baseVertex, baseInstance);
+	if (LatteQuery_IsOcclusionQueryActive())
+		D3D12Query_CountDraw(true);
 
 	WriteDrawBreadcrumb(vertexShader->baseHash, pixelShader ? pixelShader->baseHash : 0, isIndexed ? hostIndexCount : count, instanceCount);
 

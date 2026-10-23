@@ -1400,6 +1400,13 @@ void D3D12Renderer::TryEnableImplicitShaderCache()
 	}
 }
 
+// diagnostic switches testers turn on with an (empty) file in the user folder
+bool D3D12_UserDataFileExists(const char* fileName)
+{
+	std::error_code ec;
+	return fs::exists(ActiveSettings::GetUserDataPath(fileName), ec);
+}
+
 void D3D12Renderer::DumpArrayTexturesIfRequested()
 {
 	if (++m_dumpCheckFrames < 120)
