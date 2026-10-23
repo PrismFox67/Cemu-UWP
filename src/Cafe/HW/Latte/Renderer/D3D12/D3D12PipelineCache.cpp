@@ -874,9 +874,12 @@ public:
 	{
 		std::lock_guard lock(m_mutex);
 		if (urgent)
-			m_jobs.push_front(std::move(job));
+		{
+			m_jobs.push_front({ std::move(job), true });
+			m_urgentJobs++;
+		}
 		else
-			m_jobs.push_back(std::move(job));
+			m_jobs.push_back({ std::move(job), false });
 		m_jobAvailable.notify_one();
 	}
 
@@ -923,20 +926,32 @@ private:
 				return;
 			if (m_jobs.empty() || !_MayStartJob())
 				continue;
-			std::unique_ptr<D3D12PipelineCompileJob> job = std::move(m_jobs.front());
+			QueuedJob queued = std::move(m_jobs.front());
 			m_jobs.pop_front();
 			m_busyThreads++;
 			lock.unlock();
-			job->Run();
-			job.reset();
+			// a draw waits for this one: compete with the emulation threads instead of yielding to them
+			if (queued.urgent)
+				SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+			queued.job->Run();
+			queued.job.reset();
+			if (queued.urgent)
+				SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 			lock.lock();
 			m_busyThreads--;
+			if (queued.urgent)
+				m_urgentJobs--;
 			m_jobFinished.notify_all();
+			m_jobAvailable.notify_all(); // preloads held back for an urgent job may start now
 		}
 	}
 
 	bool _MayStartJob() const
 	{
+		// preloads wait while a pipeline a draw needs is queued or being created, so it gets the driver and the cores
+		// (opening BOTW's Sheikah Slate abilities could freeze for seconds behind a long preload queue)
+		if (!m_jobs.front().urgent && m_urgentJobs > 0)
+			return false;
 		const int pressure = LatteTC_GetMemoryPressure();
 		const uint32 maxBusy = pressure >= 2 ? 1 : (pressure == 1 ? 2 : 0xFFFFFFFF);
 		return m_busyThreads < maxBusy;
@@ -945,7 +960,13 @@ private:
 	std::mutex m_mutex;
 	std::condition_variable m_jobAvailable;
 	std::condition_variable m_jobFinished;
-	std::deque<std::unique_ptr<D3D12PipelineCompileJob>> m_jobs;
+	struct QueuedJob
+	{
+		std::unique_ptr<D3D12PipelineCompileJob> job;
+		bool urgent;
+	};
+	std::deque<QueuedJob> m_jobs;
+	uint32 m_urgentJobs = 0; // queued or being created
 	std::vector<HANDLE> m_threads;
 	uint32 m_busyThreads = 0;
 	bool m_stop = false;
@@ -1350,6 +1371,26 @@ void D3D12PipelineCache::Clear()
 	m_internalPipelines.clear();
 }
 
+// Depth bias as baked into a pipeline: the constant offset in whole depth units (D3D12 takes an integer), the slope
+// factor in steps of 1/16 and the clamp unchanged. Values that round alike share a pipeline (BOTW changes its shadow
+// bias continuously and otherwise compiled a new pipeline for most shadow draws)
+struct _DepthBias
+{
+	static constexpr float kSlopeStepsPerUnit = 16.0f;
+	sint32 offset;
+	sint32 slopeSteps;
+	float clamp;
+
+	static _DepthBias FromRegisters(const LatteContextRegister& lcr)
+	{
+		_DepthBias b;
+		b.offset = (sint32)std::lround(lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET());
+		b.slopeSteps = (sint32)std::lround(lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE() / 16.0f * kSlopeStepsPerUnit);
+		b.clamp = lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP();
+		return b;
+	}
+};
+
 uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader,
 	const CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType)
 {
@@ -1382,9 +1423,11 @@ uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, co
 	mix(ctxRegister[Latte::REGADDR::PA_CL_VTE_CNTL], 7); // VPORT_X_OFFSET_ENA affects the rasterization kill workaround
 	if (polygonCtrl & (1 << 11))
 	{
-		// D3D12 depth bias is static pipeline state
-		mix(lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.getRawValue(), 11);
-		mix(lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.getRawValue(), 11);
+		// D3D12 depth bias is static pipeline state. Hashed as the rounded values the pipeline gets (see _DepthBias), so
+		// games that animate the bias slightly (BOTW shadow cascades) don't create a pipeline per value
+		const _DepthBias bias = _DepthBias::FromRegisters(lcr);
+		mix((uint32)bias.offset, 11);
+		mix((uint32)bias.slopeSteps, 11);
 		mix(lcr.PA_SU_POLY_OFFSET_CLAMP.getRawValue(), 11);
 	}
 	// blend
@@ -1668,12 +1711,10 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 	desc.RasterizerState.FrontCounterClockwise = (frontFace == Latte::LATTE_PA_SU_SC_MODE_CNTL::E_FRONTFACE::CCW) ? TRUE : FALSE;
 	if (polyOffsetFrontEnable)
 	{
-		const float frontScale = lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE() / 16.0f;
-		const float frontOffset = lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET();
-		const float offsetClamp = lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP();
-		desc.RasterizerState.DepthBias = (INT)std::lround(frontOffset);
-		desc.RasterizerState.SlopeScaledDepthBias = frontScale;
-		desc.RasterizerState.DepthBiasClamp = offsetClamp;
+		const _DepthBias bias = _DepthBias::FromRegisters(lcr);
+		desc.RasterizerState.DepthBias = bias.offset;
+		desc.RasterizerState.SlopeScaledDepthBias = (float)bias.slopeSteps / _DepthBias::kSlopeStepsPerUnit;
+		desc.RasterizerState.DepthBiasClamp = bias.clamp;
 	}
 	const bool zClipEnable = lcr.PA_CL_CLIP_CNTL.get_ZCLIP_FAR_DISABLE() == false;
 	desc.RasterizerState.DepthClipEnable = zClipEnable ? TRUE : FALSE;

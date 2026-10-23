@@ -5,6 +5,14 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-23
+### Direct3D 12
+- **Fewer pipelines for depth-biased draws (shadows):** depth bias values that differ only slightly now share one
+  pipeline instead of each building its own, which should mean fewer new-shader hitches in games that animate their
+  shadow bias (reported for BOTW).
+- **A shader the game is waiting for comes first:** while a draw waits for its pipeline, background shader builds pause
+  and the waiting one runs at normal priority, so freezes like opening a new menu or ability should be shorter.
+
 ## 2026-10-22
 ### Xbox app
 - **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it
