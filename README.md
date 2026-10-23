@@ -21,6 +21,19 @@ on every change:
 | `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
 | `MK8_FirstPerson.zip` | The Mario Kart 8 first person pack on its own, for other Cemu builds (the downloads above already include it) |
 
+### Game compatibility
+Games players have tested on Xbox Series X|S; the **[compatibility list](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md)**
+has the resolution, FPS and notes for each one.
+- **Perfect:** Mario Tennis: Ultra Smash, New Super Mario Bros. U
+- **Playable:** Mario Kart 8, Pokkén Tournament, Super Smash Bros. for Wii U, The Legend of Zelda: Wind Waker HD
+- **Issues:** The Legend of Zelda: Breath of the Wild (Magnesis can't pick things up yet, blocky shadows), Super Mario
+  3D World (graphical bugs), Splatoon
+- **Broken:** Need for Speed: Most Wanted U (closes after the intro video)
+
+Tried a game that isn't listed? Tell us how it went with the bug report form in the
+[issues](https://github.com/PrismFox67/Cemu-UWP/issues) (it works for "it runs fine" reports too), and say which build
+you used.
+
 ### What's new
 **[CHANGELOG.md](CHANGELOG.md)** lists every change by date, written for players. The
 [ci-latest release notes](https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest) show the newest entries plus
