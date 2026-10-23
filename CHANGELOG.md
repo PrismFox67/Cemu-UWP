@@ -13,6 +13,12 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - **A shader the game is waiting for comes first:** while a draw waits for its pipeline, background shader builds pause
   and the waiting one runs at normal priority, so freezes like opening a new menu or ability should be shorter.
 
+### Xbox app
+- **Real box art:** the game list shows the Wii U cover of each game, downloaded in the background from GameTDB
+  (high-resolution where available) and kept in `covers` in the user folder. Turn it off or re-download under
+  Settings > Box art. Without internet the icon cards are shown as before.
+- **The Cemu title on the home screen** now sits on a blue pill so it stays readable on the light background.
+
 ## 2026-10-22
 ### Xbox app
 - **In-game menu is easier to find and does more:** when a game starts, a hint shows for a few seconds how to open it

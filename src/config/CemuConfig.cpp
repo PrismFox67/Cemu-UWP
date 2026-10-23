@@ -33,6 +33,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	console_language = parser.get("console_language", console_language.GetInitValue());
 	console_region = parser.get("console_region", console_region.GetInitValue());
 	host_ui_language = parser.get("host_ui_language", "");
+	host_box_art = parser.get("host_box_art", true);
 
 	game_paths.clear();
 	auto game_path_parser = parser.get("GamePaths");
@@ -316,6 +317,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	// config.set("cpu_mode", cpu_mode.GetValue());
 	config.set("console_region", console_region.GetValue());
 	config.set("host_ui_language", host_ui_language.GetValue().c_str());
+	config.set<bool>("host_box_art", host_box_art);
 	config.set("console_language", console_language.GetValue());
 
 	// game paths

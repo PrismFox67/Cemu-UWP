@@ -24,6 +24,7 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **LB / RB** switch between Games, Graphic packs, Controllers, Settings and About.
 - **Games**: the covers scroll left and right. **A** starts the selected game, **X** refreshes the list, **Y** opens Settings.
   The line under the covers shows the game's region, title ID, version, and whether an update or DLC was found.
+  Covers are real box art downloaded from GameTDB in the background (needs internet once; Settings > Box art turns it off).
 - **Settings → Look**: light or dark panel. For your own background, put `background.png` or `background.jpg` into
   `LocalState/theme` and restart Cemu.
 - **Settings → Language and region**:

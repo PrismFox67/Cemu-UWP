@@ -245,6 +245,11 @@ void HostTheme::DrawBackground(ImDrawList* drawList, ImVec2 min, ImVec2 max, voi
 	_DrawDefaultBackground(drawList, min, max);
 }
 
+bool HostTheme::DecodeImageFile(const fs::path& path, std::vector<uint8>& rgba, int& width, int& height)
+{
+	return _DecodeImage(path, rgba, width, height);
+}
+
 bool HostTheme::IsLightPanel()
 {
 	return s_lightPanel;

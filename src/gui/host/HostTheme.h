@@ -10,6 +10,9 @@ namespace HostTheme
 	// fills the whole viewport. textureProvider uploads RGBA once per key (see HostUI::SetTextureProvider)
 	void DrawBackground(ImDrawList* drawList, ImVec2 min, ImVec2 max, void* (*getTexture)(uint64 key, const uint8* rgba, int width, int height));
 
+	// PNG/JPG file -> RGBA8 (WIC), also used for the downloaded box art
+	bool DecodeImageFile(const fs::path& path, std::vector<uint8>& rgba, int& width, int& height);
+
 	bool IsLightPanel();
 	void SetLightPanel(bool light); // saved to <user data>/theme/theme.txt
 

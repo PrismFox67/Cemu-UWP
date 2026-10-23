@@ -395,9 +395,11 @@ namespace
 		return ImGui::IsKeyPressed(gamepad, true) || ImGui::IsKeyPressed(stick, true) || ImGui::IsKeyPressed(keyboard, true);
 	}
 
-	// a Wii U case: spine on the left, the blue Wii U header band, the title's art filling the front (cropped from the
-	// square icon until scraped covers exist), a soft shadow. Proportions of the real case (about 0.72:1)
-	constexpr float kCaseAspect = 0.75f; // flat 3:4 covers
+	// a Wii U cover: the title's box art from GameTDB (HostIcons::GetCover), or until it's downloaded (or offline) the blue
+	// Wii U header band over the title's square icon. A soft shadow. Proportions of GameTDB's scans (768x1080, 350x500)
+	constexpr float kCaseAspect = 0.70f;
+
+	void _DrawCardCaption(ImDrawList* drawList, const GameEntry& game, ImVec2 min, ImVec2 max, float width, bool selected, float alpha);
 
 	void _DrawCard(ImDrawList* drawList, const GameEntry& game, ImVec2 min, float width, bool selected, float alpha)
 	{
@@ -411,6 +413,14 @@ namespace
 		{
 			const float grow = i * 2.5f * s_scale;
 			drawList->AddRectFilled(ImVec2(min.x - grow * 0.5f, min.y + grow), ImVec2(max.x + grow * 0.5f, max.y + grow * 1.2f), IM_COL32(0, 30, 70, (int)(22 * alpha)), r + grow);
+		}
+		const HostIcons::Icon* cover = s_textureProvider ? HostIcons::GetCover(game.titleId) : nullptr;
+		void* coverTexture = cover ? s_textureProvider(cover->textureKey, cover->rgba.data(), cover->width, cover->height) : nullptr;
+		if (coverTexture)
+		{
+			drawList->AddImageRounded(coverTexture, min, max, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32(255, 255, 255, 0) | a, r);
+			_DrawCardCaption(drawList, game, min, max, width, selected, alpha);
+			return;
 		}
 		// a flat cover: blue Wii U band on top, the title's art below
 		drawList->AddRectFilled(min, max, rgb(232, 238, 245), r);
@@ -446,9 +456,15 @@ namespace
 			drawList->AddText(ImVec2((artMin.x + artMax.x - ts.x) * 0.5f, (artMin.y + artMax.y - ts.y) * 0.5f), rgb(200, 210, 225), initials.c_str());
 			ImGui::PopFont();
 		}
+		_DrawCardCaption(drawList, game, min, max, width, selected, alpha);
+	}
+
+	// selection frame and the title under the cover, two lines at most
+	void _DrawCardCaption(ImDrawList* drawList, const GameEntry& game, ImVec2 min, ImVec2 max, float width, bool selected, float alpha)
+	{
+		const float r = 6.0f * s_scale;
 		if (selected)
 			drawList->AddRect(ImVec2(min.x - 3.0f * s_scale, min.y - 3.0f * s_scale), ImVec2(max.x + 3.0f * s_scale, max.y + 3.0f * s_scale), IM_COL32(255, 255, 255, 255), r + 2.0f, 0, 3.5f * s_scale);
-		// title under the cover, two lines at most
 		const float textW = width + 20.0f * s_scale;
 		const ImVec4 clip(min.x - 10.0f * s_scale, max.y + 8.0f * s_scale, min.x - 10.0f * s_scale + textW, max.y + 8.0f * s_scale + ImGui::GetTextLineHeight() * 2.2f);
 		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(clip.x, clip.y), (HostTheme::PanelText() & 0x00FFFFFF) | ((ImU32)((selected ? 1.0f : 0.8f) * alpha * 255.0f) << IM_COL32_A_SHIFT), game.name.c_str(), nullptr, textW, &clip);
@@ -867,6 +883,24 @@ namespace
 			if (ImGui::RadioButton(_TR("Dark panel"), panel == 1))
 				HostTheme::SetLightPanel(false);
 			ImGui::TextDisabled("Background picture: put background.png or background.jpg into %s and restart Cemu", _pathToUtf8(ActiveSettings::GetUserDataPath("theme")).c_str());
+			bool boxArt = config.host_box_art.GetValue();
+			if (ImGui::Checkbox(_TR("Box art: download the games' covers from GameTDB"), &boxArt))
+			{
+				config.host_box_art = boxArt;
+				changed = true;
+				std::unique_lock _l(s_mutex);
+				s_refreshRequested = true; // requests the covers
+			}
+			if (boxArt)
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(_TR("Download box art again")))
+				{
+					HostIcons::RefreshCovers();
+					std::unique_lock _l(s_mutex);
+					s_refreshRequested = true;
+				}
+			}
 		}
 
 		ImGui::SeparatorText(_TR("Language and region"));
@@ -1285,6 +1319,7 @@ namespace
 		ImGui::BulletText("Controller 1 is the Wii U GamePad, controllers 2-4 are Pro Controllers for players 2-4");
 		ImGui::BulletText("Change this under Controllers, or pick \"Pair controllers\" in the in-game menu");
 		ImGui::Spacing();
+		ImGui::TextWrapped(_TR("Box art: GameTDB (gametdb.com), downloaded for the games in your game folders."));
 		ImGui::TextWrapped(_TR("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own."));
 	}
 }
@@ -1488,6 +1523,13 @@ std::optional<fs::path> HostUI::DrawLauncher()
 			const float size = ImGui::GetFontSize() * 1.6f;
 			const ImVec2 ts = ImGui::CalcTextSize(mark);
 			const ImVec2 pos(screenMin.x + (W - ts.x * 1.6f) * 0.5f, screenMin.y + 22.0f * unit);
+			// on a solid blue pill: white text alone got lost against the white background shapes
+			const ImVec2 padding(26.0f * unit, 6.0f * unit);
+			const ImVec2 pillMin(pos.x - padding.x, pos.y - padding.y);
+			const ImVec2 pillMax(pos.x + ts.x * 1.6f + padding.x, pos.y + ts.y * 1.6f + padding.y);
+			const float rounding = (pillMax.y - pillMin.y) * 0.5f;
+			dl->AddRectFilled(ImVec2(pillMin.x, pillMin.y + 4.0f * unit), ImVec2(pillMax.x, pillMax.y + 4.0f * unit), IM_COL32(0, 40, 90, 70), rounding);
+			dl->AddRectFilled(pillMin, pillMax, IM_COL32(10, 111, 208, 255), rounding);
 			dl->AddText(ImGui::GetFont(), size, ImVec2(pos.x + 2.0f * unit, pos.y + 3.0f * unit), IM_COL32(0, 60, 120, 90), mark);
 			dl->AddText(ImGui::GetFont(), size, pos, IM_COL32(255, 255, 255, 255), mark);
 		}
