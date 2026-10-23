@@ -14,6 +14,10 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
   and the waiting one runs at normal priority, so freezes like opening a new menu or ability should be shorter.
 
 ### Xbox app
+- **GamePad overlay:** the in-game menu can show the GamePad screen small in a corner of the TV image (bottom right by
+  default, about the size of MK8's item box), so the MK8 minimap and other GamePad-only screens are visible on the TV.
+  Corner, size (small/medium/large) and opacity can be changed; each game remembers its setting, off unless you turn it
+  on. With the GamePad screen shown full screen, the overlay shows the TV instead.
 - **keys.txt from anywhere:** Settings > Folders has a keys.txt path (a file, or a folder with keys.txt, e.g. on a USB
   drive). New keys from it are imported right away and at every start; a missing file is reported.
 - **Fixed: starting a game a second time in the same session crashed with graphic packs** that patch code (FPS++,

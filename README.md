@@ -62,7 +62,8 @@ available.
 - **Motion controls.** Tilt the GamePad with the right stick (in-game menu → Motion), or use a phone's real gyro over a
   DSU / cemuhook app on the same Wi-Fi.
 - **In-game menu** (click both sticks, or hold View + Menu; a hint shows when a game starts): switch between the TV and
-  GamePad screens, a touch cursor for GamePad-touch games, FPS counter, VSync, volume and player 1's stick deadzone
+  GamePad screens, a **GamePad overlay** (the GamePad screen small in a corner of the TV image, e.g. MK8's minimap;
+  corner, size and opacity, remembered per game), a touch cursor for GamePad-touch games, FPS counter, VSync, volume and player 1's stick deadzone
   (applied right away), motion on/off, **amiibo** (dumps in `LocalState/amiibo`), a **Skylanders portal** (figures in
   `LocalState/skylanders`), and exit to the game list.
 - **Wii U dialogs with a controller.** The on-screen keyboard and error dialogs can be used with the controller.
