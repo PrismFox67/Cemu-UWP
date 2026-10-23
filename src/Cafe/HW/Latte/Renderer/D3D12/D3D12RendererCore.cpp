@@ -477,6 +477,37 @@ void D3D12Renderer::draw_applyRenderTargets()
 
 void D3D12Query_CountDraw(bool issued); // D3D12Query.cpp, diagnostic
 
+// diagnostic (#286/#290, BOTW Magnesis grab on Series: every query reads 0 while all its draws reach the GPU): the
+// state the draws inside occlusion queries run with - depth/stencil test, the depth buffer they test against, render
+// targets, viewport and scissor. Only while the last window's reads were >= 90% zero; each distinct state once per
+// 10 s, at most 8 per window
+bool D3D12Query_MostlyZero(); // D3D12Query.cpp
+static void D3D12Query_LogDrawState(LatteDecompilerShader* vs, LatteDecompilerShader* ps, CachedFBOD3D12* fbo, const D3D12_VIEWPORT& vp, const D3D12_RECT& sc, uint32 count, uint32 instances)
+{
+	static auto s_windowStart = std::chrono::steady_clock::now();
+	static std::unordered_set<uint64> s_seen;
+	const auto now = std::chrono::steady_clock::now();
+	if (now - s_windowStart > std::chrono::seconds(10))
+	{
+		s_windowStart = now;
+		s_seen.clear();
+	}
+	if (s_seen.size() >= 8 || !D3D12Query_MostlyZero())
+		return;
+	const auto& depthControl = LatteGPUState.contextNew.DB_DEPTH_CONTROL;
+	LatteTextureViewD3D12* depthView = fbo->HasDSV() ? fbo->GetDepthView() : nullptr;
+	LatteTexture* depthTex = depthView ? depthView->baseTexture : nullptr;
+	uint64 key = vs->baseHash ^ (ps ? ps->baseHash * 31 : 0) ^ ((uint64)LatteGPUState.contextRegister[Latte::REGADDR::DB_DEPTH_CONTROL] << 40) ^ (uint64)(depthTex ? depthTex->physAddress : 0) * 7;
+	key ^= ((uint64)(uint32)vp.Width << 20) ^ ((uint64)(uint32)vp.Height << 8) ^ fbo->GetNumRTVs();
+	if (!s_seen.insert(key).second)
+		return;
+	cemuLog_log(LogType::Force, "D3D12: query draw vs {:016x} ps {:016x} {}x{}: depth test {} func {} write {} stencil {}; depth buffer {} {:08x} {}x{} fmt {:04x} dxgi {}; {} RTVs; viewport {:.0f},{:.0f} {:.0f}x{:.0f} z {:.2f}-{:.2f}, scissor {},{}-{},{}",
+		vs->baseHash, ps ? ps->baseHash : 0, count, instances,
+		depthControl.get_Z_ENABLE(), (uint32)depthControl.get_Z_FUNC(), depthControl.get_Z_WRITE_ENABLE(), depthControl.get_STENCIL_ENABLE(),
+		depthTex ? "at" : "none", depthTex ? depthTex->physAddress : 0, depthTex ? depthTex->width : 0, depthTex ? depthTex->height : 0, depthTex ? (uint32)depthTex->format : 0, (uint32)fbo->GetDSVFormat(),
+		fbo->GetNumRTVs(), vp.TopLeftX, vp.TopLeftY, vp.Width, vp.Height, vp.MinDepth, vp.MaxDepth, sc.left, sc.top, sc.right, sc.bottom);
+}
+
 void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
 	LatteGPUState.drawCallCounter++;
@@ -661,7 +692,10 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 	else
 		m_cmdList->DrawInstanced(count, instanceCount, baseVertex, baseInstance);
 	if (LatteQuery_IsOcclusionQueryActive())
+	{
 		D3D12Query_CountDraw(true);
+		D3D12Query_LogDrawState(vertexShader, pixelShader, fbo, m_state.viewport, m_state.scissor, isIndexed ? hostIndexCount : count, instanceCount);
+	}
 
 	WriteDrawBreadcrumb(vertexShader->baseHash, pixelShader ? pixelShader->baseHash : 0, isIndexed ? hostIndexCount : count, instanceCount);
 

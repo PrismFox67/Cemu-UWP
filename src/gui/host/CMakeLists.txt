@@ -16,6 +16,8 @@ add_library(CemuHostFrontend
 	HostMusic.h
 	HostMusicDecoder.cpp
 	HostMusicDecoder.h
+	HostSounds.cpp
+	HostSounds.h
 	HostPlatform.h
 	HostTitleInstaller.cpp
 	HostTitleInstaller.h

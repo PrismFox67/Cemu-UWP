@@ -1,5 +1,6 @@
 #include "gui/host/HostMusic.h"
 #include "gui/host/HostMusicDecoder.h"
+#include "gui/host/HostSounds.h"
 #include "gui/host/HostTranslation.h"
 #include "util/helpers/helpers.h"
 
@@ -269,7 +270,10 @@ namespace HostMusic
 			changed = true;
 		ImGui::SameLine();
 		if (ImGui::Button(_TR("Look for the file again")))
+		{
 			ApplySettings();
+			HostSounds::Reload(); // the own sounds in theme/sfx too
+		}
 		const fs::path track = GetTrackPath();
 		if (track.empty())
 			ImGui::TextDisabled("Menu music: put menu_music.ogg, .mp3, .wav or .flac into %s", _pathToUtf8(GetMusicFolder()).c_str());

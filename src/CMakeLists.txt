@@ -131,6 +131,11 @@ if(CEMU_UWP)
 	target_sources(CemuBin PRIVATE "${UWP_LAUNCHER_LOGO}")
 	set_property(SOURCE "${UWP_LAUNCHER_LOGO}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
 	set_property(SOURCE "${UWP_LAUNCHER_LOGO}" PROPERTY VS_DEPLOYMENT_LOCATION "resources")
+	# launcher sounds: Kenney's Interface Sounds (CC0, License.txt next to them)
+	file(GLOB UWP_LAUNCHER_SFX "${CMAKE_SOURCE_DIR}/src/gui/host/assets/sfx/*")
+	target_sources(CemuBin PRIVATE ${UWP_LAUNCHER_SFX})
+	set_property(SOURCE ${UWP_LAUNCHER_SFX} PROPERTY VS_DEPLOYMENT_CONTENT 1)
+	set_property(SOURCE ${UWP_LAUNCHER_SFX} PROPERTY VS_DEPLOYMENT_LOCATION "resources/sfx")
 elseif(WIN32)
 	target_sources(CemuBin PRIVATE
 	resource/cemu.rc
@@ -141,7 +146,8 @@ elseif(WIN32)
 		add_custom_command(TARGET CemuBin POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/resources/fonts"
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${CMAKE_SOURCE_DIR}/bin/resources/fonts/launcher.ttf"
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/src/gui/host/assets/launcher_logo.png" "${CMAKE_SOURCE_DIR}/bin/resources/launcher_logo.png")
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/src/gui/host/assets/launcher_logo.png" "${CMAKE_SOURCE_DIR}/bin/resources/launcher_logo.png"
+			COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/gui/host/assets/sfx" "${CMAKE_SOURCE_DIR}/bin/resources/sfx")
 	endif()
 endif()
 

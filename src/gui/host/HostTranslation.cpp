@@ -142,6 +142,8 @@ namespace
 		{ "Launcher design inspired by SternXD's Dolphin UWP", "Design do launcher inspirado no Dolphin UWP de SternXD", "Diseño del launcher inspirado en el Dolphin UWP de SternXD" },
 		{ "Box art: download the games' covers from GameTDB", "Capas: baixar as capas dos jogos do GameTDB", "Carátulas: descargar las carátulas de los juegos de GameTDB" },
 		{ "Download box art again", "Baixar as capas de novo", "Descargar las carátulas de nuevo" },
+		{ "Menu sounds", "Sons do menu", "Sonidos del menú" },
+		{ "Menu sounds: Kenney (kenney.nl, CC0)", "Sons do menu: Kenney (kenney.nl, CC0)", "Sonidos del menú: Kenney (kenney.nl, CC0)" },
 		{ "Menu music", "Música do menu", "Música del menú" },
 		{ "Look for the file again", "Procurar o arquivo de novo", "Buscar el archivo de nuevo" },
 		{ "Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own.",

@@ -10,6 +10,10 @@ static uint32 s_queryDrawsIssued = 0;
 static bool s_querySyncReads = false;
 bool D3D12_UserDataFileExists(const char* fileName); // D3D12Renderer.cpp
 
+// true while the last 10 s window read (nearly) only zeros: D3D12RendererCore then logs the query draws' state
+static bool s_queriesMostlyZero = false;
+bool D3D12Query_MostlyZero() { return s_queriesMostlyZero; }
+
 void D3D12Query_CountDraw(bool issued)
 {
 	if (issued)
@@ -140,6 +144,7 @@ public:
 			s_nextLog = now + std::chrono::seconds(10);
 			cemuLog_log(LogType::Force, "D3D12: occlusion query fragments read: {}, zero: {}, last {}; draws inside queries: {}, issued to the GPU: {}{}",
 				s_reads, s_zeros, value, s_queryDrawsRequested, s_queryDrawsIssued, s_querySyncReads ? " (query_sync.txt: reads wait for GPU idle)" : "");
+			s_queriesMostlyZero = s_reads >= 50 && s_zeros * 10 >= s_reads * 9;
 			s_reads = s_zeros = 0;
 			s_queryDrawsRequested = s_queryDrawsIssued = 0;
 		}

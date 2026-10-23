@@ -1,10 +1,12 @@
 #include "gui/host/HostUI.h"
+#include <imgui_internal.h>
 #include "gui/host/HostPlatform.h"
 #include "gui/host/HostControllers.h"
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "gui/host/HostIcons.h"
 #include "gui/host/HostMusic.h"
+#include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -922,6 +924,7 @@ namespace
 				}
 			}
 			changed |= HostMusic::DrawSettings();
+			changed |= HostSounds::DrawSettings();
 		}
 
 		ImGui::SeparatorText(_TR("Language and region"));
@@ -1345,6 +1348,7 @@ namespace
 		ImGui::BulletText("%s", _TR("Cemu and the Cemu logo by the Cemu team (cemu.info)"));
 		ImGui::BulletText("%s", _TR("Title installer, texture allocation recovery and the flip pacing experiment adapted from danprice142/Cemu-UWP (MPL-2.0)"));
 		ImGui::BulletText("%s", _TR("Box art from GameTDB (gametdb.com), downloaded for the games in your game folders"));
+		ImGui::BulletText("%s", _TR("Menu sounds: Kenney (kenney.nl, CC0)"));
 		ImGui::BulletText("%s", _TR("Launcher design inspired by SternXD's Dolphin UWP"));
 		ImGui::TextWrapped(_TR("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own."));
 	}
@@ -1504,6 +1508,8 @@ namespace
 	}
 }
 
+static std::atomic_bool s_messageSound = false; // any thread pushes messages, the error sound plays on the UI thread
+
 std::optional<fs::path> HostUI::DrawLauncher()
 {
 	HostGraphicPacks::Update();
@@ -1518,6 +1524,11 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		}
 		s_wasScanning = scanning;
 	}
+
+	// menu sounds: compared with the state after this frame's input at the end
+	const int soundTab = s_tab;
+	const int soundGame = s_selectedGame;
+	const ImGuiID soundFocus = ImGui::GetCurrentContext()->NavId;
 
 	std::optional<fs::path> launch;
 	{
@@ -1751,6 +1762,17 @@ std::optional<fs::path> HostUI::DrawLauncher()
 	}
 	ImGui::End();
 
+	if (s_messageSound.exchange(false))
+		HostSounds::Play(HostSounds::Sfx::Error);
+	else if (launch || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
+		HostSounds::Play(HostSounds::Sfx::Select);
+	else if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+		HostSounds::Play(HostSounds::Sfx::Back);
+	else if (s_tab != soundTab)
+		HostSounds::Play(HostSounds::Sfx::Tab);
+	else if (s_selectedGame != soundGame || (ImGui::GetCurrentContext()->NavId != soundFocus && soundFocus != 0))
+		HostSounds::Play(HostSounds::Sfx::Move);
+
 	auto deferred = std::move(s_deferred);
 	s_deferred.clear();
 	for (auto& fn : deferred)
@@ -1765,6 +1787,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 
 void HostUI::PushMessage(std::string title, std::string text)
 {
+	s_messageSound = true;
 	std::unique_lock _l(s_mutex);
 	s_messages.emplace_back(Message{ std::move(title), std::move(text) });
 }

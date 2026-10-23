@@ -120,6 +120,17 @@ std::optional<HostTools::LastSessionProblem> HostTools::CheckLastSession()
 	std::string game = marker.substr(0, marker.find('\n'));
 	if (game.rfind("game ", 0) == 0)
 		game = game.substr(5);
+	const std::string log = _ReadFile(ActiveSettings::GetUserDataPath("log_previous.txt"));
+	LastSessionProblem problem;
+	// a crash log is definitive, also when the marker's last line says 'suspended' (#289: a relaunch crash was reported as
+	// 'closed by the console while suspended')
+	if (log.find("Crashlog for") != std::string::npos)
+	{
+		problem.title = "Cemu crashed last time";
+		problem.text = fmt::format("{} crashed. The crash details are in the log.", game);
+		cemuLog_log(LogType::Force, "Host: the last session crashed ({})", game);
+		return problem;
+	}
 	// the last line tells whether the app was suspended (the console can close a suspended app, e.g. when another game
 	// starts). That isn't a problem with Cemu
 	const size_t lastSuspend = marker.rfind("suspended\n");
@@ -130,15 +141,6 @@ std::optional<HostTools::LastSessionProblem> HostTools::CheckLastSession()
 		return std::nullopt;
 	}
 
-	const std::string log = _ReadFile(ActiveSettings::GetUserDataPath("log_previous.txt"));
-	LastSessionProblem problem;
-	if (log.find("Crashlog for") != std::string::npos)
-	{
-		problem.title = "Cemu crashed last time";
-		problem.text = fmt::format("{} crashed. The crash details are in the log.", game);
-		cemuLog_log(LogType::Force, "Host: the last session crashed ({})", game);
-		return problem;
-	}
 	// the memory lines: "Host: memory 4300 MB of 5120 MB (83%)" and "texture memory pressure high"
 	int lastPercent = -1;
 	for (size_t pos = log.find("Host: memory "); pos != std::string::npos; pos = log.find("Host: memory ", pos + 1))
