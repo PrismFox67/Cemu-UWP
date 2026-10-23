@@ -30,10 +30,12 @@ available.
 
 ### Features
 #### The Xbox app
-- **A launcher made for a controller.** A row of 2D covers with each game's icon art on a Wii U-menu-style background.
-  **LB / RB** switch between Games, Graphic packs, Controllers, Settings and About; **A** starts the game, **X** refreshes
-  the list, **Y** opens Settings. The line under the covers shows the region, title ID, version and whether an update or
-  DLC was found. Light or dark panel, and your own background image.
+- **A launcher made for a controller.** A row of real Wii U box art (downloaded automatically from GameTDB, icon cards
+  when offline) on a Wii U-menu-style background with the Cemu logo. **LB / RB** switch between Games, Graphic packs,
+  Controllers, Settings and About; **A** starts the game, **X** refreshes the list, **Y** opens Settings. One line under
+  the covers shows the selected game's title, region, title ID, version and whether an update or DLC was found. Dark
+  panel by default (light in Settings → Look), your own background image, and your own menu music
+  (`LocalState/theme/menu_music.ogg`, `.mp3`, `.wav` or `.flac`; nothing is bundled).
 - **Games from a USB drive or the internal drive.** The usual game folders are scanned automatically, `keys.txt` is
   imported from the game folders, and updates, DLC and games can be installed into the emulated Wii U storage from a
   folder (Settings → Install updates and DLC).
