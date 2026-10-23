@@ -127,6 +127,10 @@ public:
 	virtual void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) = 0;
 	virtual void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) = 0;
 
+	// copies a region between textures of the same format that a graphic pack scaled differently (effective rectangles of
+	// different size), returns false if the backend can't, then the copy is skipped
+	virtual bool texture_copySliceScaled(LatteTexture* src, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, sint32 srcWidth, sint32 srcHeight, LatteTexture* dst, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 dstWidth, sint32 dstHeight) { return false; }
+
 	virtual LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) = 0;
 
 	// surface copy

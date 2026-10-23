@@ -135,7 +135,9 @@ public:
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;
 
 	void surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* sourceTexture, sint32 srcMip, sint32 srcSlice, LatteTexture* destinationTexture, sint32 dstMip, sint32 dstSlice, sint32 width, sint32 height) override;
-	bool RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, LatteTextureD3D12* dstTex, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 width, sint32 height);
+	bool texture_copySliceScaled(LatteTexture* src, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, sint32 srcWidth, sint32 srcHeight, LatteTexture* dst, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 dstWidth, sint32 dstHeight) override;
+	// srcWidth/srcHeight: size of the source region if it differs from the target's (scaled copy), 0 = same
+	bool RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, LatteTextureD3D12* dstTex, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 width, sint32 height, sint32 srcWidth = 0, sint32 srcHeight = 0);
 
 	void bufferCache_init(const sint32 bufferSize) override;
 	void bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset) override;

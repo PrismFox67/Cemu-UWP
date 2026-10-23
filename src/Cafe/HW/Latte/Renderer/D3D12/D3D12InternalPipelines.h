@@ -9,4 +9,6 @@ struct D3D12Renderer::InternalPipelines
 	std::unique_ptr<RendererShaderD3D12> copyVS;
 	std::unique_ptr<RendererShaderD3D12> copyPSDepthToColor;
 	std::unique_ptr<RendererShaderD3D12> copyPSColorToDepth;
+	std::unique_ptr<RendererShaderD3D12> copyPSDepthScaled;
+	std::unique_ptr<RendererShaderD3D12> copyPSColorScaled;
 };

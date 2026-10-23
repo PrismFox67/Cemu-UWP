@@ -59,12 +59,52 @@ static const char* s_copySurfacePSDepthToColor =
 	"colorOut0.r = texelFetch(textureSrc, passSrcTexelOffset + ivec2(gl_FragCoord.xy), 0).r;\r\n"
 	"}\r\n";
 
+// copies between differently scaled textures of the same format (graphic pack resolution rules): every target pixel
+// reads the source texel at the same relative position. Same push constants as the copy VS, plus the target origin and
+// the size ratio
+static const char* s_copySurfacePSDepthScaled =
+	"#version 450\r\n"
+	"layout(location = 0) in flat ivec2 passSrcTexelOffset;\r\n"
+	"layout(binding = 0) uniform sampler2D textureSrc;\r\n"
+	"layout(push_constant) uniform pushConstants {\r\n"
+	"vec4 vertexOffsets[2];\r\n"
+	"ivec2 srcTexelOffset;\r\n"
+	"vec2 dstOrigin;\r\n"
+	"vec2 srcScale;\r\n"
+	"}uf_pushConstants;\r\n"
+	"in vec4 gl_FragCoord;\r\n"
+	"\r\n"
+	"void main(){\r\n"
+	"ivec2 p = uf_pushConstants.srcTexelOffset + ivec2((gl_FragCoord.xy - uf_pushConstants.dstOrigin) * uf_pushConstants.srcScale);\r\n"
+	"gl_FragDepth = texelFetch(textureSrc, p, 0).r;\r\n"
+	"}\r\n";
+
+static const char* s_copySurfacePSColorScaled =
+	"#version 450\r\n"
+	"layout(location = 0) in flat ivec2 passSrcTexelOffset;\r\n"
+	"layout(binding = 0) uniform sampler2D textureSrc;\r\n"
+	"layout(push_constant) uniform pushConstants {\r\n"
+	"vec4 vertexOffsets[2];\r\n"
+	"ivec2 srcTexelOffset;\r\n"
+	"vec2 dstOrigin;\r\n"
+	"vec2 srcScale;\r\n"
+	"}uf_pushConstants;\r\n"
+	"layout(location = 0) out vec4 colorOut0;\r\n"
+	"in vec4 gl_FragCoord;\r\n"
+	"\r\n"
+	"void main(){\r\n"
+	"ivec2 p = uf_pushConstants.srcTexelOffset + ivec2((gl_FragCoord.xy - uf_pushConstants.dstOrigin) * uf_pushConstants.srcScale);\r\n"
+	"colorOut0 = texelFetch(textureSrc, p, 0);\r\n"
+	"}\r\n";
+
 void D3D12Renderer::surfaceCopy_init()
 {
 	m_internal = std::make_unique<InternalPipelines>();
 	m_internal->copyVS.reset(CreateInternalShader(RendererShader::ShaderType::kVertex, s_copySurfaceVS));
 	m_internal->copyPSDepthToColor.reset(CreateInternalShader(RendererShader::ShaderType::kFragment, s_copySurfacePSDepthToColor));
 	m_internal->copyPSColorToDepth.reset(CreateInternalShader(RendererShader::ShaderType::kFragment, s_copySurfacePSColorToDepth));
+	m_internal->copyPSDepthScaled.reset(CreateInternalShader(RendererShader::ShaderType::kFragment, s_copySurfacePSDepthScaled));
+	m_internal->copyPSColorScaled.reset(CreateInternalShader(RendererShader::ShaderType::kFragment, s_copySurfacePSColorScaled));
 }
 
 void D3D12Renderer::surfaceCopy_shutdown()
@@ -171,12 +211,35 @@ void D3D12Renderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 		LatteTexture_TrackTextureGPUWrite(dstTex, dstSlice, dstMip, LatteTexture_getNextUpdateEventCounter());
 }
 
+bool D3D12Renderer::texture_copySliceScaled(LatteTexture* src, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, sint32 srcWidth, sint32 srcHeight, LatteTexture* dst, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 dstWidth, sint32 dstHeight)
+{
+	auto* srcTex = static_cast<LatteTextureD3D12*>(src);
+	auto* dstTex = static_cast<LatteTextureD3D12*>(dst);
+	// same format only: the shader copies texel values without conversion (depth through the depth SRV/DSV formats)
+	if (srcTex->isDepth != dstTex->isDepth || srcTex->format != dstTex->format || srcTex == dstTex || srcWidth <= 0 || srcHeight <= 0 || dstWidth <= 0 || dstHeight <= 0)
+		return false;
+	if (!dstTex->isDepth && ((uint32)dstTex->format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_INT) != 0)
+		return false; // the color shader reads and writes floats
+	if (!RecordSurfaceCopyDraw(srcTex, srcMip, srcSlice, srcX, srcY, dstTex, dstMip, dstSlice, dstX, dstY, dstWidth, dstHeight, srcWidth, srcHeight))
+		return false;
+	LatteTexture_TrackTextureGPUWrite(dstTex, dstSlice, dstMip, LatteTexture_getNextUpdateEventCounter());
+	return true;
+}
+
 // Draws a width x height region of srcTex at (srcX, srcY) to (dstX, dstY) of dstTex: a depth target gets the source's
 // first channel as depth (depth <-> color conversions, and depth copies D3D12 can't do with CopyTextureRegion: those
-// must cover whole subresources), a color target gets it in red
-bool D3D12Renderer::RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, LatteTextureD3D12* dstTex, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 width, sint32 height)
+// must cover whole subresources), a color target gets it in red. With srcWidth/srcHeight set, the source region is scaled
+// to the target's and all channels are copied (same format)
+bool D3D12Renderer::RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcMip, sint32 srcSlice, sint32 srcX, sint32 srcY, LatteTextureD3D12* dstTex, sint32 dstMip, sint32 dstSlice, sint32 dstX, sint32 dstY, sint32 width, sint32 height, sint32 srcWidth, sint32 srcHeight)
 {
-	RendererShaderD3D12* ps = dstTex->isDepth ? m_internal->copyPSColorToDepth.get() : m_internal->copyPSDepthToColor.get();
+	const bool scaled = srcWidth > 0 && srcHeight > 0 && (srcWidth != width || srcHeight != height);
+	RendererShaderD3D12* ps;
+	if (scaled)
+		ps = dstTex->isDepth ? m_internal->copyPSDepthScaled.get() : m_internal->copyPSColorScaled.get();
+	else
+		ps = dstTex->isDepth ? m_internal->copyPSColorToDepth.get() : m_internal->copyPSDepthToColor.get();
+	if (!ps)
+		return false;
 	const DXGI_FORMAT rtvFormat = dstTex->isDepth ? DXGI_FORMAT_UNKNOWN : dstTex->GetFormatInfo().rtvFormat;
 	const DXGI_FORMAT dsvFormat = dstTex->isDepth ? dstTex->GetFormatInfo().dsvFormat : DXGI_FORMAT_UNKNOWN;
 	if (!dstTex->isDepth && rtvFormat == DXGI_FORMAT_UNKNOWN)
@@ -253,8 +316,19 @@ bool D3D12Renderer::RecordSurfaceCopyDraw(LatteTextureD3D12* srcTex, sint32 srcM
 	{
 		float vertexOffsets[4 * 2];
 		sint32 srcTexelOffset[2];
+		float dstOrigin[2]; // scaled copy only
+		float srcScale[2];
 	} pushConstants = { { -1.0f, 1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f, -1.0f }, { srcX - dstX, srcY - dstY } }; // the shader adds the target pixel position
-	SetPushConstants(&pushConstants, sizeof(pushConstants));
+	if (scaled)
+	{
+		pushConstants.srcTexelOffset[0] = srcX;
+		pushConstants.srcTexelOffset[1] = srcY;
+		pushConstants.dstOrigin[0] = (float)dstX;
+		pushConstants.dstOrigin[1] = (float)dstY;
+		pushConstants.srcScale[0] = (float)srcWidth / (float)width;
+		pushConstants.srcScale[1] = (float)srcHeight / (float)height;
+	}
+	SetPushConstants(&pushConstants, scaled ? sizeof(pushConstants) : offsetof(decltype(pushConstants), dstOrigin));
 
 	const D3D12BindingRemap& remap = ps->GetBindingRemap();
 	D3D12StageTableDesc table;

@@ -12,6 +12,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
   them with left/right, they apply right away.
 
 ### Direct3D 12
+- **BOTW Magnesis with the BotW Graphics pack (1080p and other resolutions):** the pack scales one small texture that
+  the rune's targeting shares with an unscaled one, and the copy between them was skipped, so metal objects weren't
+  found. Such copies are now drawn with scaling instead. Please report whether Magnesis highlights and grabs now.
 - **BOTW Magnesis / Stasis, second attempt:** BOTW tests what its runes can target against a small copy of the depth
   buffer. That copy covered only part of the buffer, which Direct3D 12 can't do with a plain copy, so it was dropped and
   every test counted "hidden". Such copies are now drawn. Occlusion test results also reach the game within a few draws

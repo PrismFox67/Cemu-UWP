@@ -381,6 +381,16 @@ void LatteTexture_CopySlice(LatteTexture* srcTexture, sint32 srcSlice, sint32 sr
 	// check if rescale is compatible
 	if (LatteTexture_doesEffectiveRescaleRatioMatch(dstTexture, 0, srcTexture, 0) == false)
 	{
+		// copied with scaling where the backend can (BOTW Magnesis: BotW/Graphics scales a 32x16 texture that shares
+		// memory with an unscaled 32x32 one, #231/#250)
+		if (srcTexture->format == dstTexture->format)
+		{
+			sint32 dstCopyWidth = width;
+			sint32 dstCopyHeight = height;
+			LatteTexture_scaleToEffectiveSize(dstTexture, &dstCopyWidth, &dstCopyHeight, 0);
+			if (g_renderer->texture_copySliceScaled(srcTexture, srcMip, srcSlice, effectiveSrcX, effectiveSrcY, effectiveCopyWidth, effectiveCopyHeight, dstTexture, dstMip, dstSlice, effectiveDstX, effectiveDstY, dstCopyWidth, dstCopyHeight))
+				return;
+		}
 		sint32 effectiveWidth_src = srcTexture->overwriteInfo.hasResolutionOverwrite ? srcTexture->overwriteInfo.width : srcTexture->width;
 		sint32 effectiveHeight_src = srcTexture->overwriteInfo.hasResolutionOverwrite ? srcTexture->overwriteInfo.height : srcTexture->height;
 		sint32 effectiveWidth_dst = dstTexture->overwriteInfo.hasResolutionOverwrite ? dstTexture->overwriteInfo.width : dstTexture->width;
