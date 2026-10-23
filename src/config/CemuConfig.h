@@ -445,6 +445,7 @@ struct CemuConfig
 	ConfigValue<int> host_menu_music_volume{ 60 };
 	ConfigValue<bool> host_menu_sounds{ true }; // Xbox frontend: move/select/back/tab/error sounds on the launcher
 	ConfigValue<int> host_menu_sounds_volume{ 50 };
+	ConfigValue<std::string> host_keys_path{}; // Xbox frontend: a keys.txt (or a folder with one) imported at every start
 	ConfigValue<std::string> host_ui_language{}; // Xbox frontend texts: "" follows the console language, else "en", "pt", "es"
 
 	// graphics

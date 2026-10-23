@@ -254,6 +254,41 @@ namespace
 		return keys;
 	}
 
+	// adds the keys of the given keys.txt files that Cemu doesn't have yet to its own keys.txt. quiet: a message only
+	// when keys were added (the automatic import of the keys.txt path at every start)
+	void _ImportKeysFrom(const std::vector<fs::path>& sources, bool quiet);
+
+	// the keys.txt set under Settings (host_keys_path): the file, or keys.txt in that folder. Empty if it isn't set
+	fs::path _KeysPathFile()
+	{
+		const std::string setting = GetConfig().host_keys_path.GetValue();
+		if (setting.empty())
+			return {};
+		std::error_code ec;
+		fs::path path = _utf8ToPath(setting);
+		if (fs::is_directory(path, ec))
+			path /= "keys.txt";
+		return path;
+	}
+
+	// imports the keys.txt path from the settings. quiet: at launcher start, only report new keys or a missing file
+	void _ImportKeysPath(bool quiet)
+	{
+		const fs::path file = _KeysPathFile();
+		if (file.empty())
+			return;
+		std::error_code ec;
+		if (!fs::is_regular_file(file, ec))
+		{
+			cemuLog_log(LogType::Force, "Host: keys.txt path {} not found", _pathToUtf8(file));
+			HostUI::PushMessage("keys.txt not found", fmt::format("The keys.txt set under Settings isn't there:\n{}\n\nCheck that the drive is connected, or change the path.", _pathToUtf8(file)));
+			return;
+		}
+		if (fs::equivalent(file, ActiveSettings::GetUserDataPath("keys.txt"), ec))
+			return; // Cemu's own file
+		_ImportKeysFrom({ file }, quiet);
+	}
+
 	// looks for keys.txt in the game folders and the folders above them (a drive often has it next to the games folder)
 	// and adds the keys Cemu doesn't have yet to its own keys.txt
 	void _ImportKeys()
@@ -278,6 +313,12 @@ namespace
 			HostUI::PushMessage("No keys.txt found", "Put keys.txt in one of your game folders (or a folder above it, like the root of the drive) and try again.");
 			return;
 		}
+		_ImportKeysFrom(sources, false);
+	}
+
+	void _ImportKeysFrom(const std::vector<fs::path>& sources, bool quiet)
+	{
+		const fs::path target = ActiveSettings::GetUserDataPath("keys.txt");
 		const std::vector<std::string> existingList = _ReadKeys(target);
 		std::unordered_set<std::string> known(existingList.begin(), existingList.end());
 		std::ofstream out(target, std::ios::app);
@@ -317,7 +358,8 @@ namespace
 			summary = fmt::format("Added {} key(s).", added);
 		else
 			summary = fmt::format("Added {} new key(s), {} were already imported.", added, total - added);
-		HostUI::PushMessage("keys.txt imported", fmt::format("{}\n\nRead from:{}", summary, from));
+		if (!quiet || added > 0)
+			HostUI::PushMessage("keys.txt imported", fmt::format("{}\n\nRead from:{}", summary, from));
 		if (added > 0)
 		{
 			CafeTitleList::Refresh(); // disc images that couldn't be read without their key show up now
@@ -1096,6 +1138,39 @@ namespace
 			s_deferred.emplace_back([]() { _ImportKeys(); });
 		ImGui::SameLine();
 		ImGui::TextDisabled(_TR("needed for WUD/WUX disc images"));
+		{
+			// a keys.txt anywhere (USB drive, another folder): imported now and at every start, new keys only
+			static char s_keysPathBuffer[512] = {};
+			static bool s_keysPathLoaded = false;
+			if (!s_keysPathLoaded)
+			{
+				s_keysPathLoaded = true;
+				strncpy(s_keysPathBuffer, config.host_keys_path.GetValue().c_str(), sizeof(s_keysPathBuffer) - 1);
+			}
+			ImGui::TextUnformatted(_TR("keys.txt file"));
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+			const bool entered = ImGui::InputTextWithHint("##keyspath", _TR("path to keys.txt or its folder, e.g. E:\\keys.txt"), s_keysPathBuffer, sizeof(s_keysPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			ImGui::SameLine();
+			if (ImGui::Button(_TR("Set and import")) || entered)
+			{
+				config.host_keys_path = std::string(s_keysPathBuffer);
+				changed = true;
+				s_deferred.emplace_back([]() { _ImportKeysPath(false); });
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(_TR("Pick file...")))
+			{
+				HostPlatform::PickFile([](const fs::path& path) {
+					if (path.empty())
+						return;
+					const std::string utf8 = _pathToUtf8(path);
+					strncpy(s_keysPathBuffer, utf8.c_str(), sizeof(s_keysPathBuffer) - 1);
+					GetConfig().host_keys_path = utf8;
+					GetConfigHandle().Save();
+					s_deferred.emplace_back([]() { _ImportKeysPath(false); });
+				});
+			}
+		}
 		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
 
 		ImGui::SeparatorText(_TR("Logs and backups"));
@@ -1361,6 +1436,7 @@ void HostUI::Initialize(ImGuiContext* context, const fs::path& fontFile, float u
 	s_scale = std::max(0.5f, uiScale);
 	HostTheme::Initialize();
 	_AddDefaultScanPaths();
+	_ImportKeysPath(true); // before the scan, so disc images of newly added keys are listed
 	CafeTitleList::Refresh();
 	ImGuiIO& io = ImGui::GetIO();
 	io.IniFilename = nullptr;

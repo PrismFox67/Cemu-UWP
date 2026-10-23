@@ -14,6 +14,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
   and the waiting one runs at normal priority, so freezes like opening a new menu or ability should be shorter.
 
 ### Xbox app
+- **keys.txt from anywhere:** Settings > Folders has a keys.txt path (a file, or a folder with keys.txt, e.g. on a USB
+  drive). New keys from it are imported right away and at every start; a missing file is reported.
 - **Fixed: starting a game a second time in the same session crashed with graphic packs** that patch code (FPS++,
   Graphics, ...): the patches were applied again to the first run's freed game module and their code caves never
   freed. After a crash, the next start now says it crashed instead of "closed while suspended".

@@ -15,7 +15,8 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
    and `MARIO KART 8 [DLC]`): Cemu finds them there, and the game list shows "(update)" and "+ DLC" when it does. Nothing
    needs to be installed.
 4. Disc images (.wud/.wux) need their disc key. Put `keys.txt` in your game folder or at the root of the drive, then press
-   **Settings → Import keys.txt from game folders**.
+   **Settings → Import keys.txt from game folders**. Or type its path under **Settings → Folders → keys.txt file**
+   (for example `E:\keys.txt`): Cemu imports new keys from it at every start.
 5. Games in `E:\Games\wiiu`, `E:\WiiU\games` or `D:\DevelopmentFiles\Games\wiiu` are found without adding the folder.
 6. Updates and DLC that aren't next to the game can be installed into Cemu's mlc folder with **Settings → Install
    updates and DLC**.
