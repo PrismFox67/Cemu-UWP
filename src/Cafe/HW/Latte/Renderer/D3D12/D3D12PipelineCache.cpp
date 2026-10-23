@@ -1903,13 +1903,13 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 	return true;
 }
 
-ID3D12PipelineState* D3D12PipelineCache::GetInternalPipeline(RendererShaderD3D12* vs, RendererShaderD3D12* ps, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat, bool depthWrite, bool alphaBlend)
+ID3D12PipelineState* D3D12PipelineCache::GetInternalPipeline(RendererShaderD3D12* vs, RendererShaderD3D12* ps, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat, bool depthWrite, bool alphaBlend, bool constantBlend)
 {
 	uint64 key = vs->GetUniqueId();
 	key = key * 0x9E3779B97F4A7C15ull + ps->GetUniqueId();
 	key = key * 0x9E3779B97F4A7C15ull + (uint64)rtvFormat;
 	key = key * 0x9E3779B97F4A7C15ull + (uint64)dsvFormat;
-	key = key * 0x9E3779B97F4A7C15ull + (depthWrite ? 1 : 0) + (alphaBlend ? 2 : 0);
+	key = key * 0x9E3779B97F4A7C15ull + (depthWrite ? 1 : 0) + (alphaBlend ? 2 : 0) + (constantBlend ? 4 : 0);
 	auto it = m_internalPipelines.find(key);
 	if (it != m_internalPipelines.end())
 		return it->second.Get();
@@ -1929,9 +1929,10 @@ ID3D12PipelineState* D3D12PipelineCache::GetInternalPipeline(RendererShaderD3D12
 	desc.RasterizerState.DepthClipEnable = TRUE;
 	auto& rt = desc.BlendState.RenderTarget[0];
 	rt.RenderTargetWriteMask = (rtvFormat != DXGI_FORMAT_UNKNOWN) ? D3D12_COLOR_WRITE_ENABLE_ALL : 0;
-	rt.BlendEnable = alphaBlend ? TRUE : FALSE;
-	rt.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-	rt.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	rt.BlendEnable = (alphaBlend || constantBlend) ? TRUE : FALSE;
+	// constantBlend: weight from OMSetBlendFactor (backbuffer quad opacity)
+	rt.SrcBlend = constantBlend ? D3D12_BLEND_BLEND_FACTOR : D3D12_BLEND_SRC_ALPHA;
+	rt.DestBlend = constantBlend ? D3D12_BLEND_INV_BLEND_FACTOR : D3D12_BLEND_INV_SRC_ALPHA;
 	rt.BlendOp = D3D12_BLEND_OP_ADD;
 	rt.SrcBlendAlpha = D3D12_BLEND_ONE;
 	rt.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;

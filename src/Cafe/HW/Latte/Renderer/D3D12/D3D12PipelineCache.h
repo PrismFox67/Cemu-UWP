@@ -46,7 +46,7 @@ public:
 		CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType);
 
 	// a pipeline for drawing with internal shaders (no vertex input, triangle list, single render target)
-	ID3D12PipelineState* GetInternalPipeline(RendererShaderD3D12* vs, RendererShaderD3D12* ps, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat, bool depthWrite, bool alphaBlend);
+	ID3D12PipelineState* GetInternalPipeline(RendererShaderD3D12* vs, RendererShaderD3D12* ps, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat, bool depthWrite, bool alphaBlend, bool constantBlend = false);
 
 	uint32 GetPipelineCount() const { return (uint32)m_pipelines.size(); }
 	void Clear();

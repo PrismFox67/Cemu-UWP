@@ -17,6 +17,7 @@
 #include "Cafe/OS/libs/erreula/erreula.h"
 #include "input/InputManager.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#include <imgui.h>
 
 uint32 prevScissorX = 0;
 uint32 prevScissorY = 0;
@@ -864,7 +865,83 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 		*fullHeight = h;
 }
 
-void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView)
+namespace
+{
+	std::mutex s_screenPiPMutex;
+	LatteScreenPiP s_screenPiP;
+
+	// the last scan buffer copied to each screen, so the other screen can be drawn as picture-in-picture. GPU thread only
+	struct ScanBufferSource
+	{
+		bool valid = false;
+		MPTR ptr;
+		uint32 width, height, format, pitch, swizzle;
+		Latte::E_HWTILEMODE tilemode;
+	};
+	ScanBufferSource s_scanSource[2]; // 0 TV, 1 GamePad
+	std::atomic_bool s_scanSourceReset = false;
+
+	void _DrawScreenPiP(LatteTextureView* pipView, sint32 fullWidth, sint32 fullHeight, const LatteScreenPiP& pip)
+	{
+		LatteTexture_UpdateDataToLatest(pipView->baseTexture);
+		LatteTC_MarkTextureStillInUse(pipView->baseTexture);
+		sint32 texWidth, texHeight;
+		pipView->baseTexture->GetEffectiveSize(texWidth, texHeight, 0);
+		if (texWidth <= 0 || texHeight <= 0 || fullHeight <= 0)
+			return;
+		const sint32 height = std::max<sint32>((sint32)(fullHeight * LatteOverlay_screenPiPHeight(pip.size)), 16);
+		const sint32 width = height * texWidth / texHeight;
+		const sint32 margin = fullHeight * 4 / 100; // inside the title-safe area
+		const sint32 x = (pip.corner & 1) ? fullWidth - margin - width : margin;
+		const sint32 y = (pip.corner & 2) ? fullHeight - margin - height : margin;
+		RendererOutputShader* shader = ActiveSettings::RenderUpsideDownEnabled() ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
+		g_renderer->SetBackbufferQuadOpacity(std::clamp(pip.opacity, 0.1f, 1.0f));
+		g_renderer->DrawBackbufferQuad(pipView, shader, true, x, y, width, height, false, false);
+		g_renderer->SetBackbufferQuadOpacity(1.0f);
+	}
+
+	void _DrawScreenPiPBorder(sint32 fullWidth, sint32 fullHeight, LatteTextureView* pipView, const LatteScreenPiP& pip)
+	{
+		sint32 texWidth, texHeight;
+		pipView->baseTexture->GetEffectiveSize(texWidth, texHeight, 0);
+		if (texWidth <= 0 || texHeight <= 0)
+			return;
+		const sint32 height = std::max<sint32>((sint32)(fullHeight * LatteOverlay_screenPiPHeight(pip.size)), 16);
+		const sint32 width = height * texWidth / texHeight;
+		const sint32 margin = fullHeight * 4 / 100;
+		const float x = (float)((pip.corner & 1) ? fullWidth - margin - width : margin);
+		const float y = (float)((pip.corner & 2) ? fullHeight - margin - height : margin);
+		const float t = std::max(2.0f, fullHeight / 540.0f);
+		ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x - t * 0.5f, y - t * 0.5f), ImVec2(x + width + t * 0.5f, y + height + t * 0.5f),
+			IM_COL32(10, 10, 10, (int)(220 * std::clamp(pip.opacity, 0.1f, 1.0f))), 0.0f, 0, t);
+	}
+}
+
+void LatteOverlay_setScreenPiP(const LatteScreenPiP& pip)
+{
+	std::unique_lock lock(s_screenPiPMutex);
+	s_screenPiP = pip;
+}
+
+LatteScreenPiP LatteOverlay_getScreenPiP()
+{
+	std::unique_lock lock(s_screenPiPMutex);
+	return s_screenPiP;
+}
+
+float LatteOverlay_screenPiPHeight(sint32 size)
+{
+	// small is about the footprint of MK8's item box / coin counter
+	static constexpr float kHeights[] = { 0.18f, 0.25f, 0.33f };
+	return kHeights[std::clamp<sint32>(size, 0, 2)];
+}
+
+void LatteOverlay_resetScreenPiPSources()
+{
+	s_scanSourceReset = true;
+}
+
+void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView, LatteTextureView* pipView)
 {
 	// make sure texture is updated to latest data in cache
 	LatteTexture_UpdateDataToLatest(textureView->baseTexture);
@@ -964,9 +1041,14 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	}
 	cemu_assert(shader);
 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
+	const LatteScreenPiP pip = pipView ? LatteOverlay_getScreenPiP() : LatteScreenPiP{};
+	if (pip.enabled)
+		_DrawScreenPiP(pipView, fullscreenWidth, fullscreenHeight, pip);
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;
+	if (pip.enabled)
+		_DrawScreenPiPBorder(fullscreenWidth, fullscreenHeight, pipView, pip);
 	swkbd_render(!isPadView);
 	nn::erreula::render(!isPadView);
 	LatteOverlay_render(isPadView);
@@ -1009,10 +1091,26 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
+	if (s_scanSourceReset.exchange(false))
+		s_scanSource[0].valid = s_scanSource[1].valid = false;
+	for (sint32 i = 0; i < 2; i++)
+	{
+		if (!(renderTarget & (i == 0 ? RENDER_TARGET_TV : RENDER_TARGET_DRC)))
+			continue;
+		s_scanSource[i] = { true, colorBufferPtr, colorBufferWidth, colorBufferHeight, colorBufferFormat, colorBufferPitch, colorBufferSwizzle, colorBufferTilemode };
+	}
+
 	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
-		LatteRenderTarget_copyToBackbuffer(texView, true);
+		LatteRenderTarget_copyToBackbuffer(texView, true, nullptr);
 	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
-		LatteRenderTarget_copyToBackbuffer(texView, false);
+	{
+		// picture-in-picture: the other screen's last scan buffer
+		LatteTextureView* pipView = nullptr;
+		const ScanBufferSource& other = s_scanSource[showDRC ? 0 : 1];
+		if (other.valid && other.ptr != colorBufferPtr && LatteOverlay_getScreenPiP().enabled)
+			pipView = LatteTC_GetTextureSliceViewOrTryCreate(other.ptr, MPTR_NULL, (Latte::E_GX2SURFFMT)other.format, other.tilemode, other.width, other.height, 1, other.pitch, other.swizzle, 0, 0, true);
+		LatteRenderTarget_copyToBackbuffer(texView, false, pipView);
+	}
 }
 
 

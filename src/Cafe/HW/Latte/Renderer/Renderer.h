@@ -85,6 +85,9 @@ public:
 	virtual void DrawBackbufferQuad(LatteTextureView* texView, RendererOutputShader* shader, bool useLinearTexFilter,
 												sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 												bool padView, bool clearBackground) = 0;
+	// opacity of the following DrawBackbufferQuad calls over what is already in the backbuffer (GamePad picture-in-picture),
+	// 1 = opaque. Only D3D12 blends, the other backends draw opaque
+	void SetBackbufferQuadOpacity(float opacity) { m_backbufferQuadOpacity = opacity; }
 	virtual bool BeginFrame(bool mainWindow) = 0;
 
 	// flush control
@@ -188,6 +191,7 @@ protected:
 	RendererAPI m_rendererAPI;
 	GfxVendor m_vendor = GfxVendor::Generic;
 	std::string m_selectedDeviceName = "";
+	float m_backbufferQuadOpacity = 1.0f;
 
 	static uint8 SRGBComponentToRGB(uint8 ci);
 	static uint8 RGBComponentToSRGB(uint8 cli);

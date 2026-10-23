@@ -68,7 +68,9 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
   **Blow into mic (hold)** to a button you don't need (for example the right stick click); holding it blows.
 
 **In-game menu**: click both sticks, or hold View + Menu for 1 s (a hint says so for a few seconds when a game starts).
-It has: switch to the GamePad screen, a **touch cursor** (right stick moves it, RT taps, for games like Super Mario Maker),
+It has: switch to the GamePad screen, a **GamePad overlay** (the GamePad screen small in a corner of the TV image, for
+the MK8 minimap, Splatoon's map, Wind Waker's map; set corner, size and opacity below it with left/right; each game
+remembers its own setting, games you never set keep it off), a **touch cursor** (right stick moves it, RT taps, for games like Super Mario Maker),
 the FPS counter, VSync, volume and player 1's stick deadzone (left/right changes them, they apply right away), and exit
 to the game list.
 **Motion controls** (gyro puzzles, e.g. BOTW shrines): in the in-game menu set **Motion: On**. The right stick then tilts

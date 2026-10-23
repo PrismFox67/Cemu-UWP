@@ -106,9 +106,13 @@ add_definitions(-DEMULATOR_VERSION_PATCH=${EMULATOR_VERSION_PATCH})
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
-# enable link time optimization for release builds
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+# enable link time optimization for release builds. CEMU_NO_LTCG is for local test builds: with MSVC 14.50, /Z7 and the
+# shared PCH, incremental LTCG links keep failing with "LNK1103: debugging information corrupt" on a different object
+option(CEMU_NO_LTCG "Disable link time optimization (local test builds)" OFF)
+if (NOT CEMU_NO_LTCG)
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+	set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+endif()
 
 if (MSVC)
 	set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT CemuBin)

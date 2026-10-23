@@ -137,7 +137,8 @@ void D3D12Renderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 	auto* view = static_cast<LatteTextureViewD3D12*>(texView);
 	auto* vs = static_cast<RendererShaderD3D12*>(shader->GetVertexShader());
 	auto* ps = static_cast<RendererShaderD3D12*>(shader->GetFragmentShader());
-	ID3D12PipelineState* pso = m_pipelineCache->GetInternalPipeline(vs, ps, D3D12SwapChain::kFormat, DXGI_FORMAT_UNKNOWN, false, false);
+	const bool blend = m_backbufferQuadOpacity < 1.0f;
+	ID3D12PipelineState* pso = m_pipelineCache->GetInternalPipeline(vs, ps, D3D12SwapChain::kFormat, DXGI_FORMAT_UNKNOWN, false, false, blend);
 	if (!pso)
 		return;
 	// acquire the sampler table before recording any state (see GetSamplerTable)
@@ -161,6 +162,11 @@ void D3D12Renderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 	m_cmdList->RSSetViewports(1, &vp);
 	m_cmdList->RSSetScissorRects(1, &scissor);
 	m_cmdList->SetPipelineState(pso);
+	if (blend)
+	{
+		const float factor[4] = { m_backbufferQuadOpacity, m_backbufferQuadOpacity, m_backbufferQuadOpacity, m_backbufferQuadOpacity };
+		m_cmdList->OMSetBlendFactor(factor);
+	}
 	m_cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	auto outputUniforms = shader->FillUniformBlockBuffer(*texView, { imageWidth, imageHeight }, padView);

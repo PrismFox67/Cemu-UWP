@@ -50,6 +50,10 @@ namespace
 		kMenuResume,
 		kMenuPairControllers,
 		kMenuGamePadScreen,
+		kMenuGamePadOverlay,
+		kMenuOverlayCorner,
+		kMenuOverlaySize,
+		kMenuOverlayOpacity,
 		kMenuTouchCursor,
 		kMenuShowFPS,
 		kMenuVSync,
@@ -94,6 +98,74 @@ namespace
 	bool s_comboConsumed = false;
 	bool s_exitGameRequested = false; // "Exit to game list", done at the start of the next frame
 	bool s_launcherIgnoresPad = false; // until all buttons are released, so the A that picked "Exit" doesn't start the game again
+
+	// GamePad overlay (picture-in-picture of the other screen), remembered per title in gamepad_overlay.txt as lines
+	// "<title id hex> <on 0/1> <corner 0-3> <size 0-2> <opacity %>". Titles never set keep it off
+	fs::path _OverlaySettingsPath()
+	{
+		return ActiveSettings::GetUserDataPath("gamepad_overlay.txt");
+	}
+
+	LatteScreenPiP _LoadOverlaySettings(TitleId titleId)
+	{
+		LatteScreenPiP pip;
+		std::ifstream in(_OverlaySettingsPath());
+		std::string line;
+		while (std::getline(in, line))
+		{
+			unsigned long long id = 0;
+			int on = 0, corner = 3, size = 0, opacity = 100;
+			if (sscanf(line.c_str(), "%llx %d %d %d %d", &id, &on, &corner, &size, &opacity) == 5 && id == titleId)
+			{
+				pip.enabled = on != 0;
+				pip.corner = std::clamp(corner, 0, 3);
+				pip.size = std::clamp(size, 0, 2);
+				pip.opacity = std::clamp(opacity, 10, 100) / 100.0f;
+			}
+		}
+		return pip;
+	}
+
+	void _SaveOverlaySettings(TitleId titleId, const LatteScreenPiP& pip)
+	{
+		std::vector<std::string> lines;
+		{
+			std::ifstream in(_OverlaySettingsPath());
+			std::string line;
+			while (std::getline(in, line))
+			{
+				unsigned long long id = 0;
+				if (sscanf(line.c_str(), "%llx", &id) == 1 && id != titleId)
+					lines.push_back(line);
+			}
+		}
+		lines.push_back(fmt::format("{:016x} {} {} {} {}", titleId, pip.enabled ? 1 : 0, pip.corner, pip.size, (int)std::lround(pip.opacity * 100.0f)));
+		std::ofstream out(_OverlaySettingsPath(), std::ios::trunc);
+		for (const auto& l : lines)
+			out << l << '\n';
+	}
+
+	void _ChangeOverlay(int item, int direction)
+	{
+		LatteScreenPiP pip = LatteOverlay_getScreenPiP();
+		switch (item)
+		{
+		case kMenuGamePadOverlay:
+			pip.enabled = !pip.enabled;
+			break;
+		case kMenuOverlayCorner:
+			pip.corner = (pip.corner + 4 + direction) % 4;
+			break;
+		case kMenuOverlaySize:
+			pip.size = std::clamp(pip.size + direction, 0, 2);
+			break;
+		case kMenuOverlayOpacity:
+			pip.opacity = std::clamp(std::round(pip.opacity * 10.0f + direction) / 10.0f, 0.3f, 1.0f);
+			break;
+		}
+		LatteOverlay_setScreenPiP(pip);
+		_SaveOverlaySettings(CafeSystem::GetForegroundTitleId(), pip);
+	}
 
 	WindowSystem::WindowInfo& _WindowInfo()
 	{
@@ -268,6 +340,8 @@ namespace
 			return;
 		}
 		_EnableSkylanderPortal();
+		LatteOverlay_resetScreenPiPSources();
+		LatteOverlay_setScreenPiP(_LoadOverlaySettings(CafeSystem::GetForegroundTitleId()));
 		CafeSystem::LaunchForegroundTitle();
 		s_state = State::Running;
 		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());
@@ -552,6 +626,12 @@ namespace
 		case kMenuSkylander:
 			_StepSkylander(direction);
 			break;
+		case kMenuGamePadOverlay:
+		case kMenuOverlayCorner:
+		case kMenuOverlaySize:
+		case kMenuOverlayOpacity:
+			_ChangeOverlay(item, direction);
+			break;
 		case kMenuVSync:
 			config.vsync = config.vsync.GetValue() != 0 ? 0 : 1;
 			GetConfigHandle().Save();
@@ -593,6 +673,12 @@ namespace
 		case kMenuGamePadScreen:
 			// same state the screen swap hotkey (Ctrl+Tab in the wx frontend) flips
 			LatteGPUState.isDRCPrimary = !LatteGPUState.isDRCPrimary;
+			break;
+		case kMenuGamePadOverlay:
+		case kMenuOverlayCorner:
+		case kMenuOverlaySize:
+		case kMenuOverlayOpacity:
+			_ChangeOverlay(item, 1);
 			break;
 		case kMenuTouchCursor:
 			s_touchCursor = !s_touchCursor;
@@ -1206,11 +1292,18 @@ void HostApp::DrawInGameMenu()
 	{
 		const auto& config = GetConfig();
 		const bool padScreen = LatteGPUState.isDRCPrimary;
+		const LatteScreenPiP pip = LatteOverlay_getScreenPiP();
+		static const char* const kCorners[] = { "Top left", "Top right", "Bottom left", "Bottom right" };
+		static const char* const kSizes[] = { "Small", "Medium", "Large" };
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
 			"Resume",
 			"Pair controllers",
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
+			std::string(padScreen ? "TV overlay: " : "GamePad overlay: ") + (pip.enabled ? "On" : "Off"),
+			fmt::format("  Overlay corner: < {} >", kCorners[std::clamp(pip.corner, 0, 3)]),
+			fmt::format("  Overlay size: < {} >", kSizes[std::clamp(pip.size, 0, 2)]),
+			fmt::format("  Overlay opacity: < {}% >", (int)std::lround(pip.opacity * 100.0f)),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
