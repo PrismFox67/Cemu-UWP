@@ -12,6 +12,10 @@ add_library(CemuHostFrontend
 	HostGraphicPacks.h
 	HostIcons.cpp
 	HostIcons.h
+	HostMusic.cpp
+	HostMusic.h
+	HostMusicDecoder.cpp
+	HostMusicDecoder.h
 	HostPlatform.h
 	HostTitleInstaller.cpp
 	HostTitleInstaller.h
@@ -47,6 +51,11 @@ endif()
 set_property(TARGET CemuHostFrontend PROPERTY MSVC_RUNTIME_LIBRARY "${CEMU_MSVC_RUNTIME}")
 
 cemu_use_precompiled_header(CemuHostFrontend)
+# the vendored C decoders (thirdparty/) are compiled in this file and don't build with the shared precompiled header
+set_source_files_properties(HostMusicDecoder.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+# with link-time code generation the linker reports "LNK1103: debugging information corrupt" for HostUI.obj as soon as
+# it calls into HostMusic (MSVC 14.5, /Z7): the music code is built without /GL
+set_source_files_properties(HostMusic.cpp HostMusicDecoder.cpp PROPERTIES COMPILE_OPTIONS "/GL-")
 
 target_include_directories(CemuHostFrontend PRIVATE
 	"${CMAKE_SOURCE_DIR}/src/gui"

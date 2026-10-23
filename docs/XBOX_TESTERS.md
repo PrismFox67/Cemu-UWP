@@ -27,6 +27,10 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
   Covers are real box art downloaded from GameTDB in the background (needs internet once; Settings > Box art turns it off).
 - **Settings → Look**: light or dark panel. For your own background, put `background.png` or `background.jpg` into
   `LocalState/theme` and restart Cemu.
+- **Menu music**: upload your own track as `menu_music.ogg`, `.mp3`, `.wav` or `.flac` to `LocalState/theme` with the
+  Device Portal (File explorer → LocalAppData → Cemu → LocalState → theme). It loops on the menu screens, fades out
+  when a game starts and comes back on the game list. Settings → Look has an on/off switch, the volume, and
+  "Look for the file again" after an upload. No music is included.
 - **Settings → Language and region**:
   - **Console language** is the Wii U system language that games use for their text and voices. It applies the next
     time a game starts.

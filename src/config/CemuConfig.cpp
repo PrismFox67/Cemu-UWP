@@ -34,6 +34,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	console_region = parser.get("console_region", console_region.GetInitValue());
 	host_ui_language = parser.get("host_ui_language", "");
 	host_box_art = parser.get("host_box_art", true);
+	host_menu_music = parser.get("host_menu_music", true);
+	host_menu_music_volume = parser.get("host_menu_music_volume", 60);
 
 	game_paths.clear();
 	auto game_path_parser = parser.get("GamePaths");
@@ -318,6 +320,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set("console_region", console_region.GetValue());
 	config.set("host_ui_language", host_ui_language.GetValue().c_str());
 	config.set<bool>("host_box_art", host_box_art);
+	config.set<bool>("host_menu_music", host_menu_music);
+	config.set<int>("host_menu_music_volume", host_menu_music_volume);
 	config.set("console_language", console_language.GetValue());
 
 	// game paths

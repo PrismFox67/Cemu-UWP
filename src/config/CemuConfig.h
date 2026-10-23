@@ -441,6 +441,8 @@ struct CemuConfig
 	ConfigValueBounds<CafeConsoleLanguage> console_language{ CafeConsoleLanguage::EN };
 	ConfigValue<CafeConsoleRegion> console_region{ CafeConsoleRegion::Auto }; // Auto: the platform region follows the title's region
 	ConfigValue<bool> host_box_art{ true }; // Xbox frontend: download the games' box art from GameTDB
+	ConfigValue<bool> host_menu_music{ true }; // Xbox frontend: play <user>/theme/menu_music.* on the launcher screens
+	ConfigValue<int> host_menu_music_volume{ 60 };
 	ConfigValue<std::string> host_ui_language{}; // Xbox frontend texts: "" follows the console language, else "en", "pt", "es"
 
 	// graphics

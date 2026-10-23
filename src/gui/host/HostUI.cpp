@@ -4,6 +4,7 @@
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "gui/host/HostIcons.h"
+#include "gui/host/HostMusic.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -901,6 +902,7 @@ namespace
 					s_refreshRequested = true;
 				}
 			}
+			changed |= HostMusic::DrawSettings();
 		}
 
 		ImGui::SeparatorText(_TR("Language and region"));

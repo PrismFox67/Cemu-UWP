@@ -4,6 +4,7 @@
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostControllers.h"
 #include "gui/host/HostIcons.h"
+#include "gui/host/HostMusic.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/LauncherRenderer.h"
 
@@ -877,6 +878,7 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 
 bool HostApp::RunFrame()
 {
+	HostMusic::SetActive(s_state == State::Launcher);
 	switch (s_state)
 	{
 	case State::Launcher:
@@ -931,6 +933,7 @@ void HostApp::Shutdown()
 	}
 	HostTools::MarkGameStopped();
 	HostIcons::Stop();
+	HostMusic::Shutdown();
 	s_launcher.reset();
 	if (s_launcherContext)
 	{

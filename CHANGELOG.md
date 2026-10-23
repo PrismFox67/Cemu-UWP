@@ -17,6 +17,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - **Real box art:** the game list shows the Wii U cover of each game, downloaded in the background from GameTDB
   (high-resolution where available) and kept in `covers` in the user folder. Turn it off or re-download under
   Settings > Box art. Without internet the icon cards are shown as before.
+- **Menu music:** put your own `menu_music.ogg`, `.mp3`, `.wav` or `.flac` into `LocalState/theme` and it loops on
+  the menu screens (fades out when a game starts). Settings > Look: on/off and volume (60% by default). Nothing is
+  bundled, without a file the menu stays silent.
 - **The Cemu title on the home screen** now sits on a blue pill so it stays readable on the light background.
 
 ## 2026-10-22
