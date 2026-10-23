@@ -126,6 +126,11 @@ if(CEMU_UWP)
 	target_sources(CemuBin PRIVATE "${UWP_LAUNCHER_FONT}")
 	set_property(SOURCE "${UWP_LAUNCHER_FONT}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
 	set_property(SOURCE "${UWP_LAUNCHER_FONT}" PROPERTY VS_DEPLOYMENT_LOCATION "resources/fonts")
+	# launcher wordmark: the Cemu logo on its navy gradient, cropped and rounded (src/gui/host/assets)
+	set(UWP_LAUNCHER_LOGO "${CMAKE_SOURCE_DIR}/src/gui/host/assets/launcher_logo.png")
+	target_sources(CemuBin PRIVATE "${UWP_LAUNCHER_LOGO}")
+	set_property(SOURCE "${UWP_LAUNCHER_LOGO}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
+	set_property(SOURCE "${UWP_LAUNCHER_LOGO}" PROPERTY VS_DEPLOYMENT_LOCATION "resources")
 elseif(WIN32)
 	target_sources(CemuBin PRIVATE
 	resource/cemu.rc
@@ -135,7 +140,8 @@ elseif(WIN32)
 		# launcher font next to the executable for the Win32 test build of the UWP frontend
 		add_custom_command(TARGET CemuBin POST_BUILD
 			COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/resources/fonts"
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${CMAKE_SOURCE_DIR}/bin/resources/fonts/launcher.ttf")
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${CMAKE_SOURCE_DIR}/bin/resources/fonts/launcher.ttf"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/src/gui/host/assets/launcher_logo.png" "${CMAKE_SOURCE_DIR}/bin/resources/launcher_logo.png")
 	endif()
 endif()
 

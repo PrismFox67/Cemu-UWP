@@ -25,7 +25,7 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **Games**: the covers scroll left and right. **A** starts the selected game, **X** refreshes the list, **Y** opens Settings.
   The line under the covers shows the game's region, title ID, version, and whether an update or DLC was found.
   Covers are real box art downloaded from GameTDB in the background (needs internet once; Settings > Box art turns it off).
-- **Settings → Look**: light or dark panel. For your own background, put `background.png` or `background.jpg` into
+- **Settings → Look**: dark panel (default) or light panel. For your own background, put `background.png` or `background.jpg` into
   `LocalState/theme` and restart Cemu.
 - **Menu music**: upload your own track as `menu_music.ogg`, `.mp3`, `.wav` or `.flac` to `LocalState/theme` with the
   Device Portal (File explorer → LocalAppData → Cemu → LocalState → theme). It loops on the menu screens, fades out

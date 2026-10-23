@@ -157,4 +157,9 @@ If you want to contribute you can take a look at our [contribution guidelines](/
 Cemu is licensed under [Mozilla Public License 2.0](/LICENSE.txt). Exempt from this are all files in the dependencies directory for which the licenses of the original code apply as well as some individual files in the src folder, as specified in those file headers respectively.
 
 ## Credits (UWP / Xbox port)
-Parts of the Xbox frontend and the D3D12 renderer are adapted from [danprice142/Cemu-UWP](https://github.com/danprice142/Cemu-UWP) (MPL-2.0): the title installer (`src/gui/host/HostTitleInstaller.*`), the texture allocation recovery in the D3D12 renderer and the flip pacing experiment. The adapted code is marked in the files.
+- **Cemu UWP** by [PrismFox67](https://github.com/PrismFox67/Cemu-UWP)
+- **Cemu** and the Cemu logo by the [Cemu team](https://cemu.info)
+- The title installer (`src/gui/host/HostTitleInstaller.*`), the texture allocation recovery in the D3D12 renderer and the flip pacing experiment are adapted from [danprice142/Cemu-UWP](https://github.com/danprice142/Cemu-UWP) (MPL-2.0); the adapted code is marked in the files
+- Box art from [GameTDB](https://www.gametdb.com), downloaded for the games in your game folders
+- Launcher design inspired by SternXD's Dolphin UWP
+- Menu music decoders: stb_vorbis (Sean Barrett) and dr_mp3 / dr_wav / dr_flac (David Reid), public domain

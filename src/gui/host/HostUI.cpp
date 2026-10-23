@@ -460,15 +460,12 @@ namespace
 		_DrawCardCaption(drawList, game, min, max, width, selected, alpha);
 	}
 
-	// selection frame and the title under the cover, two lines at most
-	void _DrawCardCaption(ImDrawList* drawList, const GameEntry& game, ImVec2 min, ImVec2 max, float width, bool selected, float alpha)
+	// selection frame. No titles under the covers: the selected game's title is in the info line below the row
+	void _DrawCardCaption(ImDrawList* drawList, const GameEntry& /*game*/, ImVec2 min, ImVec2 max, float /*width*/, bool selected, float /*alpha*/)
 	{
 		const float r = 6.0f * s_scale;
 		if (selected)
 			drawList->AddRect(ImVec2(min.x - 3.0f * s_scale, min.y - 3.0f * s_scale), ImVec2(max.x + 3.0f * s_scale, max.y + 3.0f * s_scale), IM_COL32(255, 255, 255, 255), r + 2.0f, 0, 3.5f * s_scale);
-		const float textW = width + 20.0f * s_scale;
-		const ImVec4 clip(min.x - 10.0f * s_scale, max.y + 8.0f * s_scale, min.x - 10.0f * s_scale + textW, max.y + 8.0f * s_scale + ImGui::GetTextLineHeight() * 2.2f);
-		drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(clip.x, clip.y), (HostTheme::PanelText() & 0x00FFFFFF) | ((ImU32)((selected ? 1.0f : 0.8f) * alpha * 255.0f) << IM_COL32_A_SHIFT), game.name.c_str(), nullptr, textW, &clip);
 	}
 
 	std::optional<fs::path> _DrawGamesTab()
@@ -523,13 +520,15 @@ namespace
 				area.y -= ImGui::GetFrameHeightWithSpacing(); // the buttons below
 			const ImVec2 origin = ImGui::GetCursorScreenPos();
 			ImDrawList* drawList = ImGui::GetWindowDrawList();
-			const float footer = ImGui::GetTextLineHeightWithSpacing() * 1.2f; // details of the selected game
-			const float infoHeight = ImGui::GetTextLineHeightWithSpacing() * 2.6f; // titles under the cases
-			// case size from the space, the selected one 20% larger
-			const float cardWidth = std::min(area.x / 5.6f, (area.y - footer - infoHeight) * kCaseAspect / 1.22f);
+			const float infoFontSize = ImGui::GetFontSize() * 0.85f;
+			const float footer = infoFontSize * 1.9f; // details of the selected game
+			// the selected cover ~45% of the screen height, its neighbours ~37%, as far as the panel has room
+			const float screenH = ImGui::GetIO().DisplaySize.y;
+			const float selectedH = std::min(screenH * 0.45f, area.y - footer - 12.0f * s_scale);
+			const float cardWidth = std::min(area.x / 5.6f, selectedH * kCaseAspect / 1.22f);
 			const float spacing = cardWidth * 0.18f;
 			const float centerX = origin.x + area.x * 0.5f;
-			const float rowCenterY = origin.y + (area.y - footer - infoHeight) * 0.5f + 6.0f * s_scale;
+			const float rowCenterY = origin.y + (area.y - footer) * 0.5f + 4.0f * s_scale;
 			for (int i = 0; i < count; i++)
 			{
 				const float offset = (float)i - s_carouselScroll;
@@ -554,9 +553,29 @@ namespace
 
 			// details of the selected game at the bottom of the panel
 			const GameEntry& game = s_games[s_selectedGame];
-			const std::string details = fmt::format("{}   {}   {:016x}   v{}{}{}   {} / {}", game.name, _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
-			const ImVec2 detailsSize = ImGui::CalcTextSize(details.c_str());
-			drawList->AddText(ImVec2(centerX - detailsSize.x * 0.5f, origin.y + area.y - footer), HostTheme::PanelTextDim(), details.c_str());
+			// one line: the title (brighter, shortened with an ellipsis so the line never wraps), then region, ID, version
+			{
+				ImFont* font = ImGui::GetFont();
+				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+				const float detailsW = font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, details.c_str()).x;
+				const float maxTitleW = std::max(area.x * 0.95f - detailsW, area.x * 0.3f);
+				std::string title = game.name;
+				if (font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, title.c_str()).x > maxTitleW)
+				{
+					while (!title.empty() && font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, (title + "...").c_str()).x > maxTitleW)
+					{
+						title.pop_back();
+						while (!title.empty() && ((unsigned char)title.back() & 0xC0) == 0x80)
+							title.pop_back(); // whole UTF-8 characters
+					}
+					title += "...";
+				}
+				const float titleW = font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, title.c_str()).x;
+				const float y = origin.y + area.y - footer + infoFontSize * 0.45f;
+				const float x = centerX - (titleW + detailsW) * 0.5f;
+				drawList->AddText(font, infoFontSize, ImVec2(x, y), HostTheme::PanelText(), title.c_str());
+				drawList->AddText(font, infoFontSize, ImVec2(x + titleW, y), HostTheme::PanelTextDim(), details.c_str());
+			}
 			ImGui::Dummy(area);
 		}
 		if (!s_carouselActive)
@@ -1313,6 +1332,7 @@ namespace
 	void _DrawAboutTab()
 	{
 		ImGui::TextUnformatted(BUILD_VERSION_WITH_NAME_STRING);
+		ImGui::TextWrapped(_TR("Cemu UWP by PrismFox67 (github.com/PrismFox67/Cemu-UWP)"));
 		ImGui::TextWrapped("Frontend: %s, renderer: Direct3D 12", HostPlatform::GetName());
 		ImGui::Spacing();
 		ImGui::TextWrapped("Controls");
@@ -1321,7 +1341,11 @@ namespace
 		ImGui::BulletText("Controller 1 is the Wii U GamePad, controllers 2-4 are Pro Controllers for players 2-4");
 		ImGui::BulletText("Change this under Controllers, or pick \"Pair controllers\" in the in-game menu");
 		ImGui::Spacing();
-		ImGui::TextWrapped(_TR("Box art: GameTDB (gametdb.com), downloaded for the games in your game folders."));
+		ImGui::TextWrapped(_TR("Credits"));
+		ImGui::BulletText("%s", _TR("Cemu and the Cemu logo by the Cemu team (cemu.info)"));
+		ImGui::BulletText("%s", _TR("Title installer, texture allocation recovery and the flip pacing experiment adapted from danprice142/Cemu-UWP (MPL-2.0)"));
+		ImGui::BulletText("%s", _TR("Box art from GameTDB (gametdb.com), downloaded for the games in your game folders"));
+		ImGui::BulletText("%s", _TR("Launcher design inspired by SternXD's Dolphin UWP"));
 		ImGui::TextWrapped(_TR("Cemu is not affiliated with Nintendo. Wii U is a trademark of Nintendo. Only play games you own."));
 	}
 }
@@ -1518,8 +1542,31 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		const float W = viewport->WorkSize.x, H = viewport->WorkSize.y;
 		const float unit = H / 720.0f;
 
-		// wordmark, top centre
+		// wordmark, top centre: the Cemu logo (resources/launcher_logo.png), or a blue pill with the name if it's missing
+		static std::vector<uint8> s_logoRgba;
+		static int s_logoW = 0, s_logoH = 0;
+		static bool s_logoLoaded = false;
+		if (!s_logoLoaded)
+		{
+			s_logoLoaded = true;
+			if (!HostTheme::DecodeImageFile(ActiveSettings::GetDataPath("resources/launcher_logo.png"), s_logoRgba, s_logoW, s_logoH))
+				cemuLog_log(LogType::Force, "Launcher: resources/launcher_logo.png missing, drawing the text wordmark");
+		}
+		constexpr uint64 kLogoTextureKey = 0x6C6F676F43656D75ull; // not a title ID
+		void* logoTexture = (s_logoW > 0 && s_textureProvider) ? s_textureProvider(kLogoTextureKey, s_logoRgba.data(), s_logoW, s_logoH) : nullptr;
+		if (logoTexture)
+		{
+			// as tall as the old pill (~64 px at 720p), never above the asset's own size so it stays sharp
+			const float h = std::min(64.0f * unit, (float)s_logoH);
+			const float w = h * s_logoW / s_logoH;
+			const ImVec2 min(screenMin.x + (W - w) * 0.5f, screenMin.y + 16.0f * unit);
+			const ImVec2 max(min.x + w, min.y + h);
+			const float rounding = h * 0.25f;
+			dl->AddRectFilled(ImVec2(min.x, min.y + 4.0f * unit), ImVec2(max.x, max.y + 4.0f * unit), IM_COL32(0, 40, 90, 70), rounding);
+			dl->AddImage(logoTexture, min, max);
+		}
 		ImGui::PushFont(s_fontLarge);
+		if (!logoTexture)
 		{
 			const char* mark = "Cemu";
 			const float size = ImGui::GetFontSize() * 1.6f;

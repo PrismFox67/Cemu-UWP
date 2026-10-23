@@ -21,7 +21,7 @@ namespace
 	int s_imageWidth = 0;
 	int s_imageHeight = 0;
 	std::atomic_bool s_imageReady = false;
-	bool s_lightPanel = true;
+	bool s_lightPanel = false; // dark unless the user picked light (theme.txt)
 	const auto s_start = std::chrono::steady_clock::now();
 	constexpr uint64 kBackgroundTextureKey = 0x7468656D65424721ull; // not a title ID
 

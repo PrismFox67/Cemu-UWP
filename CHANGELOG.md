@@ -20,7 +20,11 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - **Menu music:** put your own `menu_music.ogg`, `.mp3`, `.wav` or `.flac` into `LocalState/theme` and it loops on
   the menu screens (fades out when a game starts). Settings > Look: on/off and volume (60% by default). Nothing is
   bundled, without a file the menu stays silent.
-- **The Cemu title on the home screen** now sits on a blue pill so it stays readable on the light background.
+- **About** names PrismFox67 as the author of Cemu UWP, with the Cemu team and danprice142 credits below.
+- **Dark panel by default** (Settings > Look still offers the light one; a light choice made before is kept).
+- **Bigger covers, no titles under them:** the selected cover takes about 45% of the screen height, the others about
+  37%; the selected game's title leads the info line below, shortened with "..." instead of wrapping.
+- **The Cemu logo** (grey "Cem" + cyan "U" on its navy gradient) replaces the plain text title on the home screen.
 
 ## 2026-10-22
 ### Xbox app

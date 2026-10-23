@@ -14,7 +14,6 @@
 #define DR_FLAC_IMPLEMENTATION
 #include "thirdparty/dr_flac.h"
 #define STB_VORBIS_NO_PUSHDATA_API
-#define STB_VORBIS_NO_STDIO
 #include "thirdparty/stb_vorbis.c"
 #pragma warning(pop)
 
@@ -23,8 +22,7 @@ namespace
 	class VorbisDecoder : public HostMusicDecoder
 	{
 	public:
-		std::vector<unsigned char> data; // stb_vorbis reads from memory, the compressed file stays loaded
-		stb_vorbis* vorbis = nullptr;
+		stb_vorbis* vorbis = nullptr; // reads from the file as it decodes (owns and closes it)
 		~VorbisDecoder() override { if (vorbis) stb_vorbis_close(vorbis); }
 		size_t Read(float* out, size_t frameCount) override
 		{
@@ -71,12 +69,11 @@ std::unique_ptr<HostMusicDecoder> HostMusicDecoder::Open(const std::filesystem::
 	if (ext == L".ogg")
 	{
 		auto d = std::make_unique<VorbisDecoder>();
-		std::ifstream in(path, std::ios::binary);
-		if (!in)
+		FILE* file = _wfopen(path.c_str(), L"rb");
+		if (!file)
 			return nullptr;
-		d->data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 		int error = 0;
-		d->vorbis = stb_vorbis_open_memory(d->data.data(), (int)d->data.size(), &error, nullptr);
+		d->vorbis = stb_vorbis_open_file(file, 1, &error, nullptr); // closes the file on failure too
 		if (!d->vorbis)
 			return nullptr;
 		const stb_vorbis_info info = stb_vorbis_get_info(d->vorbis);
