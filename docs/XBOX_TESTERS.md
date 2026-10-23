@@ -14,6 +14,9 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
    .wud/.wux disc images). Keep updates and DLC as their own folders next to the game (for example `MARIO KART 8 [Update]`
    and `MARIO KART 8 [DLC]`): Cemu finds them there, and the game list shows "(update)" and "+ DLC" when it does. Nothing
    needs to be installed.
+   **USB drive format:** NTFS or exFAT, formatted on a PC. FAT32 can't hold files over 4 GB (.wua files and disc
+   images are bigger). When the Xbox asks how to use the drive, pick **Use for media**, not Format storage device: a
+   drive formatted for Xbox games can't be read by apps.
 4. Disc images (.wud/.wux) need their disc key. Put `keys.txt` in your game folder or at the root of the drive, then press
    **Settings → Import keys.txt from game folders**. Or type its path under **Settings → Folders → keys.txt file**
    (for example `E:\keys.txt`): Cemu imports new keys from it at every start.
