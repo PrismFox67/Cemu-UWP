@@ -198,6 +198,9 @@ public:
 	// #79 diagnostic: compressed 2D array textures that are sampled (MK8's font). Writing <user>/dump_textures.txt makes the
 	// renderer save their slices (raw blocks, mip 0) to <user>/texdump/ and delete the marker
 	void RegisterArrayTextureForDump(LatteTextureD3D12* texture) { m_dumpCandidates.insert(texture); }
+	// #316 diagnostic: reads the depth buffer an occlusion query draw tests against back (submits and waits) and logs
+	// what it holds inside the viewport. Rare: only from D3D12Query_LogDrawState
+	void LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp);
 	void NotifyTextureViewRelease(LatteTextureViewD3D12* view);
 	void NotifyFBORelease(CachedFBOD3D12* fbo);
 

@@ -17,6 +17,7 @@
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/OS/libs/gx2/GX2.h"
+#include "config/ActiveSettings.h"
 
 #ifdef CEMU_D3D12_SPIRV_TO_DXIL
 extern "C"
@@ -506,6 +507,84 @@ static void D3D12Query_LogDrawState(LatteDecompilerShader* vs, LatteDecompilerSh
 		depthControl.get_Z_ENABLE(), (uint32)depthControl.get_Z_FUNC(), depthControl.get_Z_WRITE_ENABLE(), depthControl.get_STENCIL_ENABLE(),
 		depthTex ? "at" : "none", depthTex ? depthTex->physAddress : 0, depthTex ? depthTex->width : 0, depthTex ? depthTex->height : 0, depthTex ? (uint32)depthTex->format : 0, (uint32)fbo->GetDSVFormat(),
 		fbo->GetNumRTVs(), vp.TopLeftX, vp.TopLeftY, vp.Width, vp.Height, vp.MinDepth, vp.MaxDepth, sc.left, sc.top, sc.right, sc.bottom);
+	const auto& lcr = LatteGPUState.contextNew;
+	cemuLog_log(LogType::Force, "D3D12: query draw raster: cull front {} back {} front face {}; poly offset {} (offset {} scale {} clamp {}); zclip disabled {}, dx clip space {}, clip cntl {:08x}, vte {:08x}",
+		lcr.PA_SU_SC_MODE_CNTL.get_CULL_FRONT(), lcr.PA_SU_SC_MODE_CNTL.get_CULL_BACK(), (uint32)lcr.PA_SU_SC_MODE_CNTL.get_FRONT_FACE(),
+		lcr.PA_SU_SC_MODE_CNTL.get_OFFSET_FRONT_ENABLED(), lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET(), lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE(), lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP(),
+		lcr.PA_CL_CLIP_CNTL.get_ZCLIP_FAR_DISABLE(), lcr.PA_CL_CLIP_CNTL.get_DX_CLIP_SPACE_DEF(),
+		LatteGPUState.contextRegister[Latte::REGADDR::PA_CL_CLIP_CNTL], LatteGPUState.contextRegister[Latte::REGADDR::PA_CL_VTE_CNTL]);
+	if (depthView)
+		static_cast<D3D12Renderer*>(g_renderer.get())->LogDepthContents(depthView, vp);
+}
+
+void D3D12Renderer::LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp)
+{
+	LatteTextureD3D12* tex = depthView->GetBaseTexture();
+	const D3D12_RESOURCE_DESC& desc = tex->GetDesc();
+	if (!tex->GetResource() || desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+		return;
+	const uint32 sub = tex->GetSubresourceIndex(depthView->firstMip, depthView->firstSlice, 0);
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+	UINT numRows;
+	UINT64 rowSize, totalBytes;
+	m_device->GetCopyableFootprints(&desc, sub, 1, 0, &layout, &numRows, &rowSize, &totalBytes);
+	const uint32 bpp = (uint32)(rowSize / std::max<uint32>(layout.Footprint.Width, 1));
+	if (bpp != 4 && bpp != 2)
+	{
+		cemuLog_log(LogType::Force, "D3D12: query depth readback: unsupported footprint ({} bytes per texel, format {})", bpp, (uint32)layout.Footprint.Format);
+		return;
+	}
+	const uint64 offset = m_readbackRing->Allocate(totalBytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+	TransitionTexture(tex, depthView->firstMip, 1, depthView->firstSlice, 1, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	FlushBarriers();
+	D3D12_TEXTURE_COPY_LOCATION src{};
+	src.pResource = tex->GetResource();
+	src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	src.SubresourceIndex = sub;
+	D3D12_TEXTURE_COPY_LOCATION dst{};
+	dst.pResource = m_readbackRing->GetResource();
+	dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	dst.PlacedFootprint = layout;
+	dst.PlacedFootprint.Offset = offset;
+	m_cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	TransitionTexture(tex, depthView->firstMip, 1, depthView->firstSlice, 1, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	FlushBarriers();
+	m_hasRecordedWork = true;
+	const uint64 id = GetRecordingSubmissionId();
+	SubmitCommandList(false);
+	WaitForSubmission(id);
+
+	// texels inside the viewport: min, max, how many are exactly 0 / 1, and a 4x4 grid of samples
+	const uint8* data = m_readbackRing->GetCPUPtr(offset);
+	const uint32 x0 = (uint32)std::max(0.0f, vp.TopLeftX), y0 = (uint32)std::max(0.0f, vp.TopLeftY);
+	const uint32 x1 = std::min<uint32>((uint32)(vp.TopLeftX + vp.Width), layout.Footprint.Width);
+	const uint32 y1 = std::min<uint32>((uint32)(vp.TopLeftY + vp.Height), numRows);
+	auto texel = [&](uint32 x, uint32 y) -> float {
+		const uint8* p = data + (uint64)y * layout.Footprint.RowPitch + (uint64)x * bpp;
+		if (bpp == 2)
+			return *(const uint16*)p / 65535.0f;
+		if (layout.Footprint.Format == DXGI_FORMAT_R24G8_TYPELESS || layout.Footprint.Format == DXGI_FORMAT_D24_UNORM_S8_UINT || layout.Footprint.Format == DXGI_FORMAT_R24_UNORM_X8_TYPELESS)
+			return (*(const uint32*)p & 0xFFFFFF) / 16777215.0f;
+		return *(const float*)p;
+	};
+	float mn = 1e30f, mx = -1e30f;
+	uint64 zeros = 0, ones = 0, total = 0;
+	for (uint32 y = y0; y < y1; y++)
+		for (uint32 x = x0; x < x1; x++)
+		{
+			const float v = texel(x, y);
+			mn = std::min(mn, v);
+			mx = std::max(mx, v);
+			zeros += v == 0.0f;
+			ones += v == 1.0f;
+			total++;
+		}
+	std::string grid;
+	for (uint32 gy = 0; gy < 4 && y1 > y0; gy++)
+		for (uint32 gx = 0; gx < 4 && x1 > x0; gx++)
+			grid += fmt::format("{}{:.5f}", grid.empty() ? "" : " ", texel(x0 + (x1 - x0) * (2 * gx + 1) / 8, y0 + (y1 - y0) * (2 * gy + 1) / 8));
+	cemuLog_log(LogType::Force, "D3D12: query depth {:08x} (format {}, {}x{}): {} texels in viewport, min {:.5f} max {:.5f}, {} are 0, {} are 1; 4x4 grid: {}",
+		tex->physAddress, (uint32)layout.Footprint.Format, layout.Footprint.Width, numRows, total, mn, mx, zeros, ones, grid);
 }
 
 void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
@@ -686,6 +765,34 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		runtimeDwords[1] = baseInstance; // SPIRV_Cross_BaseInstance
 	}
 	m_cmdList->SetGraphicsRoot32BitConstants(D3D12Const::kRootParamRuntimeData, D3D12Const::kRuntimeDataDwords, runtimeDwords, 0);
+
+	// #316 BOTW Magnesis/Stasis: the target probes (two draws inside occlusion queries, PS 159823cc52262ba9 = constant
+	// color, VS e348d00a1dc9e460 against the main depth, VS a1f4b74d99b962e3 against the small depth copy) fail their
+	// LEQUAL test on D3D12 everywhere, although the depth buffers hold the right scene depth and the query results reach
+	// the game (forcing them to pass makes the target turn yellow and grab, tested on PC). Until the depth difference is
+	// found they are drawn at depth 0 so they always pass: Magnesis/Stasis work, but can also pick a target behind a
+	// wall. <user>/magnesis_probe_depth.txt turns it off (for comparing), the other queries are never touched
+	if (pixelShader && pixelShader->baseHash == 0x159823cc52262ba9ull && LatteQuery_IsOcclusionQueryActive() &&
+		(vertexShader->baseHash == 0xe348d00a1dc9e460ull || vertexShader->baseHash == 0xa1f4b74d99b962e3ull))
+	{
+		static bool s_probeDepthTest = false;
+		static uint32 s_probeCheck = 0;
+		if ((s_probeCheck++ % 600) == 0)
+		{
+			std::error_code ec;
+			const bool on = fs::exists(ActiveSettings::GetUserDataPath("magnesis_probe_depth.txt"), ec);
+			if (on != s_probeDepthTest || s_probeCheck == 1)
+				cemuLog_log(LogType::Force, "D3D12: BOTW target probes {}", on ? "use their depth test (magnesis_probe_depth.txt)" : "always pass");
+			s_probeDepthTest = on;
+		}
+		if (!s_probeDepthTest)
+		{
+			D3D12_VIEWPORT vp = m_state.viewport;
+			vp.MinDepth = vp.MaxDepth = 0.0f;
+			m_cmdList->RSSetViewports(1, &vp);
+			m_state.viewportDirty = true;
+		}
+	}
 
 	if (isIndexed)
 		m_cmdList->DrawIndexedInstanced(hostIndexCount, instanceCount, 0, (INT)baseVertex, baseInstance);

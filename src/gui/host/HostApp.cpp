@@ -340,6 +340,15 @@ namespace
 			return;
 		}
 		_EnableSkylanderPortal();
+		{
+			// diagnostics: <user>/dump_shaders.txt makes the shader cache loader write every shader to <user>/dump/shaders
+			// (there is no debug menu on the Xbox)
+			std::error_code ec;
+			const bool dumpShaders = fs::exists(ActiveSettings::GetUserDataPath("dump_shaders.txt"), ec);
+			ActiveSettings::EnableDumpShaders(dumpShaders);
+			if (dumpShaders)
+				fs::create_directories(ActiveSettings::GetUserDataPath("dump/shaders"), ec);
+		}
 		LatteOverlay_resetScreenPiPSources();
 		LatteOverlay_setScreenPiP(_LoadOverlaySettings(CafeSystem::GetForegroundTitleId()));
 		CafeSystem::LaunchForegroundTitle();

@@ -7,6 +7,10 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-10-23
 ### Direct3D 12
+- **BOTW: Magnesis and Stasis pick their target again.** The game's target check (an invisible probe drawn against the
+  scene depth) never passed on Direct3D 12, so metal objects stayed pink and A did nothing. The probe now always passes;
+  tested on PC: the target turns yellow and is grabbed. Side effect until the real cause is found: a target behind a
+  wall can be picked too.
 - **Fewer pipelines for depth-biased draws (shadows):** depth bias values that differ only slightly now share one
   pipeline instead of each building its own, which should mean fewer new-shader hitches in games that animate their
   shadow bias (reported for BOTW).
