@@ -5,6 +5,12 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-24
+### Mario Kart 8 first person pack
+- **Cockpit view for big drivers:** a new View preset, "Cockpit, big drivers (Bowser, Dry Bowser, Wario, Waluigi, DK,
+  Link...)", hides the driver so their arms, legs or body no longer block the view; the kart and wheel stay. Mario-size
+  and small drivers keep the normal cockpit view with hands on the wheel.
+
 ## 2026-10-23
 ### Direct3D 12
 - **BOTW: Magnesis and Stasis pick their target again.** The game's target check (an invisible probe drawn against the
