@@ -2,7 +2,7 @@
 titleIds = 000500001010ec00,000500001010ed00,000500001010eb00
 name = First person camera
 path = "Mario Kart 8/Mods/First Person Camera"
-description = First person driving camera (game version 4.2). Click the RIGHT STICK (R3) during a race to cycle: cockpit (hands on the wheel) > first person without the kart > normal camera. The preset picks the cockpit view. Looking back still works.|Tuned on Mario: very big or small drivers may want the "no kart" view.
+description = First person driving camera (game version 4.2). Click the RIGHT STICK (R3) during a race to cycle: cockpit (hands on the wheel) > first person without the kart > normal camera. The preset picks the cockpit view. Looking back still works.|Tuned on Mario. Bowser, Dry Bowser, Wario, Waluigi, DK, Link and other big drivers: pick the "Cockpit, big drivers" view (their arms/legs otherwise block the view; the driver is hidden, the wheel stays).
 version = 7
 
 [Default]
@@ -30,6 +30,16 @@ $fpPitch = 0.75
 $fpHide = 3.1
 $fpHideAhead = 0.03
 $fpHideBelow = 2.0
+
+[Preset]
+category = View
+name = Cockpit, big drivers (Bowser, Dry Bowser, Wario, Waluigi, DK, Link...)
+$fpForward = -0.02
+$fpHeight = -9.0
+$fpPitch = 0.75
+$fpHide = 6.0
+$fpHideAhead = 0.03
+$fpHideBelow = 30.0
 
 [Preset]
 category = View
