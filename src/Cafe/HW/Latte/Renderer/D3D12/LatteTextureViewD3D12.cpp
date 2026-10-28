@@ -178,6 +178,8 @@ LatteTextureViewD3D12::~LatteTextureViewD3D12()
 		m_renderer->GetStagingRTVHeap().Free(m_rtv);
 	if (m_dsv.ptr)
 		m_renderer->GetStagingDSVHeap().Free(m_dsv);
+	if (m_dsvReadOnly.ptr)
+		m_renderer->GetStagingDSVHeap().Free(m_dsvReadOnly);
 	if (m_sliceCopy)
 		m_renderer->ReleaseResourceDeferred(std::move(m_sliceCopy));
 }
@@ -357,12 +359,29 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetRTV()
 
 D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetDSV()
 {
-	if (m_dsv.ptr)
-		return m_dsv;
+	if (!m_dsv.ptr)
+		m_dsv = CreateDSV(D3D12_DSV_FLAG_NONE);
+	return m_dsv;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetReadOnlyDSV()
+{
+	if (!m_dsvReadOnly.ptr)
+	{
+		D3D12_DSV_FLAGS flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+		if (m_baseTexture->GetFormatInfo().hasStencil)
+			flags |= D3D12_DSV_FLAG_READ_ONLY_STENCIL;
+		m_dsvReadOnly = CreateDSV(flags);
+	}
+	return m_dsvReadOnly;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateDSV(D3D12_DSV_FLAGS flags)
+{
 	cemu_assert_debug(m_baseTexture->isDepth);
 	D3D12_DEPTH_STENCIL_VIEW_DESC desc{};
 	desc.Format = m_dsvFormat;
-	desc.Flags = D3D12_DSV_FLAG_NONE;
+	desc.Flags = flags;
 	if (m_baseTexture->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
 	{
 		desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
@@ -377,8 +396,8 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetDSV()
 		desc.Texture2DArray.FirstArraySlice = firstSlice;
 		desc.Texture2DArray.ArraySize = numSlice;
 	}
-	m_dsv = m_renderer->GetStagingDSVHeap().Allocate();
-	m_renderer->GetDevice()->CreateDepthStencilView(m_baseTexture->GetResource(), &desc, m_dsv);
+	D3D12_CPU_DESCRIPTOR_HANDLE dsv = m_renderer->GetStagingDSVHeap().Allocate();
+	m_renderer->GetDevice()->CreateDepthStencilView(m_baseTexture->GetResource(), &desc, dsv);
 	D3D12_Checkpoint(m_renderer->GetDevice(), "texture DSV created");
-	return m_dsv;
+	return dsv;
 }
