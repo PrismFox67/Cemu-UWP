@@ -19,7 +19,6 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### D3D12
 - Draws that read the depth buffer they are also tested against now see valid depth instead of undefined data, and
   texture readbacks are made visible to the CPU explicitly (same fix as the occlusion queries on Xbox).
-)
 
 ## 2026-10-24
 ### Mario Kart 8 first person pack
