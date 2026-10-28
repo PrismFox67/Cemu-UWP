@@ -152,6 +152,28 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 		}
 #endif
 		uint8* pixelData = readbackInfo->GetData();
+		// #403: BOTW reads a 16-bit depth surface (fmt 0005) back for rune targeting - log where it goes and what it holds
+		if (readbackInfo->hostTextureCopy.format == Latte::E_GX2SURFFMT::R16_UNORM && pixelData)
+		{
+			static uint32 s_r16LogCount = 0;
+			if (s_r16LogCount < 64)
+			{
+				s_r16LogCount++;
+				const auto& t = readbackInfo->hostTextureCopy;
+				uint32 w = t.width >> readbackInfo->m_firstMip, h = t.height >> readbackInfo->m_firstMip;
+				uint16 vMin = 0xFFFF, vMax = 0;
+				for (uint32 y = 0; y < h; y++)
+					for (uint32 x = 0; x < w; x++)
+					{
+						uint16 v = *(uint16*)(pixelData + y * readbackInfo->m_rowPitch + x * 2);
+						vMin = std::min(vMin, v);
+						vMax = std::max(vMax, v);
+					}
+				uint16 vCentre = (w && h) ? *(uint16*)(pixelData + (h / 2) * readbackInfo->m_rowPitch + (w / 2) * 2) : 0;
+				cemuLog_log(LogType::Force, "Readback fmt 0005 {:08x} {}x{} pitch {} tileMode {} depth {} mip {} slice {}: min {:04x} max {:04x} centre {:04x}{}", t.physAddress, w, h, t.pitch, (uint32)t.tileMode, t.depth, readbackInfo->m_firstMip, readbackInfo->m_firstSlice, vMin, vMax, vCentre,
+					(t.tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED) ? "" : " (tiled: not written to guest memory, unsupported format)");
+			}
+		}
 		LatteTextureLoader_writeReadbackTextureToMemory(&readbackInfo->hostTextureCopy, readbackInfo->m_firstSlice, readbackInfo->m_firstMip, pixelData, readbackInfo->m_rowPitch);
 		readbackInfo->ReleaseData();
 		// get the original texture if it still exists and invalidate the current data hash
