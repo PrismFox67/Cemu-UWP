@@ -17,9 +17,11 @@ public:
 	bool IsFinished() override;
 	void ForceFinish() override;
 	uint8* GetData() override;
+	void ReleaseData() override;
 
 private:
 	D3D12Renderer* m_renderer;
 	uint64 m_bufferOffset = 0;
 	uint64 m_submissionId = 0;
+	bool m_mapped = false;
 };

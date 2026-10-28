@@ -18,6 +18,13 @@ std::queue<LatteTextureReadbackInfo*> sTextureActiveReadbackQueue; // readbacks 
 void LatteTextureReadback_StartTransfer(LatteTextureView* textureView)
 {
 	cemuLog_log(LogType::TextureReadback, "[TextureReadback-Start] PhysAddr {:08x} Res {}x{} Fmt {} Slice {} Mip {}", textureView->baseTexture->physAddress, textureView->baseTexture->width, textureView->baseTexture->height, textureView->baseTexture->format, textureView->firstSlice, textureView->firstMip);
+	// #394: which surfaces titles read back (BOTW's rune targeting is suspected to read a depth surface), first 64 at Force
+	static uint32 s_readbackLogs = 0;
+	if (s_readbackLogs < 64)
+	{
+		s_readbackLogs++;
+		cemuLog_log(LogType::Force, "Texture readback: {:08x} {}x{} fmt {:04x} depth {} slice {} mip {}", textureView->baseTexture->physAddress, textureView->baseTexture->width, textureView->baseTexture->height, (uint32)textureView->baseTexture->format, textureView->baseTexture->isDepth, textureView->firstSlice, textureView->firstMip);
+	}
 	HRTick currentTick = HighResolutionTimer().now().getTick();
 	// create info entry and store in ordered linked list
 	LatteTextureReadbackInfo* readbackInfo = g_renderer->texture_createReadback(textureView);
