@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12TextureReadback.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
+#include "config/ActiveSettings.h"
 
 LatteTextureReadbackInfoD3D12::LatteTextureReadbackInfoD3D12(D3D12Renderer* renderer, LatteTextureView* textureView)
 	: LatteTextureReadbackInfo(textureView, textureView->firstMip), m_renderer(renderer)
@@ -54,16 +55,43 @@ void LatteTextureReadbackInfoD3D12::StartTransfer()
 
 	m_submissionId = m_renderer->GetRecordingSubmissionId();
 	m_renderer->m_hasRecordedWork = true;
+	m_isR16 = baseTexture->format == Latte::E_GX2SURFFMT::R16_UNORM;
 	m_textureView = nullptr;
+	// #418 A/B: with <user>/readback_sync.txt the core waits for every readback at its first IsFinished() check
+	static bool s_sync = false;
+	static uint32 s_syncCheck = 0;
+	if ((s_syncCheck++ % 256) == 0)
+	{
+		std::error_code ec;
+		const bool on = fs::exists(ActiveSettings::GetUserDataPath("readback_sync.txt"), ec);
+		if (on != s_sync || s_syncCheck == 1)
+			cemuLog_log(LogType::Force, "D3D12: texture readbacks {}", on ? "synchronous (readback_sync.txt)" : "asynchronous");
+		s_sync = on;
+	}
+	m_sync = s_sync;
+	if (m_sync)
+		return; // IsFinished() waits for it
 	// reduce readback latency by submitting soon
 	m_renderer->RequestSubmitSoon();
 }
 
 bool LatteTextureReadbackInfoD3D12::IsFinished()
 {
+	if (m_sync)
+		ForceFinish();
 	if (m_submissionId > m_renderer->m_lastSubmittedFenceValue)
 		return false; // still in the command list that is being recorded
-	return m_renderer->GetCompletedSubmissionId() >= m_submissionId;
+	const uint64 completed = m_renderer->GetCompletedSubmissionId();
+	if (completed < m_submissionId)
+		return false;
+	// #418: timing of the R16 (BOTW rune targeting) readbacks
+	static uint32 s_timingLogs = 0;
+	if (m_isR16 && s_timingLogs < 64)
+	{
+		s_timingLogs++;
+		cemuLog_log(LogType::Force, "D3D12: R16 readback finished: copy in submission {}, last submitted {}, completed {}", m_submissionId, m_renderer->m_lastSubmittedFenceValue, completed);
+	}
+	return true;
 }
 
 void LatteTextureReadbackInfoD3D12::ForceFinish()

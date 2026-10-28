@@ -24,4 +24,6 @@ private:
 	uint64 m_bufferOffset = 0;
 	uint64 m_submissionId = 0;
 	bool m_mapped = false;
+	bool m_isR16 = false;
+	bool m_sync = false; // <user>/readback_sync.txt (#418)
 };
