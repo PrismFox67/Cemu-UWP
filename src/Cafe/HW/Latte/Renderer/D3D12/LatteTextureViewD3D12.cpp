@@ -207,13 +207,18 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetFeedbackSRV(uint32 gpuSamp
 		m_feedbackCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
 	}
 	// whole resource: the views and the attachment may cover different mips/slices, CopyResource has no restrictions
-	// for depth or MSAA resources
-	m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
-	m_renderer->TransitionTexture(m_baseTexture, 0, m_baseTexture->GetDesc().MipLevels, 0, m_baseTexture->Is3DTexture() ? 1 : m_baseTexture->GetDesc().DepthOrArraySize, D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_renderer->FlushBarriers();
-	m_renderer->GetCommandList()->CopyResource(m_feedbackCopy.Get(), baseResource);
-	m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-	m_renderer->m_hasRecordedWork = true;
+	// for depth or MSAA resources. Skipped while nothing was rendered to the texture since the last copy
+	const uint64 version = m_baseTexture->GetContentVersion();
+	if (version != m_feedbackCopyVersion)
+	{
+		m_feedbackCopyVersion = version;
+		m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
+		m_renderer->TransitionTexture(m_baseTexture, 0, m_baseTexture->GetDesc().MipLevels, 0, m_baseTexture->Is3DTexture() ? 1 : m_baseTexture->GetDesc().DepthOrArraySize, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		m_renderer->FlushBarriers();
+		m_renderer->GetCommandList()->CopyResource(m_feedbackCopy.Get(), baseResource);
+		m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		m_renderer->m_hasRecordedWork = true;
+	}
 	gpuSamplerSwizzle &= 0x0FFF0000;
 	auto it = m_feedbackSrvCache.find(gpuSamplerSwizzle);
 	if (it != m_feedbackSrvCache.end())
