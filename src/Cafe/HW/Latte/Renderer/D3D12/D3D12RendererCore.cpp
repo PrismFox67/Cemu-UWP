@@ -363,7 +363,7 @@ static bool _ViewsOverlap(LatteTextureViewD3D12* sampled, LatteTextureViewD3D12*
 	return mipOverlap && sliceOverlap;
 }
 
-static bool _IsFeedbackLoop(CachedFBOD3D12* fbo, LatteTextureViewD3D12* view, bool& isDepth)
+static bool _IsFeedbackLoop(CachedFBOD3D12* fbo, LatteTextureViewD3D12* view, bool& isDepth, sint32& attachmentMip)
 {
 	isDepth = false;
 	if (!fbo)
@@ -371,12 +371,16 @@ static bool _IsFeedbackLoop(CachedFBOD3D12* fbo, LatteTextureViewD3D12* view, bo
 	for (uint32 i = 0; i < 8; i++)
 	{
 		if (fbo->GetRTVFormat(i) != DXGI_FORMAT_UNKNOWN && _ViewsOverlap(view, fbo->GetColorView(i)))
+		{
+			attachmentMip = fbo->GetColorView(i)->firstMip;
 			return true;
+		}
 	}
 	if (fbo->HasDSV() && _ViewsOverlap(view, fbo->GetDepthView()))
 	{
 		const auto& depthControl = LatteGPUState.contextNew.DB_DEPTH_CONTROL;
 		isDepth = true;
+		attachmentMip = fbo->GetDepthView()->firstMip;
 		return depthControl.get_Z_WRITE_ENABLE() || depthControl.get_STENCIL_ENABLE();
 	}
 	return false;
@@ -454,7 +458,8 @@ void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, Rende
 		{
 			const uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
 			bool feedbackDepth;
-			if (_IsFeedbackLoop(m_state.activeFBO, view, feedbackDepth))
+			sint32 attachmentMip = 0;
+			if (_IsFeedbackLoop(m_state.activeFBO, view, feedbackDepth, attachmentMip))
 			{
 				// the copy is off unless <user>/feedback_copy.txt exists: BOTW makes ~3600 such samples per second on PC
 				// (whole-texture copies, cost unknown on Xbox) and the effect on rune targeting isn't confirmed yet
@@ -477,8 +482,8 @@ void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, Rende
 				if (s_logged < 32)
 				{
 					s_logged++;
-					cemuLog_log(LogType::Force, "D3D12: feedback loop: {} shader {:016x} samples {:08x} {}x{} fmt {:04x} mip {} slice {} while rendering to it",
-						feedbackDepth ? "depth" : "colour", shader->baseHash, view->GetBaseTexture()->physAddress, view->GetBaseTexture()->width, view->GetBaseTexture()->height, (uint32)view->format, view->firstMip, view->firstSlice);
+					cemuLog_log(LogType::Force, "D3D12: feedback loop: {} shader {:016x} samples {:08x} {}x{} fmt {:04x} mips {}-{} slice {} while rendering to mip {}",
+						feedbackDepth ? "depth" : "colour", shader->baseHash, view->GetBaseTexture()->physAddress, view->GetBaseTexture()->width, view->GetBaseTexture()->height, (uint32)view->format, view->firstMip, view->firstMip + view->numMip - 1, view->firstSlice, attachmentMip);
 				}
 				if (const auto now = std::chrono::steady_clock::now(); now >= s_nextLog)
 				{
