@@ -72,6 +72,8 @@ available.
   5.1 surround, the shader and pipeline options below, VSync and an FPS counter.
 - **Logs and backups.** Copies of the logs and your saves to the USB drive; after a crash the next start shows a notice
   and the crash is in `log_previous.txt`; a note when a newer build is available.
+- **Saves on the USB drive.** Settings → Folders → Save folder puts Cemu's mlc01 (saves, installed updates and DLC)
+  on the USB drive, so saves survive a Dev Mode reset and are shared by all Xbox profiles; current saves are copied there.
 
 #### The Direct3D 12 renderer
 - A complete D3D12 backend next to Cemu's Vulkan and OpenGL ones (Xbox apps can only use D3D12). Shaders are translated
