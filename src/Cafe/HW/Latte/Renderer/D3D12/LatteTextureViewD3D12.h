@@ -65,5 +65,6 @@ private:
 	D3D12_CPU_DESCRIPTOR_HANDLE m_dsv{};
 	ComPtr<ID3D12Resource> m_feedbackCopy;
 	D3D12_RESOURCE_STATES m_feedbackCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+	uint64 m_feedbackCopyVersion = 0;
 	std::unordered_map<uint32, D3D12_CPU_DESCRIPTOR_HANDLE> m_feedbackSrvCache;
 };
