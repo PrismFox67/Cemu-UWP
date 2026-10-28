@@ -8,7 +8,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-10-28
 ### Games
 - Games no longer crash when they point a texture at memory that doesn't exist (seen in Sonic Lost World right after the
-  title screen on Xbox); the texture is skipped and noted in the log instead. Not yet confirmed with Sonic Lost World.
+  title screen on Xbox); the part that exists is used and the rest left blank (only textures with no data at all are skipped), and it is noted
+  in the log. Sonic Lost World no longer crashes; whether its title screen background now shows is not confirmed yet.
 ### Xbox app
 - **Save folder on the USB drive** (GitHub #6): Settings → Folders → Save folder (for example `E:\CemuSaves`) keeps
   your saves there, so they survive a Dev Mode reset and every Xbox profile shares them. Your current saves are copied
