@@ -73,7 +73,26 @@ void LatteTextureReadbackInfoD3D12::ForceFinish()
 	m_renderer->WaitForSubmission(m_submissionId);
 }
 
+// Map with the read range of this readback (like the query results, #71/#394): the runtime then makes the GPU's copy
+// visible to the CPU. The persistently mapped pointer alone is only reliable on cache coherent hardware
 uint8* LatteTextureReadbackInfoD3D12::GetData()
 {
+	ID3D12Resource* buffer = m_renderer->m_readbackRing->GetResource();
+	const D3D12_RANGE readRange{ (SIZE_T)m_bufferOffset, (SIZE_T)(m_bufferOffset + m_image_size) };
+	void* mapped = nullptr;
+	if (SUCCEEDED(buffer->Map(0, &readRange, &mapped)))
+	{
+		m_mapped = true;
+		return (uint8*)mapped + m_bufferOffset;
+	}
 	return m_renderer->m_readbackRing->GetCPUPtr(m_bufferOffset);
+}
+
+void LatteTextureReadbackInfoD3D12::ReleaseData()
+{
+	if (!m_mapped)
+		return;
+	const D3D12_RANGE noWrite{ 0, 0 };
+	m_renderer->m_readbackRing->GetResource()->Unmap(0, &noWrite);
+	m_mapped = false;
 }
