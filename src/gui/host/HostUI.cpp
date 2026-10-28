@@ -1171,7 +1171,42 @@ namespace
 				});
 			}
 		}
-		ImGui::TextWrapped("mlc01: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+		{
+			// GitHub #6: mlc01 (saves, installed updates/DLC) on the USB drive, survives a Dev Mode reset and is shared
+			// by all Xbox profiles
+			static char s_saveFolderBuffer[512] = {};
+			static bool s_saveFolderLoaded = false;
+			if (!s_saveFolderLoaded)
+			{
+				s_saveFolderLoaded = true;
+				strncpy(s_saveFolderBuffer, config.mlc_path.GetValue().c_str(), sizeof(s_saveFolderBuffer) - 1);
+			}
+			ImGui::TextUnformatted(_TR("Save folder"));
+			ImGui::SameLine();
+			ImGui::TextDisabled(_TR("(mlc01: saves, installed updates and DLC; empty = Cemu's own storage)"));
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+			const bool entered = ImGui::InputTextWithHint("##savefolder", _TR("a folder on your USB drive, e.g. E:\\CemuSaves"), s_saveFolderBuffer, sizeof(s_saveFolderBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			ImGui::SameLine();
+			if ((ImGui::Button(_TR("Set save folder")) || entered) && !HostTools::IsBusy())
+			{
+				const std::string value = s_saveFolderBuffer;
+				s_deferred.emplace_back([value]() { HostTools::StartSetSaveFolder(_utf8ToPath(value)); });
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(_TR("Pick folder...##save")) && !HostTools::IsBusy())
+			{
+				HostPlatform::PickFolder([](const fs::path& path) {
+					if (path.empty())
+						return;
+					const std::string utf8 = _pathToUtf8(path);
+					strncpy(s_saveFolderBuffer, utf8.c_str(), sizeof(s_saveFolderBuffer) - 1);
+					s_deferred.emplace_back([path]() { HostTools::StartSetSaveFolder(path); });
+				});
+			}
+			if (HostTools::IsSaveFolderMissing())
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", _TR("The save folder's drive wasn't found at start, this session uses Cemu's own storage."));
+			ImGui::TextWrapped("mlc01 in use: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+		}
 
 		ImGui::SeparatorText(_TR("Logs and backups"));
 		const fs::path exportRoot = HostTools::GetExportRoot();

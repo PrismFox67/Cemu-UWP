@@ -264,6 +264,87 @@ void HostTools::StartBackupSaves()
 	});
 }
 
+namespace
+{
+	std::atomic_bool s_saveFolderMissing = false;
+}
+
+bool HostTools::IsSaveFolderMissing()
+{
+	return s_saveFolderMissing;
+}
+
+void HostTools::SetSaveFolderMissing()
+{
+	s_saveFolderMissing = true;
+}
+
+void HostTools::StartSetSaveFolder(fs::path folder)
+{
+	if (folder.empty())
+	{
+		GetConfig().mlc_path = std::string();
+		GetConfigHandle().Save();
+		cemuLog_log(LogType::Force, "Host: save folder reset to the app's own storage");
+		HostUI::PushMessage("Save folder", "Cemu uses its own storage for saves again after a restart. Saves in the old save folder stay there.");
+		return;
+	}
+	_RunTask("Copying saves...", [folder]() {
+		const fs::path source = ActiveSettings::GetMlcPath("usr/save");
+		const fs::path targetSave = folder / "usr" / "save";
+		std::error_code ec;
+		fs::create_directories(targetSave, ec);
+		if (!fs::is_directory(targetSave, ec))
+		{
+			HostUI::PushMessage("Save folder not set", fmt::format("Cemu couldn't create {}", _pathToUtf8(targetSave)));
+			return;
+		}
+		size_t files = 0, kept = 0, failed = 0;
+		std::error_code canonEc1, canonEc2;
+		const bool sameFolder = fs::weakly_canonical(source, canonEc1) == fs::weakly_canonical(targetSave, canonEc2);
+		if (fs::is_directory(source, ec) && !sameFolder)
+		{
+			ec.clear();
+			for (auto it = fs::recursive_directory_iterator(source, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+			{
+				std::error_code fileEc;
+				if (!it->is_regular_file(fileEc))
+					continue;
+				const fs::path relative = it->path().lexically_relative(source);
+				if (fileEc || relative.empty())
+				{
+					failed++;
+					continue;
+				}
+				const fs::path target = targetSave / relative;
+				if (fs::exists(target, fileEc))
+				{
+					kept++; // never overwrite saves that are already there (another profile's, or an earlier copy)
+					continue;
+				}
+				fs::create_directories(target.parent_path(), fileEc);
+				if (_CopyFile(it->path(), target))
+					files++;
+				else
+					failed++;
+			}
+			if (ec)
+				failed++; // the listing stopped early, not every save was copied
+		}
+		if (failed)
+		{
+			cemuLog_log(LogType::Force, "Host: save folder {} not set, {} save file(s) couldn't be copied", _pathToUtf8(folder), failed);
+			HostUI::PushMessage("Save folder not set", fmt::format("{} save files couldn't be copied to {}. Nothing was changed.", failed, _pathToUtf8(folder)));
+			return;
+		}
+		GetConfig().mlc_path = _pathToUtf8(folder);
+		GetConfigHandle().Save();
+		cemuLog_log(LogType::Force, "Host: save folder set to {}: copied {} save file(s) from {}, {} already there", _pathToUtf8(folder), files, _pathToUtf8(source), kept);
+		HostUI::PushMessage("Save folder set", fmt::format("Restart Cemu to use {}.\n\nCopied {} save files there ({} were already there and kept). Your saves in Cemu's own storage stay as they are.\n\n"
+			"Updates and DLC installed into Cemu's own storage aren't copied: keep them as folders next to the game, or install them again.", _pathToUtf8(folder), files, kept));
+	});
+}
+
 bool HostTools::IsBusy()
 {
 	return s_busy;

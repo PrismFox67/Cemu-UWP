@@ -43,6 +43,11 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
     follows the console language. To translate more texts or another language, put lines of the form
     `English text<TAB>translation` into `LocalState/translations/<code>.txt` (for example `pt.txt`).
 - **Settings → Logs and backups** copies the logs and your saves to the drive of your game folder (a USB drive).
+- **Settings → Folders → Save folder** keeps your saves on the USB drive (for example `E:\CemuSaves`): they then survive
+  a Dev Mode reset and every Xbox profile uses the same saves. Setting it copies your current saves there (the originals
+  stay); restart Cemu afterwards. Updates and DLC installed into Cemu's own storage aren't copied: keep them as folders
+  next to the game or install them again. If the drive isn't connected at start, Cemu says so and uses its own storage
+  for that session.
 
 ## Recommended settings (Series X)
 **Settings tab**

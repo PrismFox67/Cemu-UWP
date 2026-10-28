@@ -19,6 +19,8 @@ public:
 	static std::optional<fs::path> GetLoadFile() { return s_load_game_file; }
 	static std::optional<uint64> GetLoadTitleID() {return s_load_title_id;}
 	static std::optional<fs::path> GetMLCPath() { return s_mlc_path; }
+	// host frontend: use another mlc folder for this session only (the configured one is on a missing drive)
+	static void SetMLCPath(const fs::path& path) { s_mlc_path = path; }
 
 	static std::optional<bool> RenderUpsideDownEnabled() { return s_render_upside_down; }
 	static std::optional<bool> FullscreenEnabled() { return s_fullscreen; }

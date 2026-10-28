@@ -27,6 +27,13 @@ namespace HostTools
 	// both run on a worker thread, the result is shown with HostUI::PushMessage
 	void StartSaveLogs();
 	void StartBackupSaves();
+	// GitHub #6: makes <folder> Cemu's mlc01 (saves, installed updates/DLC) from the next start, e.g. on the USB drive so
+	// saves survive a Dev Mode reset and are shared by all Xbox profiles. Copies the current saves there first (never
+	// moves or deletes them, existing files at the target are kept). Empty folder = back to the app's own storage
+	void StartSetSaveFolder(fs::path folder);
+	// set at start when the save folder's drive is missing and the app's own mlc01 is used instead
+	bool IsSaveFolderMissing();
+	void SetSaveFolderMissing();
 	bool IsBusy();
 	std::string GetBusyText();
 

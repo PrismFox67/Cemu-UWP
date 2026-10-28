@@ -21,6 +21,7 @@
 #include "Cemu/ncrypto/ncrypto.h"
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
+#include "config/LaunchSettings.h"
 #include "config/NetworkSettings.h"
 #include "input/InputManager.h"
 #include "input/api/XInput/XInputController.h"
@@ -933,6 +934,21 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	if (!firstStart)
 		GetConfigHandle().Load();
 	GetConfigHandle().Save();
+
+	// save folder on a USB drive (GitHub #6): when the drive isn't there, this session uses the app's own mlc01 and the
+	// launcher says so; the setting is kept for the next start
+	if (const std::string saveFolder = GetConfig().mlc_path.GetValue(); !saveFolder.empty() && !LaunchSettings::GetMLCPath())
+	{
+		const fs::path folder = _utf8ToPath(saveFolder);
+		if (!fs::exists(folder.root_path(), ec))
+		{
+			cemuLog_log(LogType::Force, "Host: save folder {} not found (drive missing), using {} for this session", saveFolder, _pathToUtf8(ActiveSettings::GetDefaultMLCPath()));
+			LaunchSettings::SetMLCPath(ActiveSettings::GetDefaultMLCPath());
+			HostTools::SetSaveFolderMissing();
+			HostUI::PushMessage("Save folder not found", fmt::format("{} isn't there (is the USB drive connected?). Cemu uses its own storage for saves this time; "
+				"connect the drive and restart Cemu to use your save folder again.", saveFolder));
+		}
+	}
 
 	if (!_CreateDefaultMLCFiles(ActiveSettings::GetMlcPath()))
 	{

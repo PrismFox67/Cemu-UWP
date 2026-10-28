@@ -5,6 +5,13 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-28
+### Xbox app
+- **Save folder on the USB drive** (GitHub #6): Settings → Folders → Save folder (for example `E:\CemuSaves`) keeps
+  your saves there, so they survive a Dev Mode reset and every Xbox profile shares them. Your current saves are copied
+  over (never moved), restart Cemu afterwards. Without the drive Cemu uses its own storage for that session and says so.
+
+)
 ## 2026-10-24
 ### Mario Kart 8 first person pack
 - **Cockpit view for big drivers:** a new View preset, "Cockpit, big drivers (Bowser, Dry Bowser, Wario, Waluigi, DK,
