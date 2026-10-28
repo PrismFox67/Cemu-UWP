@@ -352,6 +352,36 @@ void D3D12Renderer::draw_transitionInputTextures(LatteDecompilerShader* shader)
 	}
 }
 
+// #398/#402: does the sampled view overlap a render target of the active FBO? (DanP's ResolveFeedbackLoopsForDraw).
+// Depth is only counted when the draw can write it; read-only depth is handled with a read-only DSV (#394)
+static bool _ViewsOverlap(LatteTextureViewD3D12* sampled, LatteTextureViewD3D12* attachment)
+{
+	if (!attachment || sampled->GetBaseTexture() != attachment->GetBaseTexture())
+		return false;
+	const bool mipOverlap = attachment->firstMip >= sampled->firstMip && attachment->firstMip < sampled->firstMip + sampled->numMip;
+	const bool sliceOverlap = sampled->firstSlice < attachment->firstSlice + attachment->numSlice && attachment->firstSlice < sampled->firstSlice + sampled->numSlice;
+	return mipOverlap && sliceOverlap;
+}
+
+static bool _IsFeedbackLoop(CachedFBOD3D12* fbo, LatteTextureViewD3D12* view, bool& isDepth)
+{
+	isDepth = false;
+	if (!fbo)
+		return false;
+	for (uint32 i = 0; i < 8; i++)
+	{
+		if (fbo->GetRTVFormat(i) != DXGI_FORMAT_UNKNOWN && _ViewsOverlap(view, fbo->GetColorView(i)))
+			return true;
+	}
+	if (fbo->HasDSV() && _ViewsOverlap(view, fbo->GetDepthView()))
+	{
+		const auto& depthControl = LatteGPUState.contextNew.DB_DEPTH_CONTROL;
+		isDepth = true;
+		return depthControl.get_Z_WRITE_ENABLE() || depthControl.get_STENCIL_ENABLE();
+	}
+	return false;
+}
+
 void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, RendererShaderD3D12* hostShader, const D3D12_GPU_VIRTUAL_ADDRESS uniformVarAddress, uint32 uniformVarSize, PreparedStageBindings& out)
 {
 	using namespace D3D12Const;
@@ -423,7 +453,42 @@ void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, Rende
 		else
 		{
 			const uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
-			tableDesc.srv[reg] = view->GetSRV(word4);
+			bool feedbackDepth;
+			if (_IsFeedbackLoop(m_state.activeFBO, view, feedbackDepth))
+			{
+				// the copy is off unless <user>/feedback_copy.txt exists: BOTW makes ~3600 such samples per second on PC
+				// (whole-texture copies, cost unknown on Xbox) and the effect on rune targeting isn't confirmed yet
+				static bool s_copyEnabled = false;
+				static uint32 s_copyCheck = 0;
+				if ((s_copyCheck++ % 4096) == 0)
+				{
+					std::error_code ec;
+					const bool on = fs::exists(ActiveSettings::GetUserDataPath("feedback_copy.txt"), ec);
+					if (on != s_copyEnabled || s_copyCheck == 1)
+						cemuLog_log(LogType::Force, "D3D12: feedback copies {}", on ? "on (feedback_copy.txt)" : "off, render targets are sampled directly");
+					s_copyEnabled = on;
+				}
+				tableDesc.srv[reg] = s_copyEnabled ? view->GetFeedbackSRV(word4) : view->GetSRV(word4);
+				static uint32 s_copies = 0, s_depthCopies = 0, s_logged = 0;
+				static auto s_nextLog = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+				s_copies++;
+				if (feedbackDepth)
+					s_depthCopies++;
+				if (s_logged < 32)
+				{
+					s_logged++;
+					cemuLog_log(LogType::Force, "D3D12: feedback loop: {} shader {:016x} samples {:08x} {}x{} fmt {:04x} mip {} slice {} while rendering to it",
+						feedbackDepth ? "depth" : "colour", shader->baseHash, view->GetBaseTexture()->physAddress, view->GetBaseTexture()->width, view->GetBaseTexture()->height, (uint32)view->format, view->firstMip, view->firstSlice);
+				}
+				if (const auto now = std::chrono::steady_clock::now(); now >= s_nextLog)
+				{
+					s_nextLog = now + std::chrono::seconds(10);
+					cemuLog_log(LogType::Force, "D3D12: feedback loops in the last 10 s: {} ({} depth)", s_copies, s_depthCopies);
+					s_copies = s_depthCopies = 0;
+				}
+			}
+			else
+				tableDesc.srv[reg] = view->GetSRV(word4);
 		}
 		draw_buildSamplerDesc(shader, relativeTextureUnit, view, samplers[reg]);
 	}

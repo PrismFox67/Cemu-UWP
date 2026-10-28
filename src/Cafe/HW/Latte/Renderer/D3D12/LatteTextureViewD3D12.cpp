@@ -182,6 +182,45 @@ LatteTextureViewD3D12::~LatteTextureViewD3D12()
 		m_renderer->GetStagingDSVHeap().Free(m_dsvReadOnly);
 	if (m_sliceCopy)
 		m_renderer->ReleaseResourceDeferred(std::move(m_sliceCopy));
+	for (auto& it : m_feedbackSrvCache)
+		srvHeap.Free(it.second);
+	if (m_feedbackCopy)
+		m_renderer->ReleaseResourceDeferred(std::move(m_feedbackCopy));
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetFeedbackSRV(uint32 gpuSamplerSwizzle)
+{
+	ID3D12Resource* baseResource = m_baseTexture->GetResource();
+	if (m_usesSliceCopy || !baseResource)
+		return GetSRV(gpuSamplerSwizzle);
+	if (!m_feedbackCopy)
+	{
+		D3D12_RESOURCE_DESC desc = m_baseTexture->GetDesc();
+		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		D3D12_HEAP_PROPERTIES heap = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
+		if (FAILED(m_renderer->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_feedbackCopy))))
+		{
+			cemuLog_logOnce(LogType::Force, "D3D12: Failed to create a feedback copy, sampling the render target instead");
+			return GetSRV(gpuSamplerSwizzle);
+		}
+		D3D12_SetDebugName(m_feedbackCopy.Get(), "TextureFeedbackCopy");
+		m_feedbackCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+	}
+	// whole resource: the views and the attachment may cover different mips/slices, CopyResource has no restrictions
+	// for depth or MSAA resources
+	m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_COPY_DEST);
+	m_renderer->TransitionTexture(m_baseTexture, 0, m_baseTexture->GetDesc().MipLevels, 0, m_baseTexture->Is3DTexture() ? 1 : m_baseTexture->GetDesc().DepthOrArraySize, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	m_renderer->FlushBarriers();
+	m_renderer->GetCommandList()->CopyResource(m_feedbackCopy.Get(), baseResource);
+	m_renderer->TransitionResource(m_feedbackCopy.Get(), m_feedbackCopyState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	m_renderer->m_hasRecordedWork = true;
+	gpuSamplerSwizzle &= 0x0FFF0000;
+	auto it = m_feedbackSrvCache.find(gpuSamplerSwizzle);
+	if (it != m_feedbackSrvCache.end())
+		return it->second;
+	D3D12_CPU_DESCRIPTOR_HANDLE h = CreateSRV(gpuSamplerSwizzle, m_feedbackCopy.Get());
+	m_feedbackSrvCache.emplace(gpuSamplerSwizzle, h);
+	return h;
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetSRV(uint32 gpuSamplerSwizzle)
@@ -211,7 +250,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetSRV(uint32 gpuSamplerSwizz
 	return h;
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateSRV(uint32 gpuSamplerSwizzle)
+D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateSRV(uint32 gpuSamplerSwizzle, ID3D12Resource* resource)
 {
 	// The SRV dimension has to match the sampler type in the shader. Cemu's GLSL emitter declares:
 	//   DIM_1D -> sampler1D, DIM_2D/DIM_2D_MSAA -> sampler2D, DIM_2D_ARRAY -> sampler2DArray,
@@ -317,7 +356,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::CreateSRV(uint32 gpuSamplerSw
 		}
 	}
 	D3D12_CPU_DESCRIPTOR_HANDLE h = m_renderer->GetStagingViewHeap().Allocate();
-	m_renderer->GetDevice()->CreateShaderResourceView(m_baseTexture->GetResource(), &desc, h);
+	m_renderer->GetDevice()->CreateShaderResourceView(resource ? resource : m_baseTexture->GetResource(), &desc, h);
 	D3D12_Checkpoint(m_renderer->GetDevice(), "texture SRV created");
 	return h;
 }
