@@ -455,7 +455,31 @@ void D3D12Renderer::draw_acquireSamplerTables(PreparedStageBindings* stages, uin
 
 /* --- render targets --- */
 
-void D3D12Renderer::draw_applyRenderTargets()
+// #394 BOTW Magnesis/Stasis: a draw can sample the depth buffer that is also bound as its DSV (depth test on, no
+// writes). Forcing that texture to DEPTH_WRITE makes the shader read undefined data (stale/compressed depth on AMD), so
+// such draws get a read-only DSV and the texture stays readable (DEPTH_READ | shader resource). Vulkan uses a read-only
+// depth layout for this, DanP's D3D12 renderer samples a copy
+bool D3D12Renderer::draw_samplesBoundDepth(LatteDecompilerShader* shader, LatteTextureViewD3D12* depthView)
+{
+	if (!shader)
+		return false;
+	const sint32 textureCount = shader->resourceMapping.getTextureCount();
+	for (sint32 i = 0; i < textureCount; i++)
+	{
+		const uint32 relativeTextureUnit = shader->resourceMapping.getRelativeTextureUnitFromRelativeBindingPoint(i);
+		uint32 regIndex;
+		LatteTextureViewD3D12* view = _GetBoundTextureForShader(m_state.boundTexture, shader, relativeTextureUnit, regIndex);
+		if (!view || view->GetBaseTexture() != depthView->GetBaseTexture())
+			continue;
+		const bool mipOverlap = depthView->firstMip >= view->firstMip && depthView->firstMip < view->firstMip + view->numMip;
+		const bool sliceOverlap = view->firstSlice < depthView->firstSlice + depthView->numSlice && depthView->firstSlice < view->firstSlice + view->numSlice;
+		if (mipOverlap && sliceOverlap)
+			return true;
+	}
+	return false;
+}
+
+void D3D12Renderer::draw_applyRenderTargets(bool depthReadOnly)
 {
 	CachedFBOD3D12* fbo = m_state.activeFBO;
 	for (uint32 i = 0; i < 8; i++)
@@ -465,12 +489,19 @@ void D3D12Renderer::draw_applyRenderTargets()
 			continue;
 		TransitionTexture(view->GetBaseTexture(), view->firstMip, 1, view->firstSlice, view->numSlice, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
-	if (LatteTextureViewD3D12* depthView = fbo->GetDepthView())
-		TransitionTexture(depthView->GetBaseTexture(), depthView->firstMip, 1, depthView->firstSlice, depthView->numSlice, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	LatteTextureViewD3D12* depthView = fbo->GetDepthView();
+	if (!depthView || !fbo->HasDSV())
+		depthReadOnly = false;
+	if (depthView)
+		TransitionTexture(depthView->GetBaseTexture(), depthView->firstMip, 1, depthView->firstSlice, depthView->numSlice,
+			depthReadOnly ? (D3D12_RESOURCE_STATES)((UINT)D3D12_RESOURCE_STATE_DEPTH_READ | (UINT)LatteTextureD3D12::kShaderReadState) : D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	if (depthReadOnly != m_state.depthReadOnlyBound)
+		m_state.renderTargetsDirty = true;
 	if (!m_state.renderTargetsDirty)
 		return;
-	D3D12_CPU_DESCRIPTOR_HANDLE dsv = fbo->GetDSV();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsv = depthReadOnly ? depthView->GetReadOnlyDSV() : fbo->GetDSV();
 	m_cmdList->OMSetRenderTargets(fbo->GetNumRTVs(), fbo->GetRTVs(), FALSE, fbo->HasDSV() ? &dsv : nullptr);
+	m_state.depthReadOnlyBound = depthReadOnly;
 	m_state.renderTargetsDirty = false;
 }
 
@@ -663,7 +694,23 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		draw_transitionInputTextures(pixelShader);
 	if (geometryShader)
 		draw_transitionInputTextures(geometryShader);
-	draw_applyRenderTargets();
+	bool depthReadOnly = false;
+	if (LatteTextureViewD3D12* depthView = fbo->GetDepthView(); depthView && fbo->HasDSV() &&
+		(draw_samplesBoundDepth(pixelShader, depthView) || draw_samplesBoundDepth(vertexShader, depthView) || draw_samplesBoundDepth(geometryShader, depthView)))
+	{
+		const auto& depthControl = LatteGPUState.contextNew.DB_DEPTH_CONTROL;
+		// a read-only DSV can't take depth or stencil writes; those draws keep the old (undefined) behaviour and are logged
+		depthReadOnly = !depthControl.get_Z_WRITE_ENABLE() && !depthControl.get_STENCIL_ENABLE();
+		static uint32 s_feedbackLogs = 0;
+		if (s_feedbackLogs < 128)
+		{
+			s_feedbackLogs++;
+			cemuLog_log(LogType::Force, "D3D12: depth feedback VS {:016x} PS {:016x}: samples bound depth {:08x} {}x{} mip {} (z {} write {} stencil {}) -> {}",
+				vertexShader->baseHash, pixelShader ? pixelShader->baseHash : 0, depthView->GetBaseTexture()->physAddress, depthView->GetBaseTexture()->width, depthView->GetBaseTexture()->height, depthView->firstMip,
+				depthControl.get_Z_ENABLE(), depthControl.get_Z_WRITE_ENABLE(), depthControl.get_STENCIL_ENABLE(), depthReadOnly ? "read-only DSV" : "NOT handled (writes)");
+		}
+	}
+	draw_applyRenderTargets(depthReadOnly);
 	TransitionResource(m_bufferCache.Get(), m_bufferCacheState, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_INDEX_BUFFER | D3D12_RESOURCE_STATE_COPY_SOURCE);
 	const bool usesStreamout = vertexShader->resourceMapping.tfStorageBindingPoint >= 0;
 	if (usesStreamout)

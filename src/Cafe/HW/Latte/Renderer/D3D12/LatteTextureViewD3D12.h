@@ -21,6 +21,8 @@ public:
 	D3D12_CPU_DESCRIPTOR_HANDLE GetSRVRGBA() { return GetSRV(kRGBASwizzle); }
 	D3D12_CPU_DESCRIPTOR_HANDLE GetRTV();
 	D3D12_CPU_DESCRIPTOR_HANDLE GetDSV();
+	// DSV with READ_ONLY_DEPTH (+ READ_ONLY_STENCIL), for draws that sample the depth buffer they test against (#394)
+	D3D12_CPU_DESCRIPTOR_HANDLE GetReadOnlyDSV();
 
 	DXGI_FORMAT GetRTVFormat() const { return m_rtvFormat; }
 	DXGI_FORMAT GetDSVFormat() const { return m_dsvFormat; }
@@ -33,6 +35,7 @@ public:
 
 private:
 	D3D12_CPU_DESCRIPTOR_HANDLE CreateSRV(uint32 gpuSamplerSwizzle);
+	D3D12_CPU_DESCRIPTOR_HANDLE CreateDSV(D3D12_DSV_FLAGS flags);
 	void UpdateSliceCopy();
 
 	// D3D12's Texture2D SRVs can't start at an array slice, and binding a Texture2DArray SRV to a Texture2D declaration
@@ -60,4 +63,5 @@ private:
 	std::unordered_map<uint32, D3D12_CPU_DESCRIPTOR_HANDLE> m_srvFallbackCache;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_rtv{};
 	D3D12_CPU_DESCRIPTOR_HANDLE m_dsv{};
+	D3D12_CPU_DESCRIPTOR_HANDLE m_dsvReadOnly{};
 };

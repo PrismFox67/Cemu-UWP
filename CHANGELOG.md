@@ -5,6 +5,13 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-27
+### D3D12
+- **Depth read fix (BOTW Magnesis/Stasis, untested yet):** draws that read the depth buffer they are also tested
+  against now see valid depth instead of undefined data. This is the suspected cause of rune targets landing behind
+  the object; the always-pass workaround stays until it is confirmed. Texture readbacks are also made visible to the
+  CPU explicitly (same fix as the occlusion queries on Xbox).
+
 ## 2026-10-24
 ### Mario Kart 8 first person pack
 - **Cockpit view for big drivers:** a new View preset, "Cockpit, big drivers (Bowser, Dry Bowser, Wario, Waluigi, DK,

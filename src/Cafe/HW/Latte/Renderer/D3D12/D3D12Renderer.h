@@ -268,8 +268,9 @@ private:
 	void draw_acquireSamplerTables(PreparedStageBindings* stages, uint32 count);
 	bool TryGetSamplerTable(const D3D12_SAMPLER_DESC* samplers, uint32 count, D3D12_GPU_DESCRIPTOR_HANDLE& tableOut);
 	void draw_buildSamplerDesc(LatteDecompilerShader* shader, uint32 relativeTextureUnit, LatteTextureViewD3D12* view, D3D12_SAMPLER_DESC& desc);
-	void draw_applyRenderTargets();
+	void draw_applyRenderTargets(bool depthReadOnly);
 	void draw_transitionInputTextures(LatteDecompilerShader* shader);
+	bool draw_samplesBoundDepth(LatteDecompilerShader* shader, LatteTextureViewD3D12* depthView);
 	D3D12_CPU_DESCRIPTOR_HANDLE GetNullSRV(Latte::E_DIM dim) const;
 	D3D12_GPU_VIRTUAL_ADDRESS GetAlignedUniformBufferAddress(uint32 cacheOffset, uint32 size);
 
@@ -404,6 +405,7 @@ private:
 		bool skipDrawSequence = false;
 		CachedFBOD3D12* activeFBO = nullptr;
 		bool renderTargetsDirty = true;
+		bool depthReadOnlyBound = false; // the FBO's depth is bound with a read-only DSV (#394)
 		LatteTextureViewD3D12* boundTexture[LATTE_CEMU_GS_TEX_UNIT_BASE + LATTE_NUM_MAX_TEX_UNITS]{};
 		D3D12_VERTEX_BUFFER_VIEW vertexBuffers[LATTE_MAX_VERTEX_BUFFERS]{};
 		uint32 vertexBufferDirtyMask = 0xFFFF;
