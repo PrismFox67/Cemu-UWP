@@ -19,6 +19,9 @@ public:
 	// staging (non shader-visible) SRV for the given GPU7 sampler swizzle (SQ_TEX_RESOURCE_WORD4)
 	D3D12_CPU_DESCRIPTOR_HANDLE GetSRV(uint32 gpuSamplerSwizzle);
 	D3D12_CPU_DESCRIPTOR_HANDLE GetSRVRGBA() { return GetSRV(kRGBASwizzle); }
+	// #398/#402: SRV of a fresh copy of the base texture, for draws that sample a texture they also render to (a
+	// feedback loop: the render target state wins and the sampled data would be undefined). Copies on every call
+	D3D12_CPU_DESCRIPTOR_HANDLE GetFeedbackSRV(uint32 gpuSamplerSwizzle);
 	D3D12_CPU_DESCRIPTOR_HANDLE GetRTV();
 	D3D12_CPU_DESCRIPTOR_HANDLE GetDSV();
 
@@ -32,7 +35,7 @@ public:
 	static constexpr uint32 kRGBASwizzle = 0x06880000;
 
 private:
-	D3D12_CPU_DESCRIPTOR_HANDLE CreateSRV(uint32 gpuSamplerSwizzle);
+	D3D12_CPU_DESCRIPTOR_HANDLE CreateSRV(uint32 gpuSamplerSwizzle, ID3D12Resource* resource = nullptr);
 	void UpdateSliceCopy();
 
 	// D3D12's Texture2D SRVs can't start at an array slice, and binding a Texture2DArray SRV to a Texture2D declaration
@@ -60,4 +63,7 @@ private:
 	std::unordered_map<uint32, D3D12_CPU_DESCRIPTOR_HANDLE> m_srvFallbackCache;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_rtv{};
 	D3D12_CPU_DESCRIPTOR_HANDLE m_dsv{};
+	ComPtr<ID3D12Resource> m_feedbackCopy;
+	D3D12_RESOURCE_STATES m_feedbackCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+	std::unordered_map<uint32, D3D12_CPU_DESCRIPTOR_HANDLE> m_feedbackSrvCache;
 };
