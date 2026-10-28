@@ -627,6 +627,24 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	if (texDecoder == nullptr)
 		return;
 
+	// skip textures whose guest data isn't mapped instead of faulting in the decoder (#400, Sonic Lost World on Xbox)
+	{
+		MPTR srcAddr = (MPTR)(textureLoader.inputData - memory_base);
+		uint32 srcSize = std::max<uint32>((uint32)textureLoader.maxOffsetOutdated, 1);
+		if (!memory_isAddressRangeAccessible(memory_physicalToVirtual(srcAddr), 1) || !memory_isAddressRangeAccessible(memory_physicalToVirtual(srcAddr + srcSize - 1), 1))
+		{
+			static uint32 s_unmappedLogCount = 0;
+			if (s_unmappedLogCount < 32)
+			{
+				s_unmappedLogCount++;
+				cemuLog_log(LogType::Force, "Texture upload skipped: guest data 0x{:08x} size 0x{:x} not mapped (fmt {:04x} {}x{} mip {} slice {})", srcAddr, srcSize, (uint32)format, width, height, mipIndex, sliceIndex);
+			}
+			if (textureLoader.dump)
+				free(textureLoader.dumpRGBA);
+			return;
+		}
+	}
+
 	textureLoader.decodedTexelCountX = texDecoder->getTexelCountX(&textureLoader);
 	textureLoader.decodedTexelCountY = texDecoder->getTexelCountY(&textureLoader);
 
