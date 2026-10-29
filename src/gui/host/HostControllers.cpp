@@ -180,18 +180,29 @@ bool HostControllers::IsKindAllowed(int player, Kind kind)
 void HostControllers::SetupDefaults()
 {
 	auto& input = InputManager::instance();
-	// players 2-4 are only created once, so a player removed by the user stays removed
+	// only player 1 (GamePad) is created. The core reports every emulated controller as connected, physical pad or not,
+	// and BOTW's Magnesis never locks on while Pro Controllers are connected (#420). Players 2-4 are added by pairing or
+	// on the Controllers tab
 	std::error_code ec;
-	const fs::path marker = ActiveSettings::GetConfigPath("controllerProfiles/.hostDefaults");
-	const bool createOtherPlayers = !fs::exists(marker, ec);
-	for (int player = 0; player < kPlayerCount; player++)
+	if (!input.get_controller(0))
+		SetPlayer(0, Kind::GamePad, 0);
+	// earlier builds created Pro Controllers for players 2-4 by default, disconnect those once
+	const fs::path oldDefaultsMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostDefaults");
+	const fs::path singlePlayerMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostSinglePlayer");
+	if (!fs::exists(singlePlayerMarker, ec))
 	{
-		if (input.get_controller(player) || (player > 0 && !createOtherPlayers))
-			continue;
-		SetPlayer(player, player == 0 ? Kind::GamePad : Kind::Pro, player);
+		if (fs::exists(oldDefaultsMarker, ec))
+		{
+			for (int player = 1; player < kPlayerCount; player++)
+			{
+				if (GetPlayer(player).kind != Kind::Pro)
+					continue;
+				SetPlayer(player, Kind::None, -1);
+				cemuLog_log(LogType::Force, "Host: disconnected the default Pro Controller of player {}, pair controllers to add players", player + 1);
+			}
+		}
+		std::ofstream(singlePlayerMarker) << "players 2-4 are no longer created by default\n";
 	}
-	if (createOtherPlayers)
-		std::ofstream(marker) << "default controller profiles were created\n";
 	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels. Only once:
 	// the Nintendo layout preset is the same mapping, and running this on every start reverted it
 	const fs::path labelMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostLabelLayout");

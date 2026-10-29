@@ -7,6 +7,10 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-10-28
 ### Games
+- **Zelda BOTW: Magnesis works again** (GitHub #2): metal objects turn yellow and can be grabbed. The cause was the
+  three Pro Controllers the app connected for players 2-4 even with no controller behind them. Now only player 1 (the
+  GamePad) is connected, and the default players 2-4 are switched off once on update. For multiplayer add players with
+  **Pair controllers** in the in-game menu or on the Controllers tab (leave them off in BOTW).
 - Games no longer crash when they point a texture at memory that doesn't exist (seen in Sonic Lost World right after the
   title screen on Xbox); the part that exists is used and the rest left blank (only textures with no data at all are skipped), and it is noted
   in the log. Sonic Lost World no longer crashes; whether its title screen background now shows is not confirmed yet.

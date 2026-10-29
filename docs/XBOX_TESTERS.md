@@ -64,7 +64,8 @@ Download: [`cemu-uwp-x64.zip` from the ci-latest release](https://github.com/Pri
 - **Anisotropic Filtering: 16x.** It costs almost nothing.
 - Leave the rest at default. Optional: Enhancements → Debanding, and Remove MKTV Watermark.
 
-**Controllers tab**: controller 1 is the GamePad, controllers 2-4 are Pro Controllers.
+**Controllers tab**: controller 1 is the GamePad. Players 2-4 are off until you add them here or with **Pair
+controllers** in the in-game menu. For Zelda BOTW leave them off: a connected Pro Controller breaks Magnesis.
 - **Stick drift**: each player has a **Left/Right stick deadzone** (0-90 %). The line below shows how far each stick is
   off center right now; with the stick let go, pick a deadzone a bit above that number.
 - **Nintendo button positions**: open **Button mapping / Nintendo layout** for the player and press

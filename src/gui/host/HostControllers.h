@@ -31,8 +31,8 @@ namespace HostControllers
 	const char* KindName(Kind kind);
 	bool IsKindAllowed(int player, Kind kind);
 
-	// creates the default profiles: player 1 GamePad on controller 1 + keyboard, players 2-4 Pro Controllers on
-	// controllers 2-4. Existing profiles are kept
+	// creates the default profile: player 1 GamePad on controller 1. Players 2-4 stay disconnected until added, the game
+	// sees every emulated controller as connected (#420). Existing profiles are kept
 	void SetupDefaults();
 
 	PlayerInfo GetPlayer(int player);

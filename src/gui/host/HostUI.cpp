@@ -1451,7 +1451,7 @@ namespace
 		ImGui::TextWrapped("Controls");
 		ImGui::BulletText("D-pad / left stick: move, A: select, B: back");
 		ImGui::BulletText("In game: click both sticks (or hold View + Menu for one second) to open the menu, it has \"Exit to game list\"");
-		ImGui::BulletText("Controller 1 is the Wii U GamePad, controllers 2-4 are Pro Controllers for players 2-4");
+		ImGui::BulletText("Controller 1 is the Wii U GamePad, players 2-4 are off until you add them");
 		ImGui::BulletText("Change this under Controllers, or pick \"Pair controllers\" in the in-game menu");
 		ImGui::Spacing();
 		ImGui::TextWrapped(_TR("Credits"));

@@ -50,8 +50,9 @@ Set them in a command prompt before starting: `set CEMU_D3D12_DEBUG=1` then `Cem
      (Resume, Pair controllers, show TV or GamePad screen, FPS counter, Exit to game list, Quit Cemu). On a keyboard,
      F1 opens it, arrows and Enter select, Esc closes it. **Exit to game list** stops the game (progress the game
      didn't save is lost) and returns to the launcher; **Quit Cemu** closes the program.
-   - Players: controller 1 (plus the keyboard) is the Wii U GamePad for player 1, controllers 2-4 are Pro Controllers
-     for players 2-4. Turning on a second controller is enough for a second player.
+   - Players: controller 1 (plus the keyboard) is the Wii U GamePad for player 1. Players 2-4 are not
+     connected by default (the game sees every emulated controller as connected, and Pro Controllers break BOTW
+     Magnesis, #420); add them with Pair controllers or the Controllers tab.
    - **Controllers** tab in the launcher: pick the controller type (Wii U GamePad, Pro Controller, Classic
      Controller, not connected) and the physical controller for each player.
    - **Pair controllers** (Controllers tab or in-game menu): press A on the controller for player 1, then player 2,
