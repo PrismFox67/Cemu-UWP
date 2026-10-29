@@ -769,6 +769,20 @@ namespace
 		HostPlatform::GetMemoryUsage(usage, limit);
 		// above 80% of the budget the texture cache releases unused textures early, above 90% all of them at once (loading a
 		// Mario Kart 8 track at 4K went from 82% to 94% within 1.3 s), below 70% it goes back to normal
+		// <user>/force_texture_pressure.txt: pretend the budget is 85% used, for reproducing Xbox-only texture cache
+		// releases on PC (#424). Checked every 5 s
+		static bool s_forcePressure = false;
+		static auto s_nextForceCheck = now;
+		if (now >= s_nextForceCheck)
+		{
+			s_nextForceCheck = now + std::chrono::seconds(5);
+			std::error_code ec;
+			s_forcePressure = fs::exists(ActiveSettings::GetUserDataPath("force_texture_pressure.txt"), ec);
+		}
+		if (s_forcePressure && (!limit || usage * 100 / limit < 85))
+		{
+			limit = std::max<uint64>(usage, 1) * 100 / 85;
+		}
 		if (limit)
 		{
 			const uint64 percent = usage * 100 / limit;
