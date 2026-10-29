@@ -468,8 +468,20 @@ static void LatteTC_ReleaseForMemoryPressure()
 	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
 	// level 2: a track load can add a gigabyte within a second, 48 per frame can be too slow then
 	const size_t count = s_textureMemoryPressure >= 2 ? deletable.size() : std::min<size_t>(deletable.size(), 256);
+	// #424: the first 300 releases, to match BOTW's black terrain tiles on Xbox against what was released
+	static uint32 s_releaseLogCount = 0;
 	for (size_t i = 0; i < count; i++)
-		LatteTexture_Delete(deletable[i]);
+	{
+		LatteTexture* tex = deletable[i];
+		if (s_releaseLogCount < 300)
+		{
+			s_releaseLogCount++;
+			cemuLog_log(LogType::Force, "Memory pressure: release {:08x} {}x{}x{} fmt {:04x} tm {} mips {}{} unused {} frames",
+				tex->physAddress, tex->width, tex->height, tex->depth, (uint32)tex->format, (uint32)tex->tileMode, tex->mipLevels,
+				tex->isUpdatedOnGPU ? " (GPU)" : "", LatteGPUState.frameCounter - tex->lastAccessFrameCount);
+		}
+		LatteTexture_Delete(tex);
+	}
 	static uint32 s_lastLogFrame = 0;
 	if (LatteGPUState.frameCounter - s_lastLogFrame >= 120)
 	{
