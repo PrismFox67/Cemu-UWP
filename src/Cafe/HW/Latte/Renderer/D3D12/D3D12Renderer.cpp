@@ -2302,7 +2302,9 @@ void D3D12Renderer::HandleScreenshotRequest(LatteTextureView* texView, bool padV
 		return;
 	}
 	const DXGI_FORMAT typeless = D3D12Format::GetTypelessFormat(tex->GetDesc().Format);
-	if (typeless != DXGI_FORMAT_R8G8B8A8_TYPELESS)
+	// RGB10_A2 (BOTW's TV buffer) is read back as is and reduced to 8 bits per channel below
+	const bool is1010102 = typeless == DXGI_FORMAT_R10G10B10A2_TYPELESS;
+	if (typeless != DXGI_FORMAT_R8G8B8A8_TYPELESS && !is1010102)
 	{
 		cemuLog_log(LogType::Force, "Failed to capture screenshot: texture format {:04x} is not supported by the D3D12 backend", (uint32)tex->format);
 		return;
@@ -2322,7 +2324,7 @@ void D3D12Renderer::HandleScreenshotRequest(LatteTextureView* texView, bool padV
 	d.pResource = m_readbackRing->GetResource();
 	d.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 	d.PlacedFootprint.Offset = offset;
-	d.PlacedFootprint.Footprint = { DXGI_FORMAT_R8G8B8A8_TYPELESS, (UINT)width, (UINT)height, 1, rowPitch };
+	d.PlacedFootprint.Footprint = { is1010102 ? DXGI_FORMAT_R10G10B10A2_TYPELESS : DXGI_FORMAT_R8G8B8A8_TYPELESS, (UINT)width, (UINT)height, 1, rowPitch };
 	D3D12_BOX box{ 0, 0, 0, (UINT)width, (UINT)height, 1 };
 	m_cmdList->CopyTextureRegion(&d, 0, 0, 0, &s, &box);
 	SubmitCommandList(true);
@@ -2337,6 +2339,14 @@ void D3D12Renderer::HandleScreenshotRequest(LatteTextureView* texView, bool padV
 		{
 			const uint8* p = src + (size_t)y * rowPitch + (size_t)x * 4;
 			uint8* o = rgb.data() + ((size_t)y * width + x) * 3;
+			if (is1010102)
+			{
+				uint32 v;
+				memcpy(&v, p, 4);
+				for (int c = 0; c < 3; c++)
+					o[c] = (uint8)(((v >> (c * 10)) & 0x3FF) >> 2);
+				continue;
+			}
 			for (int c = 0; c < 3; c++)
 			{
 				uint8 v = p[c];
