@@ -831,8 +831,64 @@ namespace
 		HostUI::RequestGameListRefresh();
 	}
 
+	// test rig (#433): <user>/rig_screenshot.txt holding a name saves the next TV frame as <user>/rig/<name>.bmp and is
+	// deleted. With keys posted to the window this drives the game while the PC is locked (no focus, no screen capture)
+	void _CheckRigScreenshot()
+	{
+		static auto s_next = std::chrono::steady_clock::now();
+		const auto now = std::chrono::steady_clock::now();
+		if (now < s_next || !g_renderer)
+			return;
+		s_next = now + std::chrono::milliseconds(250);
+		std::error_code ec;
+		const fs::path request = ActiveSettings::GetUserDataPath("rig_screenshot.txt");
+		if (!fs::exists(request, ec))
+			return;
+		std::string name;
+		std::ifstream(request) >> name;
+		fs::remove(request, ec);
+		if (name.empty())
+			name = "shot";
+		const fs::path dir = ActiveSettings::GetUserDataPath("rig");
+		fs::create_directories(dir, ec);
+		const fs::path file = dir / (name + ".bmp");
+		g_renderer->RequestScreenshot([file](const std::vector<uint8>& rgb, int width, int height, bool mainWindow) -> std::optional<std::string> {
+			if (!mainWindow || width <= 0 || height <= 0 || rgb.size() < (size_t)width * height * 3)
+				return std::nullopt;
+			const uint32 rowSize = ((uint32)width * 3 + 3) & ~3u;
+			const uint32 dataSize = rowSize * (uint32)height;
+			uint8 header[54] = {'B', 'M'};
+			auto put32 = [&](int at, uint32 v) { memcpy(header + at, &v, 4); };
+			put32(2, 54 + dataSize);
+			put32(10, 54);
+			put32(14, 40);
+			put32(18, (uint32)width);
+			put32(22, (uint32)height);
+			header[26] = 1;
+			header[28] = 24;
+			put32(34, dataSize);
+			std::ofstream out(file, std::ios::binary);
+			out.write((const char*)header, sizeof(header));
+			std::vector<uint8> row(rowSize, 0);
+			for (int y = height - 1; y >= 0; y--)
+			{
+				const uint8* src = rgb.data() + (size_t)y * width * 3;
+				for (int x = 0; x < width; x++)
+				{
+					row[x * 3 + 0] = src[x * 3 + 2];
+					row[x * 3 + 1] = src[x * 3 + 1];
+					row[x * 3 + 2] = src[x * 3 + 0];
+				}
+				out.write((const char*)row.data(), rowSize);
+			}
+			cemuLog_log(LogType::Force, "Host: rig screenshot {}", _pathToUtf8(file));
+			return std::nullopt;
+		});
+	}
+
 	void _UpdateInGame()
 	{
+		_CheckRigScreenshot();
 		const HostGamepad::State pad = HostGamepad::Poll();
 		const uint32 pressed = pad.buttons & ~s_lastPadButtons;
 		s_lastPadButtons = pad.buttons;

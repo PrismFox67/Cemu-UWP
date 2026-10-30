@@ -226,6 +226,19 @@ void HostControllers::SetupDefaults()
 		input.save(player);
 		cemuLog_log(LogType::Force, "Host: repaired missing stick mappings of player {}", player + 1);
 	}
+	// a Pro Controller on player 1 breaks Magnesis too (#433, PC host: pink, A -> orange X), switch it to the GamePad
+	// once, on the same physical controller
+	const fs::path player1Marker = ActiveSettings::GetConfigPath("controllerProfiles/.hostPlayer1GamePad");
+	if (!fs::exists(player1Marker, ec))
+	{
+		const PlayerInfo player1 = GetPlayer(0);
+		if (player1.kind == Kind::Pro)
+		{
+			SetPlayer(0, Kind::GamePad, player1.pad);
+			cemuLog_log(LogType::Force, "Host: player 1 was a Pro Controller, now the Wii U GamePad (Pro Controllers break BOTW's Magnesis)");
+		}
+		std::ofstream(player1Marker) << "player 1 was switched to the GamePad once\n";
+	}
 	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels. Only once:
 	// the Nintendo layout preset is the same mapping, and running this on every start reverted it
 	const fs::path labelMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostLabelLayout");
