@@ -564,6 +564,7 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12ImGui.cpp
     HW/Latte/Renderer/D3D12/D3D12ImGui.h
     HW/Latte/Renderer/D3D12/D3D12InternalPipelines.h
+    HW/Latte/Renderer/D3D12/D3D12LocalArraySelfTest.cpp
     HW/Latte/Renderer/D3D12/D3D12Memory.cpp
     HW/Latte/Renderer/D3D12/D3D12Memory.h
     HW/Latte/Renderer/D3D12/D3D12PipelineCache.cpp

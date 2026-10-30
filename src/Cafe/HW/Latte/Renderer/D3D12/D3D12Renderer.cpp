@@ -63,6 +63,8 @@ std::vector<D3D12Renderer::AdapterInfo> D3D12Renderer::GetAdapters()
 D3D12Renderer::D3D12Renderer()
 	: Renderer(RendererAPI::D3D12)
 {
+	// the renderer is created for every title boot: the Magnesis A/B switches are read here (#449)
+	D3D12_AbTitleStart();
 	CreateDevice();
 
 	m_stagingViewHeap = std::make_unique<D3D12StagingDescriptorHeap>(m_device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 4096, "StagingViews");
@@ -85,6 +87,8 @@ D3D12Renderer::D3D12Renderer()
 	std::string err;
 	if (!D3D12ShaderCompiler::Initialize(m_highestShaderModel, err))
 		throw std::runtime_error(err);
+	// #449 D0: does this driver keep a pixel shader's local register array? Logs PASS/LOST per compiler variant
+	D3D12_RunLocalArraySelfTest(m_device.Get(), m_queue.Get());
 	RendererShaderD3D12::Init();
 
 	// first command list
@@ -1405,6 +1409,130 @@ bool D3D12_UserDataFileExists(const char* fileName)
 {
 	std::error_code ec;
 	return fs::exists(ActiveSettings::GetUserDataPath(fileName), ec);
+}
+
+// #449 Magnesis A/B build: every switch is a word in <user>/magnesis_ab.txt (the Xbox only uses this file, it is
+// overwritten with a Device Portal upload for each step) or a separate <user>/<word>.txt. Read once per title boot
+namespace
+{
+	struct AbWord
+	{
+		const char* name;
+		const char* legacyFile; // the older single-purpose switch file, still honoured
+	};
+	constexpr AbWord kAbWords[] = {
+		{ "relgpr_selects", nullptr },
+		{ "dxc_o3", nullptr },
+		{ "probe_depth", "magnesis_probe_depth.txt" },
+		{ "query_sync", nullptr },
+		{ "flip_pacing", nullptr },
+		{ "feedback_copy", nullptr },
+	};
+	std::mutex s_abMutex;
+	std::atomic<bool> s_abLoaded{ false };
+	std::atomic<uint32> s_abMask{ 0 };
+	bool s_abTitleRunning = false;
+
+	void _AbLoad()
+	{
+		std::unique_lock lock(s_abMutex);
+		if (s_abLoaded)
+			return;
+		uint32 mask = 0;
+		std::string unknown;
+		std::ifstream file(ActiveSettings::GetUserDataPath("magnesis_ab.txt"));
+		std::string word;
+		while (file >> word)
+		{
+			std::erase_if(word, [](char c) { return c == ',' || c == ';'; });
+			if (word.empty())
+				continue;
+			bool known = false;
+			for (size_t i = 0; i < std::size(kAbWords); i++)
+			{
+				if (word == kAbWords[i].name)
+				{
+					mask |= 1u << i;
+					known = true;
+				}
+			}
+			if (!known)
+				unknown += (unknown.empty() ? "" : " ") + word;
+		}
+		for (size_t i = 0; i < std::size(kAbWords); i++)
+		{
+			if (D3D12_UserDataFileExists(fmt::format("{}.txt", kAbWords[i].name).c_str()) || (kAbWords[i].legacyFile && D3D12_UserDataFileExists(kAbWords[i].legacyFile)))
+				mask |= 1u << i;
+		}
+		s_abMask = mask;
+		s_abLoaded = true;
+		if (!unknown.empty())
+			cemuLog_log(LogType::Force, "Magnesis A/B: unknown words in magnesis_ab.txt ignored: {}", unknown);
+	}
+}
+
+bool D3D12_AbToggle(const char* name)
+{
+	if (!s_abLoaded)
+		_AbLoad();
+	const uint32 mask = s_abMask;
+	for (size_t i = 0; i < std::size(kAbWords); i++)
+	{
+		if (strcmp(kAbWords[i].name, name) == 0)
+			return (mask >> i) & 1;
+	}
+	cemu_assert_debug(false);
+	return false;
+}
+
+std::string D3D12_AbToggleNames(const char* separator)
+{
+	if (!s_abLoaded)
+		_AbLoad();
+	const uint32 mask = s_abMask;
+	std::string names;
+	for (size_t i = 0; i < std::size(kAbWords); i++)
+	{
+		if ((mask >> i) & 1)
+			names += (names.empty() ? "" : separator) + std::string(kAbWords[i].name);
+	}
+	return names;
+}
+
+void D3D12_AbTitleStart()
+{
+	{
+		std::unique_lock lock(s_abMutex);
+		s_abLoaded = false;
+		s_abTitleRunning = true;
+	}
+	_AbLoad();
+	const std::string names = D3D12_AbToggleNames(" ");
+	cemuLog_log(LogType::Force, "Magnesis A/B: {}", names.empty() ? "none (baseline)" : names);
+}
+
+// keeps this boot's log: copied to <user>/ablogs/log_<HHMMSS>_<toggles>.txt, log.txt is replaced on the next start
+void D3D12_AbTitleStop()
+{
+	{
+		std::unique_lock lock(s_abMutex);
+		if (!s_abTitleRunning)
+			return;
+		s_abTitleRunning = false;
+	}
+	const std::string names = D3D12_AbToggleNames("+");
+	const std::time_t now = std::time(nullptr);
+	std::tm local{};
+	localtime_s(&local, &now);
+	const std::string fileName = fmt::format("log_{:02}{:02}{:02}_{}.txt", local.tm_hour, local.tm_min, local.tm_sec, names.empty() ? "baseline" : names);
+	cemuLog_log(LogType::Force, "Magnesis A/B: title stopped, log copied to ablogs/{}", fileName);
+	cemuLog_waitForFlush();
+	std::error_code ec;
+	const fs::path folder = ActiveSettings::GetUserDataPath("ablogs");
+	fs::create_directories(folder, ec);
+	fs::copy_file(cemuLog_GetLogFilePath(), folder / fileName, fs::copy_options::overwrite_existing, ec);
+	if (ec)
+		cemuLog_log(LogType::Force, "Magnesis A/B: copying the log failed: {}", ec.message());
 }
 
 void D3D12Renderer::DumpArrayTexturesIfRequested()

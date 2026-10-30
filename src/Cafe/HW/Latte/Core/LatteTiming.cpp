@@ -7,8 +7,19 @@
 #include "config/CemuConfig.h"
 #include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Renderer/Renderer.h"
+
+#ifdef ENABLE_D3D12
+bool D3D12_AbToggle(const char* name); // D3D12Renderer.cpp
+#endif
 
 sint32 s_customVsyncFrequency = -1;
+
+static bool _FlipPacingFileExists()
+{
+	std::error_code ec;
+	return fs::exists(ActiveSettings::GetUserDataPath("flip_pacing.txt"), ec);
+}
 
 void LatteTiming_NotifyHostVSync();
 
@@ -93,13 +104,20 @@ void LatteTiming_signalVsync()
 		// experiment (#164, from danprice142/Cemu-UWP, MPL-2.0): a buffer is only flipped, and FLIP only signalled, once
 		// the GPU processed a swap request since the last flip; games pace their next swap from the FLIP event. Enabled
 		// by a file named flip_pacing.txt in the user folder, so QA can compare frame pacing on the Xbox without builds
-		static const bool s_flipPacing = [] {
-			std::error_code ec;
-			const bool on = fs::exists(ActiveSettings::GetUserDataPath("flip_pacing.txt"), ec);
-			if (on)
-				cemuLog_log(LogType::Force, "Flip pacing experiment on (flip_pacing.txt)");
-			return on;
-		}();
+		// (#449: on D3D12 also the word flip_pacing in magnesis_ab.txt, read once per title boot)
+		static bool s_flipPacing = false;
+		static uint32 s_flipPacingCheck = 0;
+		if ((s_flipPacingCheck++ % 600) == 0)
+		{
+#ifdef ENABLE_D3D12
+			const bool on = g_renderer && g_renderer->GetType() == RendererAPI::D3D12 ? D3D12_AbToggle("flip_pacing") : _FlipPacingFileExists();
+#else
+			const bool on = _FlipPacingFileExists();
+#endif
+			if (on != s_flipPacing || s_flipPacingCheck == 1)
+				cemuLog_log(LogType::Force, "Flip pacing experiment {}", on ? "on (flip_pacing)" : "off");
+			s_flipPacing = on;
+		}
 		bool flipPending = true;
 		if (s_flipPacing)
 		{

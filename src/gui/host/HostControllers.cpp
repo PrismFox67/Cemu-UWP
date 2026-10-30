@@ -3,6 +3,7 @@
 
 #include "config/ActiveSettings.h"
 #include "input/InputManager.h"
+#include "Cafe/GameProfile/GameProfile.h"
 #include "input/api/XInput/XInputController.h"
 #include "input/api/Keyboard/KeyboardController.h"
 #include "input/api/DSU/DSUController.h"
@@ -269,6 +270,30 @@ void HostControllers::SetupDefaults()
 		cemuLog_log(LogType::Force, "Host: removed the keyboard from player 1, it overrode the controller's buttons");
 	}
 	cemuLog_log(LogType::Force, "Host: controllers: {} / {} / {} / {}", KindName(GetPlayer(0).kind), KindName(GetPlayer(1).kind), KindName(GetPlayer(2).kind), KindName(GetPlayer(3).kind));
+}
+
+// #449 (M4): all 8 emulated slots plus the game profile's controllers, so every launch log shows whether a Wii Remote
+// or Pro Controller was connected besides player 1 (a Pro Controller breaks BOTW's Magnesis)
+void HostControllers::LogAllSlots()
+{
+	const auto& input = InputManager::instance();
+	std::string slots;
+	for (size_t slot = 0; slot < InputManager::kMaxController; slot++)
+	{
+		const auto emulated = input.get_controller(slot);
+		slots += fmt::format("{}{}: {}", slot == 0 ? "" : ", ", slot + 1, emulated ? std::string(emulated->type_string()) : std::string("-"));
+	}
+	std::string profiles;
+	if (g_current_game_profile)
+	{
+		const auto& controllers = g_current_game_profile->GetControllerProfile();
+		for (size_t slot = 0; slot < controllers.size(); slot++)
+		{
+			if (controllers[slot])
+				profiles += fmt::format("{}{}: {}", profiles.empty() ? "" : ", ", slot + 1, *controllers[slot]);
+		}
+	}
+	cemuLog_log(LogType::Force, "Host: controller slots at launch: {} (game profile controllers: {})", slots, profiles.empty() ? "none" : profiles);
 }
 
 HostControllers::PlayerInfo HostControllers::GetPlayer(int player)

@@ -233,6 +233,10 @@ void InfoLog_TitleLoaded()
 	memory_logModifiedMemoryRanges();
 }
 
+#ifdef ENABLE_D3D12
+void D3D12_AbTitleStop(); // D3D12Renderer.cpp
+#endif
+
 void InfoLog_PrintActiveSettings()
 {
 	const auto& config = GetConfig();
@@ -1100,6 +1104,10 @@ namespace CafeSystem
 		DestroyMemorySpace();
 		LaunchSettings::ClearCosArgstr();
 		sSystemRunning = false;
+#ifdef ENABLE_D3D12
+		// #449 Magnesis A/B build: keep this boot's log in <user>/ablogs
+		D3D12_AbTitleStop();
+#endif
 	}
 
 	/* Virtual mlc storage */

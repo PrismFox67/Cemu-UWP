@@ -34,6 +34,8 @@ namespace HostControllers
 	// creates the default profile: player 1 GamePad on controller 1. Players 2-4 stay disconnected until added, the game
 	// sees every emulated controller as connected (#420). Existing profiles are kept
 	void SetupDefaults();
+	// one log line with the emulated type of all 8 slots plus the game profile's controllers (at title launch)
+	void LogAllSlots();
 
 	PlayerInfo GetPlayer(int player);
 	void SetPlayer(int player, Kind kind, int pad);

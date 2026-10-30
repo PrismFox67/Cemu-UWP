@@ -33,6 +33,21 @@ namespace D3D12ShaderCompiler
 	// HLSL -> bytecode with FXC (DXBC, shader model 5.1) or DXC (DXIL, shader model 6.0), depending on the backend
 	bool CompileHLSL(D3D12Const::Stage stage, const std::string& hlslSource, std::vector<uint8>& bytecodeOut, std::string& logOut);
 
+	// #449 Magnesis A/B build: the DXC backend with the 'dxc_o3' switch (-HV 2021 -O3, no -Gis)
+	bool UsesDxcO3();
+	// name of the bytecode cache: GetBackendName(), plus "_o3" for dxc_o3
+	std::string GetCacheName();
+
+	// HLSL -> bytecode with a given compiler, whatever the backend is (boot self-test). DXC is loaded on demand, false
+	// with logOut set when it isn't available
+	enum class Variant
+	{
+		FXC,
+		DXC, // our flags
+		DXC_O3, // the dxc_o3 flags
+	};
+	bool CompileHLSLVariant(Variant variant, D3D12Const::Stage stage, const std::string& hlslSource, std::vector<uint8>& bytecodeOut, std::string& logOut);
+
 	inline D3D12Const::Stage StageFromShaderType(RendererShader::ShaderType type)
 	{
 		switch (type)
