@@ -203,6 +203,29 @@ void HostControllers::SetupDefaults()
 		}
 		std::ofstream(singlePlayerMarker) << "players 2-4 are no longer created by default\n";
 	}
+	// #444: earlier builds left the stick directions bound to a removed controller when a player's controller was set up
+	// again (same type), so both sticks were dead even after a restart. Give missing stick directions their defaults
+	for (int player = 0; player < kPlayerCount; player++)
+	{
+		const auto emulated = input.get_controller(player);
+		const auto xinput = emulated ? _GetXInput(emulated) : nullptr;
+		if (!xinput)
+			continue;
+		bool repaired = false;
+		for (uint64 id = 1; id < emulated->get_highest_mapping_id(); id++)
+		{
+			if (emulated->is_axis_mapping(id) && !emulated->get_mapping_controller(id))
+			{
+				emulated->delete_mapping(id);
+				repaired = true;
+			}
+		}
+		if (!repaired)
+			continue;
+		emulated->set_default_mapping(xinput);
+		input.save(player);
+		cemuLog_log(LogType::Force, "Host: repaired missing stick mappings of player {}", player + 1);
+	}
 	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels. Only once:
 	// the Nintendo layout preset is the same mapping, and running this on every start reverted it
 	const fs::path labelMarker = ActiveSettings::GetConfigPath("controllerProfiles/.hostLabelLayout");
@@ -291,6 +314,9 @@ void HostControllers::SetPlayer(int player, Kind kind, int pad)
 		if (!emulated)
 			return;
 		emulated->clear_controllers(); // set_controller carries over the controllers of the previous profile
+		// the old mappings point at the removed controller, and set_default_mapping only fills ids that have no mapping, so
+		// the stick directions (not in customMapping) stayed bound to it and both sticks went dead (#444)
+		emulated->clear_mappings();
 		if (pad >= 0 && pad < HostGamepad::kMaxPads)
 		{
 			auto xinput = std::make_shared<XInputController>((uint32)pad);

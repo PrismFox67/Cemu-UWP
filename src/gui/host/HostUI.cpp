@@ -1312,7 +1312,8 @@ namespace
 					const Kind kind = (Kind)k;
 					if (!IsKindAllowed(player, kind))
 						continue;
-					if (ImGui::Selectable(KindName(kind), kind == info.kind))
+					// picking the current type again changes nothing (it used to rebuild the profile, #444)
+					if (ImGui::Selectable(KindName(kind), kind == info.kind) && kind != info.kind)
 					{
 						// a newly connected player without a controller gets the one with the same number
 						const int pad = info.pad >= 0 ? info.pad : player;

@@ -5,6 +5,12 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-10-30
+### Xbox app
+- **Dead analog sticks fixed** (GitHub #2): picking a player's controller type or controller again on the Controllers
+  tab (or pairing) left both sticks without a mapping, and that stayed after a restart. Choosing the same type again
+  now changes nothing, and broken profiles get their stick mappings back once at start.
+
 ## 2026-10-28
 ### Games
 - **Zelda BOTW: Magnesis works again** (GitHub #2): metal objects turn yellow and can be grabbed. The cause was the
