@@ -1427,6 +1427,7 @@ namespace
 		{ "query_sync", nullptr },
 		{ "flip_pacing", nullptr },
 		{ "feedback_copy", nullptr },
+		{ "relgpr_off", nullptr }, // #457: opts out of the relgpr_selects default of UWP builds
 	};
 	std::mutex s_abMutex;
 	std::atomic<bool> s_abLoaded{ false };
@@ -1464,6 +1465,11 @@ namespace
 			if (D3D12_UserDataFileExists(fmt::format("{}.txt", kAbWords[i].name).c_str()) || (kAbWords[i].legacyFile && D3D12_UserDataFileExists(kAbWords[i].legacyFile)))
 				mask |= 1u << i;
 		}
+#ifdef CEMU_UWP
+		// #457 tester build: the Xbox driver loses pixel-shader local arrays, so UWP builds lower them by default
+		if ((mask & (1u << 6)) == 0)
+			mask |= 1u << 0;
+#endif
 		s_abMask = mask;
 		s_abLoaded = true;
 		if (!unknown.empty())
@@ -1509,6 +1515,9 @@ void D3D12_AbTitleStart()
 	_AbLoad();
 	const std::string names = D3D12_AbToggleNames(" ");
 	cemuLog_log(LogType::Force, "Magnesis A/B: {}", names.empty() ? "none (baseline)" : names);
+#ifdef CEMU_UWP
+	cemuLog_log(LogType::Force, "Magnesis A/B: relgpr_selects {}", D3D12_AbToggle("relgpr_off") ? "off (relgpr_off)" : "on (default)");
+#endif
 }
 
 // keeps this boot's log: copied to <user>/ablogs/log_<HHMMSS>_<toggles>.txt, log.txt is replaced on the next start
