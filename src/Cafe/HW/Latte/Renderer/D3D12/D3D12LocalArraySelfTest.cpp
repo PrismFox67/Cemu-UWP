@@ -97,6 +97,48 @@ passPixelColor0 = uvec4(a.x, b.x, counter, sel);
 }
 )";
 
+	// #457: the pattern of BOTW's pick shader PS 3220798430eaf1bb. A static slot (its running minimum depth lives in
+	// Ri[1].w) and a counter slot are updated inside the loop that fills a table with dynamic stores to Ri[7+ARi.x], then
+	// all are reloaded. Static slots and table are judged separately, losing Ri[1] would put the scope pin at Link:
+	//   x: running minimum in static slot 1   -> seed - 15
+	//   y: counter in static slot 2           -> 16
+	//   z: sum of the table via dynamic loads -> 0 + 1 + ... + 15 = 120
+	//   w: one table entry via dynamic load   -> 5 * 5 + seed
+	constexpr uint32 kPickExpected[4] = { (uint32)kSeed - 15, 16, 120, 25 + (uint32)kSeed };
+
+	const char* kPickPixelGLSL = R"(#version 430
+layout(push_constant) uniform SelfTestBlock
+{
+	ivec4 c0;
+	ivec4 c1;
+} st;
+layout(location = 0) out uvec4 passPixelColor0;
+void main()
+{
+ivec4 Ri[128];
+for (int i = 0; i < 128; i++)
+	Ri[i] = ivec4(0);
+ivec4 ARi = ivec4(0);
+Ri[1] = ivec4(0, 0, 0, st.c0.w);
+Ri[2] = ivec4(0);
+for (int t = 0; t < st.c0.z; t++)
+{
+	ARi.x = t;
+	Ri[7+ARi.x] = ivec4(t * 5 + st.c0.w, t, 0, 0);
+	Ri[2].x = Ri[2].x + 1;
+	Ri[1].w = min(Ri[1].w, st.c0.w - t);
+}
+int sum = 0;
+for (int t = 0; t < st.c0.z; t++)
+{
+	ARi.y = t;
+	sum += Ri[7+ARi.y].y;
+}
+ARi.z = st.c1.y;
+passPixelColor0 = uvec4(Ri[1].w, Ri[2].x, sum, Ri[7+ARi.z].x);
+}
+)";
+
 	class LocalArraySelfTest
 	{
 	public:
@@ -338,6 +380,26 @@ void D3D12_RunLocalArraySelfTest(ID3D12Device* device, ID3D12CommandQueue* queue
 			cemuLog_log(LogType::Force, "D3D12: PS local-array self-test {}: not run (compiler: {})", glslName, log);
 		else
 			glsl = _RunAndLog(test, glslName.c_str(), vs, ps);
+
+		// #457: the pick shader's pattern through the same path, static slots and table reported separately
+		std::vector<uint8> pickPs;
+		if (vs.empty() || !D3D12ShaderCompiler::CompileGLSL(D3D12Const::Stage::Pixel, kPickPixelGLSL, pickPs, remap, log))
+			cemuLog_log(LogType::Force, "D3D12: PS local-array pick self-test {}: not run (compiler: {})", glslName, log);
+		else
+		{
+			uint32 values[4]{};
+			std::string runError;
+			if (!test.Run(vs, pickPs, values, runError))
+				cemuLog_log(LogType::Force, "D3D12: PS local-array pick self-test {}: not run ({})", glslName, runError);
+			else
+			{
+				const bool staticOk = values[0] == kPickExpected[0] && values[1] == kPickExpected[1];
+				const bool tableOk = values[2] == kPickExpected[2] && values[3] == kPickExpected[3];
+				cemuLog_log(LogType::Force, "D3D12: PS local-array pick self-test {}: static slots {}, table {} ({:x} {} {} {:x}, expected {:x} {} {} {:x})", glslName,
+					staticOk ? "PASS" : "LOST", tableOk ? "PASS" : "LOST", values[0], values[1], values[2], values[3],
+					kPickExpected[0], kPickExpected[1], kPickExpected[2], kPickExpected[3]);
+			}
+		}
 
 		D3D12LocalArrayResult active = glsl;
 		if (active == D3D12LocalArrayResult::NotTested)
