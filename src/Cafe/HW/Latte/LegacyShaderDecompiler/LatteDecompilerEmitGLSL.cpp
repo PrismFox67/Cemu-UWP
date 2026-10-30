@@ -504,6 +504,15 @@ void _emitInstructionOutputVariableName(LatteDecompilerShaderContext* shaderCont
 	else
 	{
 		// output to GPR. Aliasing to PV/PS happens at the end of the group
+		if (aluInstruction->destRel != 0 && shaderContext->lowerIndexedGPRWrites)
+		{
+			// #449 (adapted from danprice142/Cemu-UWP, MPL-2.0, LatteDecompilerEmitGLSL.cpp at b68b069): written to a temporary
+			// first, the register selects follow the instruction (_emitIndexedGPRWrite)
+			src->add("indexedWriteTemp");
+			_appendRegisterTypeSuffix(src, outputDataType);
+			_appendChannelAccess(src, aluInstruction->destElem);
+			return;
+		}
 		src->add(_getRegisterVarName(shaderContext, aluInstruction->destGpr, aluInstruction->destRel==0?-1:aluInstruction->indexMode));
 		_appendChannelAccess(src, aluInstruction->destElem);
 	}
@@ -790,12 +799,17 @@ void _emitCodeToReadRelativeGPR(LatteDecompilerShaderContext* shaderContext, Lat
 	// generated code looks like this:
 	// result = ((lookupIndex==0)?GPR5:(lookupIndex==1)?GPR6:(lookupIndex==2)?GPR7:...:(lookupIndex==122)?GPR127:0)
 	src->add("(");
-	for(sint32 i=gprBaseIndex; i<LATTE_NUM_GPR; i++)
+	// #449 (adapted from danprice142/Cemu-UWP, MPL-2.0): lowered relative writes can reach every declared register below
+	// the allocated count, including ones below the base
+	const bool readAllDeclaredRegisters = shaderContext->lowerIndexedGPRWrites && shaderContext->analyzer.usesRelativeGPRRead;
+	const sint32 firstRegisterIndex = shaderContext->lowerIndexedGPRWrites ? 0 : (sint32)gprBaseIndex;
+	const sint32 lastRegisterIndex = shaderContext->lowerIndexedGPRWrites ? (sint32)shaderContext->indexedGPRLimit : LATTE_NUM_GPR;
+	for(sint32 i=firstRegisterIndex; i<lastRegisterIndex; i++)
 	{
 		// only emit access code for registers which are potentially written
-		if((shaderContext->analyzer.gprUseMask[i / 8] & (1 << (i % 8))) == 0 )
+		if(!readAllDeclaredRegisters && (shaderContext->analyzer.gprUseMask[i / 8] & (1 << (i % 8))) == 0 )
 			continue;
-		src->addFmt("({}=={})?", indexAccessCode, i-gprBaseIndex);
+		src->addFmt("({}=={})?", indexAccessCode, i-(sint32)gprBaseIndex);
 		// code to access gpr
 		uint32 gprIndex = i;
 		src->add(_getRegisterVarName(shaderContext, i));
@@ -1983,6 +1997,39 @@ void _emitGPRVectorAssignment(LatteDecompilerShaderContext* shaderContext, Latte
 	src->add(" = ");
 }
 
+// #449, adapted from danprice142/Cemu-UWP (MPL-2.0, LatteDecompilerEmitGLSL.cpp _emitIndexedGPRWrite at b68b069): stores
+// a relative GPR write from its temporary into the selected register variable. The Xbox driver loses what a pixel shader
+// stores in an indexed register array, selects over plain variables avoid the array. Branch-free: a branch per candidate
+// register stalls the console's shader compiler
+void _emitIndexedGPRWrite(LatteDecompilerShaderContext* shaderContext, LatteDecompilerALUInstruction* aluInstruction)
+{
+	StringBuf* src = shaderContext->shaderSource;
+	sint32 outputDataType = _getALUInstructionOutputDataType(shaderContext, aluInstruction);
+	const char* indexRegister = "ARi.x";
+	if (aluInstruction->indexMode == GPU7_INDEX_AR_Y)
+		indexRegister = "ARi.y";
+	else if (aluInstruction->indexMode == GPU7_INDEX_AR_Z)
+		indexRegister = "ARi.z";
+	else if (aluInstruction->indexMode == GPU7_INDEX_AR_W)
+		indexRegister = "ARi.w";
+	src->addFmt("indexedWriteIndex = {}+{};" _CRLF, aluInstruction->destGpr, indexRegister);
+	for (sint32 i = 0; i < (sint32)shaderContext->indexedGPRLimit; i++)
+	{
+		if (!shaderContext->analyzer.usesRelativeGPRRead && (shaderContext->analyzer.gprUseMask[i / 8] & (1 << (i % 8))) == 0)
+			continue;
+		const std::string target = _getRegisterVarName(shaderContext, i);
+		src->add(target);
+		_appendChannelAccess(src, aluInstruction->destElem);
+		src->addFmt(" = (indexedWriteIndex == {}) ? indexedWriteTemp", i);
+		_appendRegisterTypeSuffix(src, outputDataType);
+		_appendChannelAccess(src, aluInstruction->destElem);
+		src->add(" : ");
+		src->add(target);
+		_appendChannelAccess(src, aluInstruction->destElem);
+		src->add(";" _CRLF);
+	}
+}
+
 void _emitALUClauseCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerCFInstruction* cfInstruction)
 {
 	ALUClauseTemporariesState pvpsState;
@@ -2096,6 +2143,8 @@ void _emitALUClauseCode(LatteDecompilerShaderContext* shaderContext, LatteDecomp
 				cemu_assert_unimplemented();
 			}
 		}
+		if (aluInstruction.destRel != 0 && aluInstruction.writeMask != 0 && shaderContext->lowerIndexedGPRWrites)
+			_emitIndexedGPRWrite(shaderContext, &aluInstruction);
 		// handle result broadcasting for reduction instructions
 		if( isReductionOperation )
 		{
@@ -2130,6 +2179,14 @@ void _emitALUClauseCode(LatteDecompilerShaderContext* shaderContext, LatteDecomp
 					src->add(" = ");
 					_emitInstructionOutputVariableName(shaderContext, aluRedcInstruction[0]);
 					src->add(";" _CRLF);
+				}
+			}
+			if (shaderContext->lowerIndexedGPRWrites)
+			{
+				for (sint32 f = 1; f < 4; f++)
+				{
+					if (aluRedcInstruction[f]->destRel != 0 && aluRedcInstruction[f]->writeMask != 0)
+						_emitIndexedGPRWrite(shaderContext, aluRedcInstruction[f]);
 				}
 			}
 		}
@@ -3924,6 +3981,13 @@ void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext,
 			else if (shaderContext->typeTracker.genFloatReg)
 				src->addFmt("Rf[{}] = vec4(0.0);" _CRLF, i);
 		}
+	}
+	if (shaderContext->lowerIndexedGPRWrites)
+	{
+		// #449: temporaries of the lowered relative GPR writes (_emitIndexedGPRWrite)
+		src->add("ivec4 indexedWriteTempi = ivec4(0);" _CRLF);
+		src->add("vec4 indexedWriteTempf = vec4(0.0);" _CRLF);
+		src->add("int indexedWriteIndex = 0;" _CRLF);
 	}
 
 	if( shader->shaderType == LatteConst::ShaderType::Vertex )

@@ -797,6 +797,10 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 	return shader;
 }
 
+#ifdef ENABLE_D3D12
+bool D3D12_AbToggle(const char* name); // D3D12Renderer.cpp
+#endif
+
 void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteConst::ShaderType shaderType, bool geometryShaderEnabled)
 {
 	options.usesGeometryShader = geometryShaderEnabled;
@@ -811,6 +815,10 @@ void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteCons
 	options.strictMul = g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
 	options.declareAllPSInputs = g_renderer->GetType() == RendererAPI::D3D12;
 	options.flattenV2GInterface = g_renderer->GetType() == RendererAPI::D3D12;
+#ifdef ENABLE_D3D12
+	// #449 Magnesis A/B build: 'relgpr_selects' lowers relative GPR writes to selects (the Xbox driver loses local arrays)
+	options.lowerRelativeGPRWrites = g_renderer->GetType() == RendererAPI::D3D12 && D3D12_AbToggle("relgpr_selects");
+#endif
 }
 
 LatteDecompilerShader* LatteShader_CompileSeparableVertexShader2(uint64 baseHash, uint64& vsAuxHash, uint8* vertexShaderPtr, uint32 vertexShaderSize, bool usesGeometryShader, LatteFetchShader* fetchShader)

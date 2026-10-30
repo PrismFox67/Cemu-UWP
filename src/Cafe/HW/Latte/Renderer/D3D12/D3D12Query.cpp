@@ -199,9 +199,9 @@ LatteQueryObject* D3D12Renderer::occlusionQuery_create()
 		D3D12_ThrowIfFailed(oq.resultBuffer->Map(0, nullptr, &mapped), "Map (query results)");
 		oq.results = (uint64*)mapped;
 		oq.freeIndices.reserve(kOcclusionQueryCount);
-		s_querySyncReads = D3D12_UserDataFileExists("query_sync.txt");
+		s_querySyncReads = D3D12_AbToggle("query_sync"); // query_sync.txt or the word in magnesis_ab.txt (#449)
 		if (s_querySyncReads)
-			cemuLog_log(LogType::Force, "D3D12: query_sync.txt found, occlusion query reads wait for the GPU to go idle");
+			cemuLog_log(LogType::Force, "D3D12: query_sync found, occlusion query reads wait for the GPU to go idle");
 		for (uint32 i = kOcclusionQueryCount; i > 0; i--)
 			oq.freeIndices.push_back(i - 1);
 	}

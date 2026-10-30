@@ -131,7 +131,13 @@ namespace
 
 	// --- DXC ---
 
-	bool _CompileDXC(D3D12Const::Stage stage, const std::string& hlsl, std::vector<uint8>& bytecodeOut, std::string& logOut)
+	// -HV 2018: SPIRV-Cross output targets classic HLSL semantics. -Gis: IEEE strictness
+	const LPCWSTR kDXCArgs[] = { L"-HV", L"2018", L"-Gis", L"-O1", L"-Qstrip_debug", L"-Qstrip_reflect" };
+	// #449 'dxc_o3' (A/B build): the flags of danprice142/Cemu-UWP (MPL-2.0, RendererShaderD3D12.cpp at b68b069), to test
+	// whether they explain why his build kept the Magnesis pick shader's register array working on Xbox
+	const LPCWSTR kDXCArgsO3[] = { L"-HV", L"2021", L"-O3", L"-Qstrip_debug", L"-Qstrip_reflect" };
+
+	bool _CompileDXC(D3D12Const::Stage stage, const std::string& hlsl, std::vector<uint8>& bytecodeOut, std::string& logOut, bool o3)
 	{
 		const wchar_t* target = L"vs_6_0";
 		if (stage == D3D12Const::Stage::Pixel)
@@ -156,10 +162,11 @@ namespace
 			logOut = "IDxcLibrary::CreateBlobWithEncodingFromPinned failed: " + D3D12_HResultToString(hr);
 			return false;
 		}
-		// -HV 2018: SPIRV-Cross output targets classic HLSL semantics. -Gis: IEEE strictness
-		LPCWSTR args[] = { L"-HV", L"2018", L"-Gis", L"-O1", L"-Qstrip_debug", L"-Qstrip_reflect" };
 		ComPtr<IDxcOperationResult> result;
-		hr = compiler->Compile(source.Get(), L"cemu_shader.hlsl", L"main", target, args, (UINT32)std::size(args), nullptr, 0, nullptr, result.GetAddressOf());
+		if (o3)
+			hr = compiler->Compile(source.Get(), L"cemu_shader.hlsl", L"main", target, const_cast<LPCWSTR*>(kDXCArgsO3), (UINT32)std::size(kDXCArgsO3), nullptr, 0, nullptr, result.GetAddressOf());
+		else
+			hr = compiler->Compile(source.Get(), L"cemu_shader.hlsl", L"main", target, const_cast<LPCWSTR*>(kDXCArgs), (UINT32)std::size(kDXCArgs), nullptr, 0, nullptr, result.GetAddressOf());
 		if (FAILED(hr) || !result)
 		{
 			logOut = "IDxcCompiler::Compile failed: " + D3D12_HResultToString(hr);
@@ -365,7 +372,10 @@ bool D3D12ShaderCompiler::Initialize(D3D_SHADER_MODEL highestShaderModel, std::s
 	{
 		cemuLog_log(LogType::Force, "D3D12: Unknown shader compiler \"{}\" in CEMU_D3D12_SHADER_COMPILER, using FXC", requested);
 	}
-	cemuLog_log(LogType::Force, "D3D12: Shader compiler: {}", GetBackendName());
+	if (s_compiler.backend == Backend::DXC)
+		cemuLog_log(LogType::Force, "D3D12: Shader compiler: dxc ({})", UsesDxcO3() ? "-HV 2021 -O3 -Qstrip_debug -Qstrip_reflect, dxc_o3" : "-HV 2018 -Gis -O1 -Qstrip_debug -Qstrip_reflect");
+	else
+		cemuLog_log(LogType::Force, "D3D12: Shader compiler: {}", GetBackendName());
 	return true;
 }
 
@@ -407,8 +417,37 @@ const char* D3D12ShaderCompiler::GetBackendName()
 bool D3D12ShaderCompiler::CompileHLSL(D3D12Const::Stage stage, const std::string& hlslSource, std::vector<uint8>& bytecodeOut, std::string& logOut)
 {
 	if (s_compiler.backend == Backend::DXC)
-		return _CompileDXC(stage, hlslSource, bytecodeOut, logOut);
+		return _CompileDXC(stage, hlslSource, bytecodeOut, logOut, UsesDxcO3());
 	return _CompileFXC(stage, hlslSource, bytecodeOut, logOut);
+}
+
+bool D3D12ShaderCompiler::UsesDxcO3()
+{
+	return s_compiler.backend == Backend::DXC && D3D12_AbToggle("dxc_o3");
+}
+
+std::string D3D12ShaderCompiler::GetCacheName()
+{
+	// the dxc_o3 bytecode differs from the default DXC bytecode for the same shader, it gets its own cache file (#449)
+	return std::string(GetBackendName()) + (UsesDxcO3() ? "_o3" : "");
+}
+
+bool D3D12ShaderCompiler::CompileHLSLVariant(Variant variant, D3D12Const::Stage stage, const std::string& hlslSource, std::vector<uint8>& bytecodeOut, std::string& logOut)
+{
+	if (variant == Variant::FXC)
+		return _CompileFXC(stage, hlslSource, bytecodeOut, logOut);
+	if (!s_compiler.dxcCreateInstance)
+	{
+		// the FXC backend doesn't load DXC, the self-test loads it on demand (freed in Shutdown)
+		if (s_compiler.dxcModule)
+		{
+			logOut = "dxcompiler.dll does not export DxcCreateInstance";
+			return false;
+		}
+		if (!_InitDXC(logOut))
+			return false;
+	}
+	return _CompileDXC(stage, hlslSource, bytecodeOut, logOut, variant == Variant::DXC_O3);
 }
 
 bool D3D12ShaderCompiler::CompileGLSL(D3D12Const::Stage stage, const std::string& glslSource, std::vector<uint8>& bytecodeOut, D3D12BindingRemap& remapOut, std::string& logOut)

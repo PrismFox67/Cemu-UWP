@@ -152,3 +152,22 @@ bool D3D12_Checkpoint(ID3D12Device* device, const char* where);
 void D3D12_ResetRemovalReport();
 // thread with an explicitly reserved large stack (doesn't depend on the executable's default stack size)
 HANDLE D3D12_CreateLargeStackThread(std::function<void()> func);
+
+// diagnostic switch: an (empty) file with this name exists in the user folder
+bool D3D12_UserDataFileExists(const char* fileName);
+// #449 Magnesis A/B build switches (relgpr_selects, dxc_o3, probe_depth, query_sync, flip_pacing, feedback_copy): a
+// word in <user>/magnesis_ab.txt or a file <user>/<word>.txt. Read once per title boot (D3D12Renderer.cpp)
+bool D3D12_AbToggle(const char* name);
+std::string D3D12_AbToggleNames(const char* separator); // active switches, empty for none
+void D3D12_AbTitleStart(); // re-reads the switches and logs 'Magnesis A/B: ...'
+void D3D12_AbTitleStop(); // copies log.txt to <user>/ablogs/log_<HHMMSS>_<switches>.txt
+// #449 D0: does a pixel shader keep what it stores in a local int4 R[128] array? Renders one pixel per compiler variant
+// at renderer creation and logs PASS/LOST (D3D12LocalArraySelfTest.cpp). Never throws
+enum class D3D12LocalArrayResult : uint8
+{
+	NotTested,
+	Pass,
+	Lost,
+};
+void D3D12_RunLocalArraySelfTest(ID3D12Device* device, ID3D12CommandQueue* queue);
+D3D12LocalArrayResult D3D12_GetLocalArraySelfTestResult(); // of the compiler the renderer uses

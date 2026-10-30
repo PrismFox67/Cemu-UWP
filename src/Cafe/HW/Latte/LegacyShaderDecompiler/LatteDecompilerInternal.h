@@ -211,6 +211,9 @@ struct LatteDecompilerShaderContext
 		bool genIntReg; // if set, generate R*i register variables
 		bool useArrayGPRs; // if set, an array is used to represent GPRs instead of individual variables
 	}typeTracker;
+	// #449, from danprice142/Cemu-UWP (MPL-2.0, b68b069): relative GPR writes become selects over register variables
+	bool lowerIndexedGPRWrites{};
+	uint32 indexedGPRLimit{ LATTE_NUM_GPR }; // relative GPR accesses only reach registers below this index
 	// analyzer
 	struct
 	{

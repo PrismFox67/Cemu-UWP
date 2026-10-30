@@ -467,10 +467,10 @@ void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, Rende
 				static uint32 s_copyCheck = 0;
 				if ((s_copyCheck++ % 4096) == 0)
 				{
-					std::error_code ec;
-					const bool on = fs::exists(ActiveSettings::GetUserDataPath("feedback_copy.txt"), ec);
+					// #449: feedback_copy.txt or the word feedback_copy in magnesis_ab.txt
+					const bool on = D3D12_AbToggle("feedback_copy");
 					if (on != s_copyEnabled || s_copyCheck == 1)
-						cemuLog_log(LogType::Force, "D3D12: feedback copies {}", on ? "on (feedback_copy.txt)" : "off, render targets are sampled directly");
+						cemuLog_log(LogType::Force, "D3D12: feedback copies {}", on ? "on (feedback_copy)" : "off, render targets are sampled directly");
 					s_copyEnabled = on;
 				}
 				tableDesc.srv[reg] = s_copyEnabled ? view->GetFeedbackSRV(word4) : view->GetSRV(word4);
@@ -553,6 +553,31 @@ void D3D12Query_CountDraw(bool issued); // D3D12Query.cpp, diagnostic
 // targets, viewport and scissor. Only while the last window's reads were >= 90% zero; each distinct state once per
 // 10 s, at most 8 per window
 bool D3D12Query_MostlyZero(); // D3D12Query.cpp
+// #449 D1: render targets and viewport of BOTW's Magnesis pick shaders (PS 3220798430eaf1bb, 5c9f8f3853f91d4c,
+// 2f2f452e073acb05), at most one line per second
+static void _LogPickDraw(LatteDecompilerShader* vs, LatteDecompilerShader* ps, CachedFBOD3D12* fbo, const D3D12_VIEWPORT& vp, const D3D12_RECT& sc)
+{
+	static auto s_next = std::chrono::steady_clock::time_point{};
+	const auto now = std::chrono::steady_clock::now();
+	if (now < s_next)
+		return;
+	s_next = now + std::chrono::seconds(1);
+	std::string targets;
+	for (uint32 i = 0; i < 3; i++)
+	{
+		LatteTextureViewD3D12* view = fbo ? fbo->GetColorView(i) : nullptr;
+		if (!view || fbo->GetRTVFormat(i) == DXGI_FORMAT_UNKNOWN)
+		{
+			targets += fmt::format(" RT{} none;", i);
+			continue;
+		}
+		LatteTexture* tex = view->baseTexture;
+		targets += fmt::format(" RT{} {:08x} {}x{} fmt {:04x} mip {} slice {};", i, tex->physAddress, tex->width, tex->height, (uint32)tex->format, view->firstMip, view->firstSlice);
+	}
+	cemuLog_log(LogType::Force, "D3D12: pick draw ps {:016x} vs {:016x}:{} viewport {:.0f},{:.0f} {:.0f}x{:.0f} z {:.2f}-{:.2f}, scissor {},{}-{},{}",
+		ps->baseHash, vs->baseHash, targets, vp.TopLeftX, vp.TopLeftY, vp.Width, vp.Height, vp.MinDepth, vp.MaxDepth, sc.left, sc.top, sc.right, sc.bottom);
+}
+
 static void D3D12Query_LogDrawState(LatteDecompilerShader* vs, LatteDecompilerShader* ps, CachedFBOD3D12* fbo, const D3D12_VIEWPORT& vp, const D3D12_RECT& sc, uint32 count, uint32 instances)
 {
 	static auto s_windowStart = std::chrono::steady_clock::now();
@@ -849,10 +874,10 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		static uint32 s_probeCheck = 0;
 		if ((s_probeCheck++ % 600) == 0)
 		{
-			std::error_code ec;
-			const bool on = fs::exists(ActiveSettings::GetUserDataPath("magnesis_probe_depth.txt"), ec);
+			// magnesis_probe_depth.txt, probe_depth.txt or the word probe_depth in magnesis_ab.txt (#449)
+			const bool on = D3D12_AbToggle("probe_depth");
 			if (on != s_probeDepthTest || s_probeCheck == 1)
-				cemuLog_log(LogType::Force, "D3D12: BOTW target probes {}", on ? "use their depth test (magnesis_probe_depth.txt)" : "always pass");
+				cemuLog_log(LogType::Force, "D3D12: BOTW target probes {}", on ? "use their depth test (probe_depth)" : "always pass");
 			s_probeDepthTest = on;
 		}
 		if (!s_probeDepthTest)
@@ -863,6 +888,10 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 			m_state.viewportDirty = true;
 		}
 	}
+
+	// #449 D1: BOTW's Magnesis pick passes, at most once per second
+	if (pixelShader && (pixelShader->baseHash == 0x3220798430eaf1bbull || pixelShader->baseHash == 0x5c9f8f3853f91d4cull || pixelShader->baseHash == 0x2f2f452e073acb05ull))
+		_LogPickDraw(vertexShader, pixelShader, fbo, m_state.viewport, m_state.scissor);
 
 	if (isIndexed)
 		m_cmdList->DrawIndexedInstanced(hostIndexCount, instanceCount, 0, (INT)baseVertex, baseInstance);

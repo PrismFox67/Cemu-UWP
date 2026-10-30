@@ -352,6 +352,7 @@ namespace
 		}
 		LatteOverlay_resetScreenPiPSources();
 		LatteOverlay_setScreenPiP(_LoadOverlaySettings(CafeSystem::GetForegroundTitleId()));
+		HostControllers::LogAllSlots();
 		CafeSystem::LaunchForegroundTitle();
 		s_state = State::Running;
 		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());

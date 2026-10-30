@@ -268,6 +268,9 @@ struct LatteDecompilerOptions
 	// D3D12: pass vertex -> geometry shader parameters as separate variables instead of an interface block. The HLSL
 	// translation (SPIRV-Cross) doesn't support arrays of input blocks in geometry shaders
 	bool flattenV2GInterface{ false };
+	// D3D12 (#449 'relgpr_selects'): relative GPR writes become selects over register variables instead of an indexed
+	// register array. The Xbox driver loses what a pixel shader stores in a local array (BOTW's Magnesis pick shader)
+	bool lowerRelativeGPRWrites{ false };
 	struct
 	{
 		bool hasRoundingModeRTEFloat32{ false };

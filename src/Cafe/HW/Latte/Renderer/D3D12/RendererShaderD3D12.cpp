@@ -2,6 +2,9 @@
 #include "config/ActiveSettings.h"
 #include "Cemu/FileCache/FileCache.h"
 #include "util/helpers/helpers.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderTranslate.h"
+
+#include <fstream>
 
 #include <thread>
 
@@ -31,6 +34,20 @@ namespace
 		sint8 srv[D3D12BindingRemap::kMaxBinding];
 		sint8 uav[D3D12BindingRemap::kMaxBinding];
 	};
+
+	// #449: the key also covers the GLSL, so a codegen change (the relgpr_selects switch, an emitter fix) never loads
+	// bytecode compiled from different source. FNV-1a 64
+	void _MixSourceIntoKey(const std::string& glsl, uint64& h1, uint64& h2)
+	{
+		uint64 hash = 0xcbf29ce484222325ull;
+		for (const char c : glsl)
+		{
+			hash ^= (uint8)c;
+			hash *= 0x100000001b3ull;
+		}
+		h1 ^= hash;
+		h2 ^= (hash << 32) | (hash >> 32);
+	}
 }
 
 class _ShaderD3D12ThreadPool
@@ -136,6 +153,7 @@ bool RendererShaderD3D12::LoadFromCache()
 		return false;
 	uint64 h1, h2;
 	GenerateShaderPrecompiledCacheFilename(m_type, m_baseHash, m_auxHash, h1, h2);
+	_MixSourceIntoKey(m_glslCode, h1, h2);
 	std::vector<uint8> data;
 	if (!s_bytecodeCache->GetFile({ h1, h2 }, data))
 		return false;
@@ -161,6 +179,7 @@ void RendererShaderD3D12::StoreInCache()
 		return;
 	uint64 h1, h2;
 	GenerateShaderPrecompiledCacheFilename(m_type, m_baseHash, m_auxHash, h1, h2);
+	_MixSourceIntoKey(m_glslCode, h1, h2);
 	CacheHeader header{};
 	header.magic = kBytecodeCacheMagic;
 	header.version = kBytecodeCacheVersion;
@@ -177,8 +196,23 @@ void RendererShaderD3D12::StoreInCache()
 	s_bytecodeCache->AddFile({ h1, h2 }, data.data(), (sint32)data.size());
 }
 
+// #449 D1: the SPIRV-Cross HLSL of BOTW's Magnesis pick shaders, next to the GLSL dumps (dump_shaders.txt)
+static void _DumpPickShaderHLSL(D3D12Const::Stage stage, uint64 baseHash, uint64 auxHash, const std::string& glsl)
+{
+	if (!ActiveSettings::DumpShadersEnabled() || stage != D3D12Const::Stage::Pixel)
+		return;
+	if (baseHash != 0x3220798430eaf1bbull && baseHash != 0x5c9f8f3853f91d4cull && baseHash != 0x2f2f452e073acb05ull)
+		return;
+	std::string hlsl, log;
+	D3D12BindingRemap remap;
+	if (!D3D12ShaderTranslate::GLSLToHLSL(stage, glsl, hlsl, remap, log))
+		hlsl = "translation failed: " + log;
+	std::ofstream(ActiveSettings::GetUserDataPath("dump/shaders/{:016x}_{:016x}_ps_hlsl.txt", baseHash, auxHash), std::ios::binary) << hlsl;
+}
+
 void RendererShaderD3D12::CompileInternal()
 {
+	_DumpPickShaderHLSL(GetStage(), m_baseHash, m_auxHash, m_glslCode);
 	if (LoadFromCache())
 	{
 		m_glslCode.clear();
@@ -256,9 +290,10 @@ void RendererShaderD3D12::ShaderCacheLoading_begin(uint64 cacheTitleId)
 		delete s_bytecodeCache;
 		s_bytecodeCache = nullptr;
 	}
-	// bytecode of different compilers is not interchangeable in terms of requirements (DXIL needs shader model 6.0)
+	// bytecode of different compilers is not interchangeable in terms of requirements (DXIL needs shader model 6.0).
+	// dxc_o3 (#449) has its own file: same source, different bytecode
 	const uint32 cacheMagic = GeneratePrecompiledCacheId() ^ kBytecodeCacheVersion;
-	const std::string cacheFilename = fmt::format("{:016x}_d3d12_{}.bin", cacheTitleId, D3D12ShaderCompiler::GetBackendName());
+	const std::string cacheFilename = fmt::format("{:016x}_d3d12_{}.bin", cacheTitleId, D3D12ShaderCompiler::GetCacheName());
 	const fs::path cachePath = ActiveSettings::GetCachePath("shaderCache/precompiled/{}", cacheFilename);
 	s_bytecodeCache = FileCache::Open(cachePath, true, cacheMagic);
 	if (!s_bytecodeCache)

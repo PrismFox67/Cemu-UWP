@@ -99,6 +99,40 @@ void LatteTextureReadback_Initate(LatteTextureView* textureView)
 	sTextureScheduledReadbacks.emplace_back(queueEntry);
 }
 
+// #449 D1 (D3D12): what small readbacks (256x256 or less, BOTW's Magnesis pick result) return to the game: the first 16
+// bytes and the non-zero dword count. At most 4 lines per second
+static void _LogSmallReadback(LatteTextureReadbackInfo* readbackInfo, const uint8* pixelData)
+{
+	const auto& copy = readbackInfo->hostTextureCopy;
+	if (!pixelData || copy.width > 256 || copy.height > 256 || g_renderer->GetType() != RendererAPI::D3D12)
+		return;
+	static auto s_windowStart = std::chrono::steady_clock::now();
+	static uint32 s_lines = 0;
+	const auto now = std::chrono::steady_clock::now();
+	if (now - s_windowStart >= std::chrono::seconds(1))
+	{
+		s_windowStart = now;
+		s_lines = 0;
+	}
+	if (s_lines >= 4)
+		return;
+	s_lines++;
+	const size_t size = readbackInfo->GetImageSize();
+	size_t nonZero = 0;
+	for (size_t i = 0; i + 4 <= size; i += 4)
+	{
+		uint32 v;
+		memcpy(&v, pixelData + i, 4);
+		if (v != 0)
+			nonZero++;
+	}
+	std::string first;
+	for (size_t i = 0; i < std::min<size_t>(16, size); i++)
+		first += fmt::format("{:02x}", pixelData[i]);
+	cemuLog_log(LogType::Force, "Readback {:08x} {}x{} fmt {:04x} pitch {}: first bytes {}, {} of {} dwords non-zero",
+		copy.physAddress, copy.width, copy.height, (uint32)copy.format, readbackInfo->m_rowPitch, first, nonZero, size / 4);
+}
+
 void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 {
 	if (forceFinish)
@@ -145,6 +179,7 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 		}
 #endif
 		uint8* pixelData = readbackInfo->GetData();
+		_LogSmallReadback(readbackInfo, pixelData);
 		LatteTextureLoader_writeReadbackTextureToMemory(&readbackInfo->hostTextureCopy, readbackInfo->m_firstSlice, readbackInfo->m_firstMip, pixelData, readbackInfo->m_rowPitch);
 		readbackInfo->ReleaseData();
 		// get the original texture if it still exists and invalidate the current data hash
