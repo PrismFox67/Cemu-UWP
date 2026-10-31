@@ -401,6 +401,7 @@ namespace
 		s_lastFrame = now;
 		HostControllers::UpdatePairing();
 		HostControllers::UpdateCapture();
+		HostControllers::UpdateJoin();
 		HostGamepad::State pad = HostGamepad::Poll();
 		if (HostControllers::IsCapturing())
 			pad = HostGamepad::State{ pad.connected }; // the press being captured isn't UI input
@@ -898,6 +899,7 @@ namespace
 			HostControllers::UpdatePairing();
 			return;
 		}
+		HostControllers::UpdateJoin();
 
 		// hold View + Menu (Back + Start) for one second to open the menu
 		const bool combo = (pad.buttons & (HostGamepad::kBack | HostGamepad::kStart)) == (HostGamepad::kBack | HostGamepad::kStart);
@@ -1329,6 +1331,21 @@ void HostApp::DrawInGameMenu()
 			ImGui::TextUnformatted("Menu: click both sticks (or hold View + Menu)");
 		ImGui::End();
 		if (hintFont)
+			ImGui::PopFont();
+	}
+	int joinPad = -1, joinPlayer = -1;
+	if (!s_menuOpen && !pairing && HostControllers::GetJoinPrompt(joinPad, joinPlayer))
+	{
+		// #489: same place and style as the menu hint
+		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y - 60.0f * scale), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+		ImGui::SetNextWindowBgAlpha(0.75f);
+		ImFont* joinFont = ImGui_GetFont(24.0f * scale);
+		if (joinFont)
+			ImGui::PushFont(joinFont);
+		if (ImGui::Begin("##joinprompt", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
+			ImGui::Text("Controller %d: press A again to join as player %d", joinPad + 1, joinPlayer + 1);
+		ImGui::End();
+		if (joinFont)
 			ImGui::PopFont();
 	}
 	if (!s_menuOpen && !pairing)
