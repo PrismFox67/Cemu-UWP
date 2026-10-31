@@ -6,6 +6,11 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-10-30
+### Games
+- **Zelda BOTW: Magnesis, Stasis and Sheikah Slate pins now work on Xbox** (GitHub #2): the Xbox graphics driver lost
+  data in one of the shaders BOTW uses to find what the reticle points at, so rune targets never locked on and scope
+  pins landed at Link's feet. That shader is now rewritten into a form the driver handles. Confirmed on Xbox Series X
+  and Series S by testers (build 0.1.139). PC builds are unchanged.
 ### Xbox app
 - **Dead analog sticks fixed** (GitHub #2): picking a player's controller type or controller again on the Controllers
   tab (or pairing) left both sticks without a mapping, and that stayed after a restart. Choosing the same type again
