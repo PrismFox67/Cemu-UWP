@@ -146,6 +146,15 @@ namespace
 	} s_capture;
 	constexpr auto kCaptureTimeout = std::chrono::seconds(5);
 
+	struct
+	{
+		uint32 lastButtons[HostGamepad::kMaxPads]{};
+		int pad = -1;
+		int player = -1;
+		std::chrono::steady_clock::time_point deadline;
+	} s_join;
+	constexpr auto kJoinTimeout = std::chrono::seconds(6);
+
 	void _FinishPairing()
 	{
 		// players that didn't get a controller are disconnected, so the game doesn't see phantom controllers. Not while a
@@ -752,4 +761,54 @@ void HostControllers::UpdatePairing()
 			}
 		}
 	}
+}
+
+void HostControllers::UpdateJoin()
+{
+	const auto now = std::chrono::steady_clock::now();
+	if (s_join.pad >= 0 && now > s_join.deadline)
+		s_join.pad = -1;
+	bool padInUse[HostGamepad::kMaxPads]{};
+	int freePlayer = -1;
+	for (int p = 0; p < kPlayerCount; p++)
+	{
+		const PlayerInfo info = GetPlayer(p);
+		if (info.kind == Kind::None)
+		{
+			if (freePlayer < 0)
+				freePlayer = p;
+		}
+		else if (info.pad >= 0 && info.pad < HostGamepad::kMaxPads)
+			padInUse[info.pad] = true;
+	}
+	for (int i = 0; i < HostGamepad::kMaxPads; i++)
+	{
+		const HostGamepad::State pad = HostGamepad::PollPad(i);
+		const uint32 pressed = pad.buttons & ~s_join.lastButtons[i];
+		s_join.lastButtons[i] = pad.buttons;
+		if (!pad.connected || padInUse[i] || !(pressed & HostGamepad::kA) || IsPairing() || IsCapturing())
+			continue;
+		if (freePlayer < 0)
+			continue;
+		if (s_join.pad == i && s_join.player == freePlayer)
+		{
+			SetPlayer(freePlayer, freePlayer == 0 ? Kind::GamePad : Kind::Pro, i);
+			cemuLog_log(LogType::Force, "Host: controller {} joined as player {}", i + 1, freePlayer + 1);
+			s_join.pad = -1;
+			return;
+		}
+		s_join.pad = i;
+		s_join.player = freePlayer;
+		s_join.deadline = now + kJoinTimeout;
+		cemuLog_log(LogType::Force, "Host: controller {} has no player, asking to join as player {}", i + 1, freePlayer + 1);
+	}
+}
+
+bool HostControllers::GetJoinPrompt(int& pad, int& player)
+{
+	if (s_join.pad < 0 || std::chrono::steady_clock::now() > s_join.deadline)
+		return false;
+	pad = s_join.pad;
+	player = s_join.player;
+	return true;
 }

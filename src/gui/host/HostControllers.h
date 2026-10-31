@@ -84,4 +84,10 @@ namespace HostControllers
 	bool IsPairing();
 	int GetPairingPlayer(); // player waiting for a controller
 	void UpdatePairing();
+
+	// #489: a connected controller that no player uses asks to join when A is pressed on it ('Press A again to join as
+	// player N'), the second A within a few seconds adds it as the next free player. Nothing joins on its own, phantom
+	// players broke BOTW before (#420)
+	void UpdateJoin();
+	bool GetJoinPrompt(int& pad, int& player); // true while a prompt is shown
 }
