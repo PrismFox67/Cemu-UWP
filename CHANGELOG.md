@@ -6,6 +6,11 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-10-30
+### Games
+- **Zelda BOTW: Magnesis, Stasis and Sheikah Slate pins now work on Xbox** (GitHub #2): the Xbox graphics driver lost
+  data in one of the shaders BOTW uses to find what the reticle points at, so rune targets never locked on and scope
+  pins landed at Link's feet. That shader is now rewritten into a form the driver handles. Confirmed on Xbox Series X
+  and Series S by testers (build 0.1.139). PC builds are unchanged.
 ### Xbox app
 - **Dead analog sticks fixed** (GitHub #2): picking a player's controller type or controller again on the Controllers
   tab (or pairing) left both sticks without a mapping, and that stayed after a restart. Choosing the same type again
@@ -16,7 +21,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - **Zelda BOTW: Magnesis works again** (GitHub #2): metal objects turn yellow and can be grabbed. The cause was the
   three Pro Controllers the app connected for players 2-4 even with no controller behind them. Now only player 1 (the
   GamePad) is connected, and the default players 2-4 are switched off once on update. For multiplayer add players with
-  **Pair controllers** in the in-game menu or on the Controllers tab (leave them off in BOTW).
+  **Pair controllers** in the in-game menu or on the Controllers tab (leave them off in BOTW). If you had set player 1 to Pro Controller yourself, it is switched back to the GamePad once:
+  a Pro Controller on player 1 breaks Magnesis too.
 - Games no longer crash when they point a texture at memory that doesn't exist (seen in Sonic Lost World right after the
   title screen on Xbox); the part that exists is used and the rest left blank (only textures with no data at all are skipped), and it is noted
   in the log. Sonic Lost World no longer crashes; whether its title screen background now shows is not confirmed yet.
