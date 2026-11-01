@@ -182,8 +182,10 @@ const char* HostControllers::KindName(Kind kind)
 
 bool HostControllers::IsKindAllowed(int player, Kind kind)
 {
+	// only player 1 can be the GamePad: the core supports two, but hardly any game reads a second one, so player 2 as a
+	// GamePad looked connected and did nothing (Smash, #491)
 	if (kind == Kind::GamePad)
-		return player < (int)InputManager::kMaxVPADControllers;
+		return player == 0;
 	return kind < Kind::Count;
 }
 
@@ -248,6 +250,16 @@ void HostControllers::SetupDefaults()
 			cemuLog_log(LogType::Force, "Host: player 1 was a Pro Controller, now the Wii U GamePad (Pro Controllers break BOTW's Magnesis)");
 		}
 		std::ofstream(player1Marker) << "player 1 was switched to the GamePad once\n";
+	}
+	// earlier builds allowed the GamePad on players 2-4, which most games ignore (#491). Switch those to a Pro Controller
+	// on the same physical controller. Not marked: such a player can't be created any more
+	for (int player = 1; player < kPlayerCount; player++)
+	{
+		const PlayerInfo info = GetPlayer(player);
+		if (info.kind != Kind::GamePad)
+			continue;
+		SetPlayer(player, Kind::Pro, info.pad);
+		cemuLog_log(LogType::Force, "Host: player {} was a second Wii U GamePad, now a Pro Controller (games ignore a second GamePad)", player + 1);
 	}
 	// earlier builds used the positional layout (Xbox B = Wii U A), switch those profiles to matching labels. Only once:
 	// the Nintendo layout preset is the same mapping, and running this on every start reverted it
