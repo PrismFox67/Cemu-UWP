@@ -12,7 +12,7 @@ namespace HostControllers
 	enum class Kind
 	{
 		None,
-		GamePad, // Wii U GamePad (players 1 and 2 only, the Wii U supports two)
+		GamePad, // Wii U GamePad (player 1 only: games ignore a second one, #491)
 		Pro, // Wii U Pro Controller
 		Classic, // Classic Controller
 		Count,
