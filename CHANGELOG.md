@@ -5,6 +5,18 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-01
+### Xbox app
+- **Second controller works in more games** (e.g. Super Smash Bros.): players 2-4 can no longer be a "Wii U GamePad",
+  which almost no game reads, so player 2 looked connected but did nothing. Players 2-4 that were a GamePad become a
+  Pro Controller once, on the same controller.
+
+## 2026-10-31
+### Xbox app
+- **Easier second controller**: press A on a controller that no player uses and the app asks "press A again to join as
+  player 2" (or the next free player); the second A adds it. Controllers still never join on their own. Pair
+  controllers (menu) and the Controllers tab work as before.
+
 ## 2026-10-30
 ### Games
 - **Zelda BOTW: Magnesis, Stasis and Sheikah Slate pins now work on Xbox** (GitHub #2): the Xbox graphics driver lost
