@@ -101,7 +101,8 @@ namespace
 	bool s_launcherIgnoresPad = false; // until all buttons are released, so the A that picked "Exit" doesn't start the game again
 
 	// GamePad overlay (picture-in-picture of the other screen), remembered per title in gamepad_overlay.txt as lines
-	// "<title id hex> <on 0/1> <corner 0-3> <size 0-2> <opacity %>". Titles never set keep it off
+	// "<title id hex> <on 0/1> <position 0-5> <size 0-2> <opacity %>" (positions: 4 corners, center, side by side).
+	// Title id 0 holds the defaults from the launcher settings, for titles that were never set
 	fs::path _OverlaySettingsPath()
 	{
 		return ActiveSettings::GetUserDataPath("gamepad_overlay.txt");
@@ -109,22 +110,24 @@ namespace
 
 	LatteScreenPiP _LoadOverlaySettings(TitleId titleId)
 	{
-		LatteScreenPiP pip;
+		LatteScreenPiP defaults, pip;
+		bool found = false;
 		std::ifstream in(_OverlaySettingsPath());
 		std::string line;
 		while (std::getline(in, line))
 		{
 			unsigned long long id = 0;
 			int on = 0, corner = 3, size = 0, opacity = 100;
-			if (sscanf(line.c_str(), "%llx %d %d %d %d", &id, &on, &corner, &size, &opacity) == 5 && id == titleId)
-			{
-				pip.enabled = on != 0;
-				pip.corner = std::clamp(corner, 0, 3);
-				pip.size = std::clamp(size, 0, 2);
-				pip.opacity = std::clamp(opacity, 10, 100) / 100.0f;
-			}
+			if (sscanf(line.c_str(), "%llx %d %d %d %d", &id, &on, &corner, &size, &opacity) != 5 || (id != titleId && id != 0))
+				continue;
+			LatteScreenPiP& target = id == titleId ? pip : defaults;
+			target.enabled = on != 0;
+			target.corner = std::clamp(corner, 0, LatteScreenPiP::kPositionCount - 1);
+			target.size = std::clamp(size, 0, 2);
+			target.opacity = std::clamp(opacity, 10, 100) / 100.0f;
+			found |= id == titleId;
 		}
-		return pip;
+		return found ? pip : defaults;
 	}
 
 	void _SaveOverlaySettings(TitleId titleId, const LatteScreenPiP& pip)
@@ -155,7 +158,7 @@ namespace
 			pip.enabled = !pip.enabled;
 			break;
 		case kMenuOverlayCorner:
-			pip.corner = (pip.corner + 4 + direction) % 4;
+			pip.corner = (pip.corner + LatteScreenPiP::kPositionCount + direction) % LatteScreenPiP::kPositionCount;
 			break;
 		case kMenuOverlaySize:
 			pip.size = std::clamp(pip.size + direction, 0, 2);
@@ -1301,6 +1304,16 @@ bool HostApp::IsInGameMenuOpen()
 	return s_menuOpen;
 }
 
+LatteScreenPiP HostApp::GetOverlayDefaults()
+{
+	return _LoadOverlaySettings(0);
+}
+
+void HostApp::SetOverlayDefaults(const LatteScreenPiP& pip)
+{
+	_SaveOverlaySettings(0, pip);
+}
+
 void HostApp::DrawInGameMenu()
 {
 	if (s_touchCursor && !s_menuOpen)
@@ -1392,7 +1405,7 @@ void HostApp::DrawInGameMenu()
 		const auto& config = GetConfig();
 		const bool padScreen = LatteGPUState.isDRCPrimary;
 		const LatteScreenPiP pip = LatteOverlay_getScreenPiP();
-		static const char* const kCorners[] = { "Top left", "Top right", "Bottom left", "Bottom right" };
+		static const char* const kCorners[] = { "Top left", "Top right", "Bottom left", "Bottom right", "Center", "Side by side" };
 		static const char* const kSizes[] = { "Small", "Medium", "Large" };
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
@@ -1400,9 +1413,9 @@ void HostApp::DrawInGameMenu()
 			"Pair controllers",
 			std::string("Show screen: ") + (padScreen ? "GamePad" : "TV"),
 			std::string(padScreen ? "TV overlay: " : "GamePad overlay: ") + (pip.enabled ? "On" : "Off"),
-			fmt::format("  Overlay corner: < {} >", kCorners[std::clamp(pip.corner, 0, 3)]),
+			fmt::format("  Overlay position: < {} >", kCorners[std::clamp(pip.corner, 0, LatteScreenPiP::kPositionCount - 1)]),
 			fmt::format("  Overlay size: < {} >", kSizes[std::clamp(pip.size, 0, 2)]),
-			fmt::format("  Overlay opacity: < {}% >", (int)std::lround(pip.opacity * 100.0f)),
+			pip.corner == LatteScreenPiP::kSideBySide ? std::string("  Overlay opacity: 100% (side by side)") : fmt::format("  Overlay opacity: < {}% >", (int)std::lround(pip.opacity * 100.0f)),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
