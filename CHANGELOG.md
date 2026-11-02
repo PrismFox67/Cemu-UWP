@@ -6,6 +6,12 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-02
+### Xbox app
+- **No more stutter when new things appear**: Settings -> Graphics -> New shaders is now **Smooth** by default. Before,
+  the game paused up to 2 seconds whenever it needed a new shader (the Xbox takes ~2.5 s to make each one); now it keeps
+  running and a new effect can pop in a moment late. If you had Balanced saved (the old default), you are moved to
+  Smooth once; pick Balanced or Accurate again in Graphics if you prefer it.
+
 ### Graphic packs
 - **MK8 first-person camera, split screen**: in 2-4 player races each player switches their own view with R3
   (player 1 on the GamePad, players 2-4 on Pro Controllers); before, player 1's R3 changed everyone's camera. Every

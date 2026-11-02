@@ -156,6 +156,9 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	precompile_in_background = graphic.get("PrecompileInBackground", precompile_in_background);
 	frame_interpolation = graphic.get("FrameInterpolation", frame_interpolation);
 	pipeline_wait = graphic.get("PipelineWait", pipeline_wait);
+	// the default changed from Balanced (1) to Smooth (0); a saved Balanced was almost always the old default, move it once
+	if (!graphic.get("PipelineWaitSmoothDefault", false) && pipeline_wait.GetValue() == 1)
+		pipeline_wait = 0;
 	d3d12_shader_compiler = graphic.get("ShaderCompiler", d3d12_shader_compiler);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
 #ifdef ENABLE_METAL
@@ -403,6 +406,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("PrecompileInBackground", precompile_in_background.GetValue());
 	graphic.set("FrameInterpolation", frame_interpolation.GetValue());
 	graphic.set("PipelineWait", pipeline_wait.GetValue());
+	graphic.set("PipelineWaitSmoothDefault", true);
 	graphic.set("ShaderCompiler", d3d12_shader_compiler.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
 
