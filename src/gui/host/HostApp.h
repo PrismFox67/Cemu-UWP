@@ -8,6 +8,7 @@
 // as part of the emulator's overlay rendering.
 
 #include "interface/WindowSystem.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
 
 namespace HostApp
 {
@@ -52,4 +53,7 @@ namespace HostApp
 	bool IsInGameMenuOpen();
 	// drawn on the GPU thread into the emulator's ImGui context, see LatteOverlay
 	void DrawInGameMenu();
+	// GamePad overlay of games that have no setting of their own (launcher settings)
+	LatteScreenPiP GetOverlayDefaults();
+	void SetOverlayDefaults(const LatteScreenPiP& pip);
 }

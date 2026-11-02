@@ -12,7 +12,8 @@ void LatteOverlay_renderHostOverlay(bool pad_view);
 struct LatteScreenPiP
 {
 	bool enabled = false;
-	sint32 corner = 3; // 0 top left, 1 top right, 2 bottom left, 3 bottom right
+	sint32 corner = 3; // position: 0 top left, 1 top right, 2 bottom left, 3 bottom right, 4 center, 5 side by side
+	static constexpr sint32 kCenter = 4, kSideBySide = 5, kPositionCount = 6;
 	sint32 size = 0; // 0 small, 1 medium, 2 large
 	float opacity = 1.0f;
 };
@@ -20,6 +21,10 @@ void LatteOverlay_setScreenPiP(const LatteScreenPiP& pip);
 LatteScreenPiP LatteOverlay_getScreenPiP();
 // height of the overlay as a fraction of the window height
 float LatteOverlay_screenPiPHeight(sint32 size);
+// side by side: the main image is scaled by this and aligned to the left edge, the overlay fills the space to its right
+float LatteOverlay_screenPiPSideBySideScale(sint32 size);
+// where the overlay of a texW x texH screen goes in a fullWidth x fullHeight window
+void LatteOverlay_screenPiPRect(const LatteScreenPiP& pip, sint32 fullWidth, sint32 fullHeight, sint32 texWidth, sint32 texHeight, sint32& x, sint32& y, sint32& width, sint32& height);
 // forget the remembered scan buffers (a new game is starting)
 void LatteOverlay_resetScreenPiPSources();
 

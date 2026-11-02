@@ -1,6 +1,7 @@
 #include "gui/host/HostUI.h"
 #include <imgui_internal.h>
 #include "gui/host/HostPlatform.h"
+#include "gui/host/HostApp.h"
 #include "gui/host/HostControllers.h"
 #include "gui/host/HostGamepad.h"
 #include "gui/host/HostGraphicPacks.h"
@@ -1020,6 +1021,40 @@ namespace
 			}
 		}
 
+		{
+			// defaults for games without their own setting (the in-game menu changes it per game)
+			ImGui::SeparatorText(_TR("GamePad screen overlay"));
+			LatteScreenPiP pip = HostApp::GetOverlayDefaults();
+			bool pipChanged = ImGui::Checkbox(_TR("Show the other screen as an overlay"), &pip.enabled);
+			const char* positions[] = { _TR("Top left"), _TR("Top right"), _TR("Bottom left"), _TR("Bottom right"), _TR("Center (split screen)"), _TR("Side by side") };
+			int position = std::clamp<int>(pip.corner, 0, LatteScreenPiP::kPositionCount - 1);
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::Combo(_TR("Overlay position"), &position, positions, LatteScreenPiP::kPositionCount))
+			{
+				pip.corner = position;
+				pipChanged = true;
+			}
+			const char* sizes[] = { _TR("Small"), _TR("Medium"), _TR("Large") };
+			int size = std::clamp<int>(pip.size, 0, 2);
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::Combo(_TR("Overlay size"), &size, sizes, 3))
+			{
+				pip.size = size;
+				pipChanged = true;
+			}
+			if (pip.corner != LatteScreenPiP::kSideBySide)
+			{
+				int opacity = (int)std::lround(pip.opacity * 100.0f);
+				ImGui::SetNextItemWidth(400.0f * s_scale);
+				if (ImGui::SliderInt(_TR("Overlay opacity"), &opacity, 30, 100, "%d%%"))
+				{
+					pip.opacity = opacity / 100.0f;
+					pipChanged = true;
+				}
+			}
+			if (pipChanged)
+				HostApp::SetOverlayDefaults(pip);
+		}
 		ImGui::SeparatorText(_TR("CPU"));
 		{
 			// the game's own profile (gameProfiles/<title id>.ini) still wins over this

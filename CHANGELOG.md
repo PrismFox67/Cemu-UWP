@@ -10,6 +10,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### Xbox app
 - **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
   (most compatible) or Multi-core recompiler. A game's own profile in `gameProfiles` still wins.
+- **GamePad overlay: two new positions.** "Center" puts it where the lines of a 2/4-player split screen cross; "Side
+  by side" shrinks the TV picture to the left and shows the GamePad screen next to it, nothing covered (size sets how
+  much). The overlay defaults for games without their own setting are now in Settings → GamePad screen overlay.
 
 ## 2026-11-02
 ### Xbox app

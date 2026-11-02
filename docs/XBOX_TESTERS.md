@@ -75,8 +75,10 @@ controllers** in the in-game menu. For Zelda BOTW leave them off: a connected Pr
 
 **In-game menu**: click both sticks, or hold View + Menu for 1 s (a hint says so for a few seconds when a game starts).
 It has: switch to the GamePad screen, a **GamePad overlay** (the GamePad screen small in a corner of the TV image, for
-the MK8 minimap, Splatoon's map, Wind Waker's map; set corner, size and opacity below it with left/right; each game
-remembers its own setting, games you never set keep it off), a **touch cursor** (right stick moves it, RT taps, for games like Super Mario Maker),
+the MK8 minimap, Splatoon's map, Wind Waker's map; set position, size and opacity below it with left/right. Positions:
+the four corners, **Center** (one overlay where the lines of a 2/4-player split screen cross) and **Side by side** (the
+TV image shrinks and moves to the left, the GamePad screen sits next to it without covering anything). Each game
+remembers its own setting; games you never set use the defaults from **Settings → GamePad screen overlay**, off unless you change them), a **touch cursor** (right stick moves it, RT taps, for games like Super Mario Maker),
 the FPS counter, VSync, volume and player 1's stick deadzone (left/right changes them, they apply right away), and exit
 to the game list.
 **Motion controls** (gyro puzzles, e.g. BOTW shrines): in the in-game menu set **Motion: On**. The right stick then tilts
