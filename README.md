@@ -9,7 +9,7 @@ On a Series X it runs **Mario Kart 8 at 1440p or 4K, locked at 60 FPS**, with 4 
 
 ### Download
 ![Xbox app downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FPrismFox67%2FCemu-UWP%2Freleases%2Fdownload%2Fdownload-stats%2Ftotals.json&query=%24.xbox&label=Xbox%20app%20downloads&color=107c10&cacheSeconds=3600)
-(all builds since 10/19/2026; the number is kept across builds, GitHub's own counter resets on every new build)
+(all builds since 2026-10-19; the number is kept across builds, GitHub's own counter resets on every new build)
 
 Everything is on the **[ci-latest pre-release](https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest)**, rebuilt
 on every change:
@@ -25,10 +25,11 @@ on every change:
 Games players have tested on Xbox Series X|S; the **[compatibility list](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md)**
 has the resolution, FPS and notes for each one.
 - **Perfect:** Mario Tennis: Ultra Smash, New Super Mario Bros. U
-- **Playable:** Mario Kart 8, Pokkén Tournament, Super Smash Bros. for Wii U, The Legend of Zelda: Wind Waker HD
-- **Issues:** The Legend of Zelda: Breath of the Wild (Magnesis can't pick things up yet, blocky shadows), Super Mario
-  3D World (graphical bugs), Splatoon
-- **Broken:** Need for Speed: Most Wanted U (closes after the intro video)
+- **Playable:** Mario Kart 8, Pokkén Tournament, Super Smash Bros. for Wii U, The Legend of Zelda: Breath of the Wild
+  (Magnesis and Stasis work; dark terrain patches), The Legend of Zelda: Wind Waker HD
+- **Issues:** Donkey Kong Country: Tropical Freeze and Zelda: Twilight Princess HD (shadows), Sonic Lost World (crashes
+  in some stages), Super Mario 3D World (graphical bugs), Splatoon
+- **Broken:** Need for Speed: Most Wanted U (closes after the intro video), Mario Kart DS (Wii U Virtual Console)
 
 Tried a game that isn't listed? Tell us how it went with the bug report form in the
 [issues](https://github.com/PrismFox67/Cemu-UWP/issues) (it works for "it runs fine" reports too), and say which build
