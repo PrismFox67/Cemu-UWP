@@ -5,6 +5,12 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-02
+### Xbox app
+- **GamePad overlay: two new positions.** "Center" puts it where the lines of a 2/4-player split screen cross; "Side
+  by side" shrinks the TV picture to the left and shows the GamePad screen next to it, nothing covered (size sets how
+  much). The overlay defaults for games without their own setting are now in Settings → GamePad screen overlay.
+
 ## 2026-11-01
 ### Xbox app
 - **Second controller works in more games** (e.g. Super Smash Bros.): players 2-4 can no longer be a "Wii U GamePad",

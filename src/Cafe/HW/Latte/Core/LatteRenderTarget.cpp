@@ -857,6 +857,20 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 
 	*x = (w - scaledOutputX) / 2;
 	*y = (h - scaledOutputY) / 2;
+	// GamePad overlay side by side: the main window's image shrinks and moves to the left edge, the overlay goes right
+	// of it. Touch mapping and the touch cursor use this area too, so they follow
+	if (!(padView && WindowSystem::IsPadWindowOpen()))
+	{
+		const LatteScreenPiP pip = LatteOverlay_getScreenPiP();
+		if (pip.enabled && pip.corner == LatteScreenPiP::kSideBySide)
+		{
+			const float scale = LatteOverlay_screenPiPSideBySideScale(pip.size);
+			scaledOutputX = (sint32)(scaledOutputX * scale);
+			scaledOutputY = (sint32)(scaledOutputY * scale);
+			*x = 0;
+			*y = (h - scaledOutputY) / 2;
+		}
+	}
 	*width = scaledOutputX;
 	*height = scaledOutputY;
 	if (fullWidth)
@@ -881,6 +895,12 @@ namespace
 	ScanBufferSource s_scanSource[2]; // 0 TV, 1 GamePad
 	std::atomic_bool s_scanSourceReset = false;
 
+	// side by side never overlaps the main image, so it is always opaque
+	float _PiPOpacity(const LatteScreenPiP& pip)
+	{
+		return pip.corner == LatteScreenPiP::kSideBySide ? 1.0f : std::clamp(pip.opacity, 0.1f, 1.0f);
+	}
+
 	void _DrawScreenPiP(LatteTextureView* pipView, sint32 fullWidth, sint32 fullHeight, const LatteScreenPiP& pip)
 	{
 		LatteTexture_UpdateDataToLatest(pipView->baseTexture);
@@ -889,13 +909,10 @@ namespace
 		pipView->baseTexture->GetEffectiveSize(texWidth, texHeight, 0);
 		if (texWidth <= 0 || texHeight <= 0 || fullHeight <= 0)
 			return;
-		const sint32 height = std::max<sint32>((sint32)(fullHeight * LatteOverlay_screenPiPHeight(pip.size)), 16);
-		const sint32 width = height * texWidth / texHeight;
-		const sint32 margin = fullHeight * 4 / 100; // inside the title-safe area
-		const sint32 x = (pip.corner & 1) ? fullWidth - margin - width : margin;
-		const sint32 y = (pip.corner & 2) ? fullHeight - margin - height : margin;
+		sint32 x, y, width, height;
+		LatteOverlay_screenPiPRect(pip, fullWidth, fullHeight, texWidth, texHeight, x, y, width, height);
 		RendererOutputShader* shader = ActiveSettings::RenderUpsideDownEnabled() ? RendererOutputShader::s_copy_shader_ud : RendererOutputShader::s_copy_shader;
-		g_renderer->SetBackbufferQuadOpacity(std::clamp(pip.opacity, 0.1f, 1.0f));
+		g_renderer->SetBackbufferQuadOpacity(_PiPOpacity(pip));
 		g_renderer->DrawBackbufferQuad(pipView, shader, true, x, y, width, height, false, false);
 		g_renderer->SetBackbufferQuadOpacity(1.0f);
 	}
@@ -906,14 +923,12 @@ namespace
 		pipView->baseTexture->GetEffectiveSize(texWidth, texHeight, 0);
 		if (texWidth <= 0 || texHeight <= 0)
 			return;
-		const sint32 height = std::max<sint32>((sint32)(fullHeight * LatteOverlay_screenPiPHeight(pip.size)), 16);
-		const sint32 width = height * texWidth / texHeight;
-		const sint32 margin = fullHeight * 4 / 100;
-		const float x = (float)((pip.corner & 1) ? fullWidth - margin - width : margin);
-		const float y = (float)((pip.corner & 2) ? fullHeight - margin - height : margin);
+		sint32 ix, iy, width, height;
+		LatteOverlay_screenPiPRect(pip, fullWidth, fullHeight, texWidth, texHeight, ix, iy, width, height);
+		const float x = (float)ix, y = (float)iy;
 		const float t = std::max(2.0f, fullHeight / 540.0f);
 		ImGui::GetBackgroundDrawList()->AddRect(ImVec2(x - t * 0.5f, y - t * 0.5f), ImVec2(x + width + t * 0.5f, y + height + t * 0.5f),
-			IM_COL32(10, 10, 10, (int)(220 * std::clamp(pip.opacity, 0.1f, 1.0f))), 0.0f, 0, t);
+			IM_COL32(10, 10, 10, (int)(220 * _PiPOpacity(pip))), 0.0f, 0, t);
 	}
 }
 
@@ -934,6 +949,49 @@ float LatteOverlay_screenPiPHeight(sint32 size)
 	// small is about the footprint of MK8's item box / coin counter
 	static constexpr float kHeights[] = { 0.18f, 0.25f, 0.33f };
 	return kHeights[std::clamp<sint32>(size, 0, 2)];
+}
+
+float LatteOverlay_screenPiPSideBySideScale(sint32 size)
+{
+	// the overlay gets the remaining 20/28/36% of the width; a 16:9 GamePad image there never reaches the main image
+	static constexpr float kScales[] = { 0.80f, 0.72f, 0.64f };
+	return kScales[std::clamp<sint32>(size, 0, 2)];
+}
+
+void LatteOverlay_screenPiPRect(const LatteScreenPiP& pip, sint32 fullWidth, sint32 fullHeight, sint32 texWidth, sint32 texHeight, sint32& x, sint32& y, sint32& width, sint32& height)
+{
+	texWidth = std::max(texWidth, 1);
+	texHeight = std::max(texHeight, 1);
+	const sint32 margin = fullHeight * 4 / 100; // inside the title-safe area
+	if (pip.corner == LatteScreenPiP::kSideBySide)
+	{
+		// the space right of the main image (see LatteRenderTarget_getScreenImageArea), vertically centred
+		sint32 mainX, mainY, mainWidth, mainHeight;
+		LatteRenderTarget_getScreenImageArea(&mainX, &mainY, &mainWidth, &mainHeight, nullptr, nullptr, false);
+		const sint32 left = mainX + mainWidth;
+		const sint32 gap = std::max<sint32>(fullWidth / 100, 2);
+		width = std::max<sint32>(fullWidth - left - 2 * gap, 16);
+		height = width * texHeight / texWidth;
+		if (height > fullHeight)
+		{
+			height = fullHeight;
+			width = height * texWidth / texHeight;
+		}
+		x = left + gap;
+		y = (fullHeight - height) / 2;
+		return;
+	}
+	height = std::max<sint32>((sint32)(fullHeight * LatteOverlay_screenPiPHeight(pip.size)), 16);
+	width = height * texWidth / texHeight;
+	if (pip.corner == LatteScreenPiP::kCenter)
+	{
+		// where the split lines of a 2/4 player split screen cross
+		x = (fullWidth - width) / 2;
+		y = (fullHeight - height) / 2;
+		return;
+	}
+	x = (pip.corner & 1) ? fullWidth - margin - width : margin;
+	y = (pip.corner & 2) ? fullHeight - margin - height : margin;
 }
 
 void LatteOverlay_resetScreenPiPSources()
