@@ -5,6 +5,14 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-02
+### Graphic packs
+- **MK8 first-person camera, split screen**: in 2-4 player races each player switches their own view with R3
+  (player 1 on the GamePad, players 2-4 on Pro Controllers); before, player 1's R3 changed everyone's camera. Every
+  player's head is hidden, so no moustache in view. Big drivers (Bowser, Dry Bowser, DK, Wario, Waluigi, Tanooki
+  Mario) are now detected automatically, no separate preset needed. Downhill sections now tilt the view as intended.
+  Known: bikes and ATVs still put the eye in a bad spot for some drivers (being worked on).
+
 ## 2026-11-01
 ### Xbox app
 - **Second controller works in more games** (e.g. Super Smash Bros.): players 2-4 can no longer be a "Wii U GamePad",
