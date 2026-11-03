@@ -5,6 +5,12 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-03
+
+### Xbox app
+- **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
+  (most compatible) or Multi-core recompiler. A game's own profile in `gameProfiles` still wins.
+
 ## 2026-11-02
 ### Xbox app
 - **No more stutter when new things appear**: Settings -> Graphics -> New shaders is now **Smooth** by default. Before,

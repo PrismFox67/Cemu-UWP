@@ -32,6 +32,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	play_boot_sound = parser.get("play_boot_sound", play_boot_sound);
 	console_language = parser.get("console_language", console_language.GetInitValue());
 	console_region = parser.get("console_region", console_region.GetInitValue());
+	cpu_mode = parser.get("cpu_mode", cpu_mode.GetInitValue());
 	host_ui_language = parser.get("host_ui_language", "");
 	host_keys_path = parser.get("host_keys_path", "");
 	host_box_art = parser.get("host_box_art", true);
@@ -322,7 +323,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set<bool>("disable_screensaver", disable_screensaver);
 	config.set<bool>("play_boot_sound", play_boot_sound);
 
-	// config.set("cpu_mode", cpu_mode.GetValue());
+	config.set("cpu_mode", cpu_mode.GetValue());
 	config.set("console_region", console_region.GetValue());
 	config.set("host_ui_language", host_ui_language.GetValue().c_str());
 	config.set("host_keys_path", host_keys_path.GetValue().c_str());
