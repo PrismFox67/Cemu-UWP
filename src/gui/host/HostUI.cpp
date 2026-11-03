@@ -1020,6 +1020,22 @@ namespace
 			}
 		}
 
+		ImGui::SeparatorText(_TR("CPU"));
+		{
+			// the game's own profile (gameProfiles/<title id>.ini) still wins over this
+			static const CPUMode cpuModes[] = { CPUMode::Auto, CPUMode::SinglecoreRecompiler, CPUMode::MulticoreRecompiler };
+			const char* cpuModeNames[] = { _TR("Automatic (multi-core with 4+ cores)"), _TR("Single-core recompiler (most compatible)"), _TR("Multi-core recompiler (faster)") };
+			int cpuMode = 0;
+			for (int i = 0; i < 3; i++)
+				if (config.cpu_mode.GetValue() == cpuModes[i])
+					cpuMode = i;
+			ImGui::SetNextItemWidth(620.0f * s_scale);
+			if (ImGui::Combo(_TR("CPU mode"), &cpuMode, cpuModeNames, 3))
+			{
+				config.cpu_mode = cpuModes[cpuMode];
+				changed = true;
+			}
+		}
 		ImGui::SeparatorText(_TR("Graphics"));
 		bool vsync = config.vsync.GetValue() != 0;
 		if (ImGui::Checkbox("VSync", &vsync))
