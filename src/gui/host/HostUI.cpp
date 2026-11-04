@@ -1201,6 +1201,10 @@ namespace
 			ImGui::TextUnformatted(_TR("keys.txt file"));
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
 			const bool entered = ImGui::InputTextWithHint("##keyspath", _TR("path to keys.txt or its folder, e.g. E:\\keys.txt"), s_keysPathBuffer, sizeof(s_keysPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			if (ImGui::IsItemActivated())
+				HostPlatform::ShowTextInput(true);
+			if (ImGui::IsItemDeactivated())
+				HostPlatform::ShowTextInput(false);
 			ImGui::SameLine();
 			if (ImGui::Button(_TR("Set and import")) || entered)
 			{
@@ -1237,6 +1241,10 @@ namespace
 			ImGui::TextDisabled(_TR("(mlc01: saves, installed updates and DLC; empty = Cemu's own storage)"));
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
 			const bool entered = ImGui::InputTextWithHint("##savefolder", _TR("a folder on your USB drive, e.g. E:\\CemuSaves"), s_saveFolderBuffer, sizeof(s_saveFolderBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			if (ImGui::IsItemActivated())
+				HostPlatform::ShowTextInput(true);
+			if (ImGui::IsItemDeactivated())
+				HostPlatform::ShowTextInput(false);
 			ImGui::SameLine();
 			if ((ImGui::Button(_TR("Set save folder")) || entered) && !HostTools::IsBusy())
 			{
