@@ -7,9 +7,13 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-04
 ### D3D12
+<<<<<<< HEAD
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
 ### Games
 - Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
+=======
+- **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
+>>>>>>> 37648609 (D3D12 Smooth (#573, GitHub #9 pop-in): on a pipeline miss that isn't waited for, a ready pipeline with the same substitute key (shaders, fetch layout, topology, index type, RT/DS formats, CB_TARGET_MASK, blend enables, DB_DEPTH_CONTROL stencil/z/zwrite enables; up to 4 per key) draws instead of skipping; first 32 logged 'D3D12: substitute pipeline ...'. Never for one-off targets/occlusion queries (they wait, as before), and stream-out draws (VGT_STRMOUT_EN) now count as must-wait too. Idea from danprice142/Cemu-UWP 0.2.7.2. PC host BOTW (Tabantha save, Smooth): 23 substitutions logged, renders normally, no crash (Logs/Agents/cemu/botw577/botw577_subst_2.png). CHANGELOG.)
 
 ## 2026-11-03
 ### Games

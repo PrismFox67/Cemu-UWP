@@ -1366,6 +1366,7 @@ void D3D12PipelineCache::Clear()
 		if (it.second->isValid())
 			m_renderer->ReleaseObjectDeferred(it.second->pso);
 	m_pipelines.clear();
+	m_substitutes.clear();
 	for (auto& it : m_internalPipelines)
 		m_renderer->ReleaseObjectDeferred(it.second);
 	m_internalPipelines.clear();
@@ -1476,6 +1477,9 @@ static bool IsLikelyOneOffTarget(CachedFBOD3D12* fbo)
 	// hidden (BOTW's Magnesis/Stasis targeting, #71)
 	if (LatteQuery_IsOcclusionQueryActive())
 		return true;
+	// stream-out writes vertex data the game reads back (particles, skinning): a skipped draw loses it (#573)
+	if (LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0)
+		return true;
 	if (!fbo)
 		return false;
 	if ((sint64)fbo->m_size.x * fbo->m_size.y <= 256 * 256)
@@ -1489,6 +1493,52 @@ static bool IsLikelyOneOffTarget(CachedFBOD3D12* fbo)
 			return true;
 	}
 	return false;
+}
+
+// Pipelines that can stand in for each other for a few frames in Smooth mode (#573): same shaders, vertex layout,
+// topology, render target formats, write masks, blend enables and depth/stencil enables. What may differ: blend factors,
+// depth/stencil functions, cull mode, depth bias. Idea from danprice142/Cemu-UWP 0.2.7.2
+static uint64 _SubstituteKey(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vs, const LatteDecompilerShader* gs, const LatteDecompilerShader* ps,
+	const CachedFBOD3D12* fbo, const LatteContextRegister& lcr, Renderer::INDEX_TYPE indexType)
+{
+	const uint32* ctxRegister = lcr.GetRawView();
+	uint64 h = 0x9e3779b97f4a7c15ull;
+	auto mix = [&h](uint64 v) { h = (h ^ v) * 0x100000001b3ull; h = std::rotl<uint64>(h, 17); };
+	auto shaderId = [](const LatteDecompilerShader* s) -> uint64 {
+		return (s && s->shader) ? static_cast<RendererShaderD3D12*>(s->shader)->GetUniqueId() : 0;
+	};
+	mix(fetchShader->key);
+	mix(fetchShader->getVkPipelineHashFragment());
+	mix(shaderId(vs));
+	mix(shaderId(gs));
+	mix(shaderId(ps));
+	mix(ctxRegister[mmVGT_PRIMITIVE_TYPE]);
+	mix((uint64)indexType);
+	mix(fbo->GetFormatHash());
+	mix(ctxRegister[Latte::REGADDR::CB_TARGET_MASK]);
+	mix((ctxRegister[Latte::REGADDR::CB_COLOR_CONTROL] >> 8) & 0xFF); // blend enable per target
+	mix(ctxRegister[Latte::REGADDR::DB_DEPTH_CONTROL] & 7); // stencil, depth test, depth write enable
+	return h;
+}
+
+D3D12PipelineInfo* D3D12PipelineCache::FindSubstitute(uint64 substituteKey)
+{
+	auto it = m_substitutes.find(substituteKey);
+	if (it == m_substitutes.end())
+		return nullptr;
+	for (auto& candidate : it->second)
+	{
+		if (!candidate->isValid())
+			continue;
+		static uint32 s_logged = 0;
+		if (s_logged < 32)
+		{
+			s_logged++;
+			cemuLog_log(LogType::Force, "D3D12: substitute pipeline while the exact one is created (Smooth)");
+		}
+		return candidate.get();
+	}
+	return nullptr;
 }
 
 D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetchShader, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader,
@@ -1535,6 +1585,12 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 	job->diskCache = m_diskCache;
 	D3D12PipelineInfo* result = job->info.get();
 	m_pipelines.emplace(hash, job->info);
+	const uint64 substituteKey = _SubstituteKey(fetchShader, vertexShader, geometryShader, pixelShader, fbo, lcr, indexType);
+	{
+		auto& candidates = m_substitutes[substituteKey];
+		if (candidates.size() < 4)
+			candidates.push_back(job->info);
+	}
 	if (!PreparePipeline(fetchShader, vertexShader, geometryShader, pixelShader, fbo, lcr, indexType, *job))
 	{
 		result->isReady.store(true, std::memory_order_release); // stays invalid, the draws are skipped
@@ -1583,7 +1639,13 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		const bool ready = m_compileQueue->WaitForReady(result, timeout);
 		m_waitedInWindow += std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
 		if (!ready)
+		{
 			g_compiling_pipelines_async++;
+			// Smooth: draw with a near-identical ready pipeline instead of skipping the draw (less pop-in)
+			if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
+				if (D3D12PipelineInfo* substitute = FindSubstitute(substituteKey))
+					return substitute;
+		}
 	}
 	else
 		job->Run();
