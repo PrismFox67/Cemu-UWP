@@ -29,6 +29,7 @@
 #include <winrt/Windows.System.Profile.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Input.h>
+#include <winrt/Windows.UI.Text.Core.h>
 #include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.ViewManagement.Core.h>
 #include <winrt/Windows.Storage.Streams.h>
@@ -53,6 +54,47 @@ namespace
 	bool s_activated = false;
 	bool s_isXbox = false;
 	fs::path s_activationLaunchPath;
+
+	// GitHub #12: on Xbox the on-screen keyboard only opens for a focused text edit context, CoreInputView::TryShow alone
+	// does nothing with a controller; the context reports an empty document and forwards typed text to ImGui
+	winrt::Windows::UI::Text::Core::CoreTextEditContext s_editContext{ nullptr };
+
+	void _CreateEditContext()
+	{
+		using namespace winrt::Windows::UI::Text::Core;
+		try
+		{
+			s_editContext = CoreTextServicesManager::GetForCurrentView().CreateEditContext();
+			s_editContext.InputScope(CoreTextInputScope::Text);
+			s_editContext.InputPaneDisplayPolicy(CoreTextInputPaneDisplayPolicy::Manual);
+			s_editContext.TextRequested([](const CoreTextEditContext&, const CoreTextTextRequestedEventArgs& args) {
+				args.Request().Text(L"");
+			});
+			s_editContext.SelectionRequested([](const CoreTextEditContext&, const CoreTextSelectionRequestedEventArgs& args) {
+				args.Request().Selection(CoreTextRange{ 0, 0 });
+			});
+			s_editContext.TextUpdating([](const CoreTextEditContext& context, const CoreTextTextUpdatingEventArgs& args) {
+				const std::wstring text(args.Text());
+				for (size_t i = 0; i < text.size(); i++)
+				{
+					uint32 c = text[i];
+					if (c >= 0xD800 && c < 0xDC00 && i + 1 < text.size())
+					{
+						c = 0x10000 + ((c - 0xD800) << 10) + (text[i + 1] - 0xDC00);
+						i++;
+					}
+					if (c >= 32 && c != 127)
+						HostApp::OnChar(c);
+				}
+				// the document stays empty, so the keyboard sends new text instead of editing what it sent before
+				context.NotifyTextChanged(CoreTextRange{ 0, 0 }, 0, CoreTextRange{ 0, 0 });
+			});
+		}
+		catch (...)
+		{
+			s_editContext = nullptr;
+		}
+	}
 
 	fs::path _ToPath(const winrt::hstring& s)
 	{
@@ -421,11 +463,22 @@ void HostPlatform::ShowTextInput(bool show)
 {
 	try
 	{
+		if (!s_editContext)
+			_CreateEditContext();
 		auto inputView = winrt::Windows::UI::ViewManagement::Core::CoreInputView::GetForCurrentView();
 		if (show)
-			inputView.TryShow(winrt::Windows::UI::ViewManagement::Core::CoreInputViewKind::Keyboard);
+		{
+			if (s_editContext)
+				s_editContext.NotifyFocusEnter();
+			const bool shown = inputView.TryShow(winrt::Windows::UI::ViewManagement::Core::CoreInputViewKind::Keyboard);
+			cemuLog_log(LogType::Force, "Host: on-screen keyboard {}", shown ? "shown" : "not shown");
+		}
 		else
+		{
 			inputView.TryHide();
+			if (s_editContext)
+				s_editContext.NotifyFocusLeave();
+		}
 	}
 	catch (...)
 	{
