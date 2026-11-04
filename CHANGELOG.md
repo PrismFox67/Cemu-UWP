@@ -41,6 +41,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-03
 ### Games
 - Breath of the Wild: missing or flickering short grass (vertex data past the size the emulator computed read as 0). Adapted from Dushe22/Cemu-UWP.
+- Breath of the Wild: when memory gets tight, the large terrain textures stay loaded while they were used in the last ~2 minutes instead of being reloaded slice by slice. Adapted from Dushe22/Cemu-UWP.
 
 ### Xbox app
 - **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
