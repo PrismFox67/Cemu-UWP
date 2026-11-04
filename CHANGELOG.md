@@ -8,6 +8,14 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-04
 ### D3D12
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
+- **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
+### Games
+- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
+### Xbox app
+- **Quick start is on by default** (Settings, pipelines): the loading screen only creates the pipelines the menus and the start of play needed last time, the rest are created in the background while you play. Turned on once for existing settings; turn it off again if you prefer the full wait.
+- **Save folder: "Use Cemu's own storage" button** next to Set save folder, so you can go back without typing (GitHub #12).
+- Smoother under memory pressure: preloaded pipelines that no draw has used yet are released when memory runs low, and the
+  graphics thread runs at a higher priority than the emulated CPU threads.
 
 ## 2026-11-03
 ### Games
