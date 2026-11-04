@@ -1254,6 +1254,16 @@ namespace
 					s_deferred.emplace_back([path]() { HostTools::StartSetSaveFolder(path); });
 				});
 			}
+			// GitHub #12: a visible way back, same as clearing the box and pressing Set save folder
+			if (!config.mlc_path.GetValue().empty())
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(_TR("Use Cemu's own storage")) && !HostTools::IsBusy())
+				{
+					s_saveFolderBuffer[0] = 0;
+					s_deferred.emplace_back([]() { HostTools::StartSetSaveFolder({}); });
+				}
+			}
 			if (HostTools::IsSaveFolderMissing())
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", _TR("The save folder's drive wasn't found at start, this session uses Cemu's own storage."));
 			ImGui::TextWrapped("mlc01 in use: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
