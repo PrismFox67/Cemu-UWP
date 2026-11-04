@@ -2301,7 +2301,10 @@ void D3D12Renderer::buffer_bindVertexBuffers(std::span<BindBufferParam> bindings
 		cemu_assert_debug(b.index < LATTE_MAX_VERTEX_BUFFERS);
 		D3D12_VERTEX_BUFFER_VIEW view;
 		view.BufferLocation = base + b.bindOffset;
-		view.SizeInBytes = std::min<uint32>(b.bindSize, m_bufferCacheSize - b.bindOffset);
+		// to the end of the buffer cache like Vulkan (VK_WHOLE_SIZE): games fetch past the size the core computes, and the
+		// IA returns 0 for those (missing/flickering short grass in BOTW; adapted from Dushe22/Cemu-UWP and
+		// danprice142/Cemu-UWP, MPL-2.0)
+		view.SizeInBytes = m_bufferCacheSize - b.bindOffset;
 		view.StrideInBytes = b.stride;
 		if (b.stride % 4 != 0)
 		{
