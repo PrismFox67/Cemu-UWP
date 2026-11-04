@@ -2,7 +2,7 @@
 titleIds = 000500001010ec00,000500001010ed00,000500001010eb00
 name = First person camera
 path = "Mario Kart 8/Mods/First Person Camera"
-description = First person driving camera (game version 4.2). Click the RIGHT STICK (R3) during a race to cycle: cockpit (hands on the wheel) > first person without the kart > normal camera. The preset picks the cockpit view. Looking back still works. Split screen (2-4 players): each player switches their own view with R3 - player 1 on the GamePad, players 2-4 on Pro Controllers.|Big drivers (Bowser, Dry Bowser, DK, Wario, Waluigi) are detected automatically: their driver is hidden and the wheel stays. The "Cockpit, big drivers" view is only a fallback.
+description = First person driving camera (game version 4.2). Click the RIGHT STICK (R3) during a race to cycle: cockpit (hands on the wheel) > first person without the kart > normal camera. The preset picks the cockpit view. Looking back still works. Split screen (2-4 players): each player switches their own view with R3 - player 1 on the GamePad, players 2-4 on Pro Controllers.|Big drivers (Bowser, Dry Bowser, DK, Wario, Waluigi) are detected automatically: their driver is hidden and the wheel stays. The "Cockpit, big drivers" view is only a fallback.|Known issue: on the Master Cycle and Bone Rattler the cockpit view is blocked by the bike's own body - press R3 once to use first person without the kart on those two.
 version = 7
 
 [Default]
