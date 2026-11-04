@@ -13,6 +13,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### Games
 - Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
 ### Xbox app
+- **Save logs / Back up saves to USB work without a game folder**: if your games are installed instead of in a game folder, Cemu now finds the USB drive by itself (GitHub #12).
 - **Quick start is on by default** (Settings, pipelines): the loading screen only creates the pipelines the menus and the start of play needed last time, the rest are created in the background while you play. Turned on once for existing settings; turn it off again if you prefer the full wait.
 - **Save folder: "Use Cemu's own storage" button** next to Set save folder, so you can go back without typing (GitHub #12).
 - Smoother under memory pressure: preloaded pipelines that no draw has used yet are released when memory runs low, and the
