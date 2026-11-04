@@ -12,6 +12,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/nn_nfp/nn_nfp.h"
 #include "Cafe/OS/libs/nsyshid/Skylander.h"
+#include "Cafe/OS/libs/nsyshid/Dimensions.h"
 #include "Common/FileStream.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleInfo.h"
@@ -63,6 +64,8 @@ namespace
 		kMenuStickTilt,
 		kMenuAmiibo,
 		kMenuSkylander,
+		kMenuDimSpace,
+		kMenuDimFigure,
 		kMenuExitGame,
 		kMenuExit,
 		kMenuCount,
@@ -76,6 +79,7 @@ namespace
 	std::optional<fs::path> s_pendingLaunch;
 
 	void _EnableSkylanderPortal(); // in-game menu section below
+	void _EnableDimensionsToypad(); // in-game menu section below
 
 	// in-game menu, read by the GPU thread
 	std::atomic_bool s_menuOpen = false;
@@ -348,6 +352,7 @@ namespace
 			return;
 		}
 		_EnableSkylanderPortal();
+		_EnableDimensionsToypad();
 		{
 			// diagnostics: <user>/dump_shaders.txt makes the shader cache loader write every shader to <user>/dump/shaders
 			// (there is no debug menu on the Xbox)
@@ -620,6 +625,237 @@ namespace
 		cemuLog_log(LogType::Force, "Host: skylander {} placed on the portal (slot {})", _pathToUtf8(file), slot);
 	}
 
+	// LEGO Dimensions (GitHub #15): the emulated Toy Pad has 7 spaces (left pad: 3, centre: 1, right: 3; pad/index pairs as
+	// in desktop Cemu's dialog). Figures are .bin files in <user data>/dimensions: dumps there are listed first, then every
+	// built-in character/vehicle/gadget; picking a built-in one creates its file on first use. The Toy Pad is emulated from
+	// the next game start once turned on here (or when the folder has figures at launch), like the Skylanders portal
+	struct DimFigureEntry
+	{
+		std::string name;
+		uint32 id = 0; // built-in figure id, 0 for a dump file
+		fs::path file; // the dump, or the file a built-in figure is created as
+	};
+	struct DimSpace
+	{
+		uint8 pad;
+		uint8 index;
+		const char* name;
+	};
+	constexpr DimSpace kDimSpaces[7] = { { 2, 0, "Left 1" }, { 2, 3, "Left 2" }, { 2, 4, "Left 3" }, { 1, 1, "Centre" },
+		{ 3, 2, "Right 1" }, { 3, 5, "Right 2" }, { 3, 6, "Right 3" } };
+	std::recursive_mutex s_dimMutex;
+	std::vector<DimFigureEntry> s_dimFigures;
+	int s_dimFigureIndex = 0;
+	int s_dimSpace = 3; // centre
+	std::array<std::string, 7> s_dimPlaced; // figure name per space (kDimSpaces order), empty = free
+	std::array<fs::path, 7> s_dimPlacedFile;
+
+	fs::path _DimensionsFolder()
+	{
+		return ActiveSettings::GetUserDataPath("dimensions");
+	}
+
+	std::vector<fs::path> _ListDimensionFiles()
+	{
+		std::vector<fs::path> files;
+		std::error_code ec;
+		const fs::path folder = _DimensionsFolder();
+		fs::create_directories(folder, ec);
+		for (fs::directory_iterator it(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+		{
+			std::error_code ecEntry;
+			if (it->is_regular_file(ecEntry) && boost::iequals(_pathToUtf8(it->path().extension()), ".bin"))
+				files.emplace_back(it->path());
+		}
+		std::sort(files.begin(), files.end());
+		return files;
+	}
+
+	std::string _DimFileName(const std::string& name)
+	{
+		std::string out;
+		for (char c : name)
+			out += (std::isalnum((unsigned char)c) || c == ' ' || c == '-' || c == '(' || c == ')') ? c : '_';
+		return out + ".bin";
+	}
+
+	void _RefreshDimensionFigures()
+	{
+		std::vector<DimFigureEntry> list;
+		std::set<fs::path> known;
+		for (const fs::path& file : _ListDimensionFiles())
+		{
+			list.push_back({ _pathToUtf8(file.stem()), 0, file });
+			known.insert(file.filename());
+		}
+		std::vector<DimFigureEntry> builtIn;
+		auto add = [&](const std::map<const uint32, const char*>& figures) {
+			for (const auto& [id, name] : figures)
+			{
+				DimFigureEntry e{ name, id, _DimensionsFolder() / _utf8ToPath(_DimFileName(name)) };
+				if (!known.count(e.file.filename()))
+					builtIn.push_back(std::move(e));
+			}
+		};
+		add(nsyshid::DimensionsUSB::GetListMinifigs());
+		add(nsyshid::DimensionsUSB::GetListTokens());
+		std::sort(builtIn.begin(), builtIn.end(), [](const DimFigureEntry& a, const DimFigureEntry& b) { return boost::ilexicographical_compare(a.name, b.name); });
+		list.insert(list.end(), std::make_move_iterator(builtIn.begin()), std::make_move_iterator(builtIn.end()));
+		std::scoped_lock lock(s_dimMutex);
+		s_dimFigures = std::move(list);
+		s_dimFigureIndex = std::clamp(s_dimFigureIndex, 0, std::max(0, (int)s_dimFigures.size() - 1));
+	}
+
+	void _EnableDimensionsToypad()
+	{
+		if (_ListDimensionFiles().empty())
+			return;
+		auto& toypad = GetConfig().emulated_usb_devices.emulate_dimensions_toypad;
+		if (!toypad.GetValue())
+		{
+			toypad = true;
+			cemuLog_log(LogType::Force, "Host: dimensions folder has figures, emulating the LEGO Dimensions Toy Pad");
+		}
+	}
+
+	bool _DimensionsOn()
+	{
+		return GetConfig().emulated_usb_devices.emulate_dimensions_toypad.GetValue();
+	}
+
+	std::string _DimSpaceLabel()
+	{
+		std::scoped_lock lock(s_dimMutex);
+		if (!_DimensionsOn())
+			return "LEGO Dimensions Toy Pad: Off (A turns it on for the next game start)";
+		const std::string& placed = s_dimPlaced[s_dimSpace];
+		return fmt::format("Toy Pad space: < {} > {}", kDimSpaces[s_dimSpace].name, placed.empty() ? std::string("(empty)") : fmt::format("{}  (A removes)", placed));
+	}
+
+	std::string _DimFigureLabel()
+	{
+		std::scoped_lock lock(s_dimMutex);
+		if (!_DimensionsOn() || s_dimFigures.empty())
+			return "  Figure: -";
+		const DimFigureEntry& e = s_dimFigures[s_dimFigureIndex];
+		return fmt::format("  Figure: < {} >{}  (LB/RB: letter, A: place)", e.name, e.id == 0 ? " [file]" : "");
+	}
+
+	void _StepDimSpace(int step)
+	{
+		std::scoped_lock lock(s_dimMutex);
+		s_dimSpace = (s_dimSpace + step + 7) % 7;
+	}
+
+	void _StepDimFigure(int step)
+	{
+		std::scoped_lock lock(s_dimMutex);
+		if (s_dimFigures.empty())
+			return;
+		const int count = (int)s_dimFigures.size();
+		s_dimFigureIndex = (s_dimFigureIndex + step + count) % count;
+	}
+
+	// LB/RB on the figure item: first figure of the previous/next starting letter
+	void _JumpDimLetter(int step)
+	{
+		std::scoped_lock lock(s_dimMutex);
+		if (s_dimFigures.empty())
+			return;
+		const int count = (int)s_dimFigures.size();
+		auto letter = [&](int i) { return (char)std::toupper((unsigned char)(s_dimFigures[i].name.empty() ? ' ' : s_dimFigures[i].name[0])); };
+		auto firstOfGroup = [&](int i) {
+			for (int n = 0; n < count && letter((i + count - 1) % count) == letter(i); n++)
+				i = (i + count - 1) % count;
+			return i;
+		};
+		int i = firstOfGroup(s_dimFigureIndex);
+		if (step > 0)
+		{
+			const char current = letter(i);
+			for (int n = 0; n < count && letter(i) == current; n++)
+				i = (i + 1) % count;
+		}
+		else
+			i = firstOfGroup((i + count - 1) % count);
+		s_dimFigureIndex = i;
+	}
+
+	void _RemoveDimSpace(int space)
+	{
+		const DimSpace& s = kDimSpaces[space];
+		nsyshid::g_dimensionstoypad.RemoveFigure(s.pad, s.index, true);
+		cemuLog_log(LogType::Force, "Host: dimensions figure {} removed from {}", s_dimPlaced[space], s.name);
+		s_dimPlaced[space].clear();
+		s_dimPlacedFile[space].clear();
+	}
+
+	void _ExecuteDimSpace()
+	{
+		if (!_DimensionsOn())
+		{
+			GetConfig().emulated_usb_devices.emulate_dimensions_toypad = true;
+			GetConfigHandle().Save();
+			cemuLog_log(LogType::Force, "Host: LEGO Dimensions Toy Pad turned on, emulated from the next game start");
+			return;
+		}
+		std::scoped_lock lock(s_dimMutex);
+		if (!s_dimPlaced[s_dimSpace].empty())
+			_RemoveDimSpace(s_dimSpace);
+	}
+
+	void _PlaceDimFigure()
+	{
+		std::scoped_lock lock(s_dimMutex);
+		if (!_DimensionsOn() || s_dimFigures.empty())
+			return;
+		const DimFigureEntry e = s_dimFigures[s_dimFigureIndex];
+		const DimSpace& target = kDimSpaces[s_dimSpace];
+		// already on another space: move it
+		for (int i = 0; i < 7; i++)
+		{
+			if (i == s_dimSpace || s_dimPlacedFile[i] != e.file)
+				continue;
+			if (!s_dimPlaced[s_dimSpace].empty())
+				_RemoveDimSpace(s_dimSpace);
+			nsyshid::g_dimensionstoypad.TempRemove(kDimSpaces[i].index);
+			nsyshid::g_dimensionstoypad.MoveFigure(target.pad, target.index, kDimSpaces[i].pad, kDimSpaces[i].index);
+			s_dimPlaced[s_dimSpace] = s_dimPlaced[i];
+			s_dimPlacedFile[s_dimSpace] = s_dimPlacedFile[i];
+			s_dimPlaced[i].clear();
+			s_dimPlacedFile[i].clear();
+			cemuLog_log(LogType::Force, "Host: dimensions figure {} moved from {} to {}", e.name, kDimSpaces[i].name, target.name);
+			return;
+		}
+		if (s_dimPlacedFile[s_dimSpace] == e.file)
+			return;
+		std::error_code ec;
+		if (e.id != 0 && !fs::exists(e.file, ec))
+		{
+			fs::create_directories(e.file.parent_path(), ec);
+			if (!nsyshid::g_dimensionstoypad.CreateFigure(e.file, e.id))
+			{
+				cemuLog_log(LogType::Force, "Host: dimensions figure {} couldn't be created at {}", e.name, _pathToUtf8(e.file));
+				return;
+			}
+			cemuLog_log(LogType::Force, "Host: dimensions figure {} (id {}) created at {}", e.name, e.id, _pathToUtf8(e.file));
+		}
+		std::unique_ptr<FileStream> file(FileStream::openFile2(e.file, true));
+		std::array<uint8, 0x2D * 0x04> data;
+		if (!file || file->readData(data.data(), data.size()) != data.size())
+		{
+			cemuLog_log(LogType::Force, "Host: dimensions figure {} couldn't be read (needs a {} byte dump)", _pathToUtf8(e.file), data.size());
+			return;
+		}
+		if (!s_dimPlaced[s_dimSpace].empty())
+			_RemoveDimSpace(s_dimSpace);
+		const uint32 id = nsyshid::g_dimensionstoypad.LoadFigure(data, std::move(file), target.pad, target.index);
+		const std::string found = nsyshid::g_dimensionstoypad.FindFigure(id);
+		s_dimPlaced[s_dimSpace] = e.id != 0 ? e.name : fmt::format("{} ({})", e.name, found);
+		s_dimPlacedFile[s_dimSpace] = e.file;
+		cemuLog_log(LogType::Force, "Host: dimensions figure {} placed on {} (id {}, {})", e.name, target.name, id, found);
+	}
+
 	// Xbox controllers have no gyro. Like desktop Cemu's right mouse button motion, a held right "mouse" button tilts the
 	// emulated GamePad by its position (center = flat), so the right stick deflection is fed as that position
 	void _SetStickTilt(float x, float y, bool active)
@@ -644,6 +880,12 @@ namespace
 			break;
 		case kMenuSkylander:
 			_StepSkylander(direction);
+			break;
+		case kMenuDimSpace:
+			_StepDimSpace(direction);
+			break;
+		case kMenuDimFigure:
+			_StepDimFigure(direction);
 			break;
 		case kMenuGamePadOverlay:
 		case kMenuOverlayCorner:
@@ -751,6 +993,12 @@ namespace
 			break;
 		case kMenuSkylander:
 			_ToggleSkylander();
+			break;
+		case kMenuDimSpace:
+			_ExecuteDimSpace();
+			break;
+		case kMenuDimFigure:
+			_PlaceDimFigure();
 			break;
 		case kMenuExitGame:
 			s_menuOpen = false;
@@ -967,6 +1215,7 @@ namespace
 				{
 					_RefreshAmiiboFiles();
 					_RefreshSkylanderFiles();
+				_RefreshDimensionFigures();
 				}
 			}
 		}
@@ -982,6 +1231,7 @@ namespace
 			{
 				_RefreshAmiiboFiles();
 				_RefreshSkylanderFiles();
+				_RefreshDimensionFigures();
 			}
 		}
 
@@ -1003,6 +1253,8 @@ namespace
 			_StepMenuItem(s_menuSelection, (pressed & HostGamepad::kLeft) ? -1 : 1);
 		if (pressed & HostGamepad::kA)
 			_ExecuteMenuItem(s_menuSelection);
+		if (s_menuSelection == kMenuDimFigure && (pressed & (HostGamepad::kLB | HostGamepad::kRB)))
+			_JumpDimLetter((pressed & HostGamepad::kLB) ? -1 : 1);
 	}
 }
 
@@ -1302,6 +1554,7 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 			{
 				_RefreshAmiiboFiles();
 				_RefreshSkylanderFiles();
+				_RefreshDimensionFigures();
 			}
 		}
 		else if (s_menuOpen)
@@ -1314,6 +1567,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 				_StepMenuItem(s_menuSelection, virtualKey == VK_LEFT ? -1 : 1);
 			else if (virtualKey == VK_RETURN)
 				_ExecuteMenuItem(s_menuSelection);
+			else if ((virtualKey == VK_PRIOR || virtualKey == VK_NEXT) && s_menuSelection == kMenuDimFigure)
+				_JumpDimLetter(virtualKey == VK_PRIOR ? -1 : 1);
 			else if (virtualKey == VK_ESCAPE)
 				s_menuOpen = false;
 		}
@@ -1493,6 +1748,8 @@ void HostApp::DrawInGameMenu()
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
 			_AmiiboLabel(),
 			_SkylanderLabel(),
+			_DimSpaceLabel(),
+			_DimFigureLabel(),
 			"Exit to game list",
 			"Quit Cemu",
 		};
