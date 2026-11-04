@@ -1864,6 +1864,22 @@ void D3D12Renderer::texture_setLatteTexture(LatteTextureView* textureView, uint3
 	m_state.boundTexture[textureUnit] = static_cast<LatteTextureViewD3D12*>(textureView);
 }
 
+// #635 (NFS Most Wanted U GPU hang after 16x16x16 3D textures appear): a W slice past the depth of a 3D texture's mip
+// is invalid for copies and RTVs and can hang the GPU instead of failing; skip it and log the first ones in release
+static bool _Check3DSlice(LatteTextureD3D12* tex, uint32 mip, uint32 slice, const char* what)
+{
+	if (tex->Is3DSliceInRange(mip, slice))
+		return true;
+	static uint32 s_logged = 0;
+	if (s_logged < 32)
+	{
+		s_logged++;
+		cemuLog_log(LogType::Force, "D3D12: {} of 3D texture {:08x} {}x{}x{} fmt {:04x} slice {} mip {} skipped, mip depth is {}", what, tex->physAddress,
+			tex->GetDesc().Width, tex->GetDesc().Height, tex->GetDesc().DepthOrArraySize, (uint32)tex->format, slice, mip, tex->GetDepthAtMip(mip));
+	}
+	return false;
+}
+
 void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto* tex = static_cast<LatteTextureD3D12*>(hostTexture);
@@ -1873,6 +1889,8 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 	const D3D12TextureFormatInfo& fmt = tex->GetFormatInfo();
 	const bool is3D = tex->Is3DTexture();
 	if ((uint32)mipIndex >= tex->GetMipCount())
+		return;
+	if (!_Check3DSlice(tex, mipIndex, sliceIndex, "upload"))
 		return;
 
 	TransitionTexture(tex, mipIndex, 1, is3D ? 0 : sliceIndex, 1, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -2035,6 +2053,8 @@ void D3D12Renderer::texture_clearColorSlice(LatteTexture* hostTexture, sint32 sl
 		cemuLog_logDebugOnce(LogType::Force, "D3D12: Clear of non-renderable texture format {:04x} ignored", (uint32)tex->format);
 		return;
 	}
+	if (!_Check3DSlice(tex, mipIndex, sliceIndex, "clear"))
+		return;
 	TransitionTexture(tex, mipIndex, 1, sliceIndex, 1, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	FlushBarriers();
 	D3D12_CPU_DESCRIPTOR_HANDLE rtv = _CreateTempRTV(this, tex, sliceIndex, mipIndex);
@@ -2163,6 +2183,8 @@ void D3D12Renderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 				box.right = effectiveSrcX + effectiveCopyWidth;
 				box.bottom = effectiveSrcY + effectiveCopyHeight;
 				box.back = box.front + 1;
+				if (!_Check3DSlice(srcTex, srcMip, sSlice, "copy source") || !_Check3DSlice(dstTex, dstMip, dSlice, "copy destination"))
+					continue;
 				m_cmdList->CopyTextureRegion(&t, effectiveDstX, effectiveDstY, dstIs3D ? dSlice : 0, &s, &box);
 			}
 			continue;
@@ -2203,6 +2225,8 @@ void D3D12Renderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 		buf.PlacedFootprint.Footprint.Height = heightBlocks * blockDimSrc;
 		buf.PlacedFootprint.Footprint.Depth = 1;
 		buf.PlacedFootprint.Footprint.RowPitch = rowPitch;
+		if (!_Check3DSlice(srcTex, srcMip, sSlice, "copy source") || !_Check3DSlice(dstTex, dstMip, dSlice, "copy destination"))
+			continue;
 		D3D12_BOX box{ (UINT)effectiveSrcX, (UINT)effectiveSrcY, srcIs3D ? sSlice : 0, (UINT)(effectiveSrcX + widthBlocks * blockDimSrc), (UINT)(effectiveSrcY + heightBlocks * blockDimSrc), (srcIs3D ? sSlice : 0) + 1 };
 		m_cmdList->CopyTextureRegion(&buf, 0, 0, 0, &s, &box);
 		TransitionResource(m_bufferCacheScratch.Get(), m_bufferCacheScratchState, D3D12_RESOURCE_STATE_COPY_SOURCE);
