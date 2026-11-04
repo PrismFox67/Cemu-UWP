@@ -228,6 +228,7 @@ void D3D12Renderer::draw_buildSamplerDesc(LatteDecompilerShader* shader, uint32 
 	sint32 maxAniso = samplerWords->WORD0.get_MAX_ANISO_RATIO();
 	if (baseTexture && baseTexture->overwriteInfo.anisotropicLevel >= 0)
 		maxAniso = baseTexture->overwriteInfo.anisotropicLevel;
+	desc.MaxLOD = std::max(desc.MaxLOD, desc.MinLOD); // MinLOD > MaxLOD is undefined in D3D12
 	desc.MipLODBias = std::clamp((float)iLodBias / 64.0f, -16.0f, 15.99f);
 
 	const bool depthCompare = shader->textureUsesDepthCompare[relativeTextureUnit];
@@ -235,7 +236,9 @@ void D3D12Renderer::draw_buildSamplerDesc(LatteDecompilerShader* shader, uint32 
 	if (depthCompare)
 		desc.ComparisonFunc = D3D12Format::GetCompareFunc((uint32)samplerWords->WORD0.get_DEPTH_COMPARE_FUNCTION());
 
-	if (maxAniso > 0 && minFilter == D3D12_FILTER_TYPE_LINEAR)
+	// D3D12's anisotropic filter forces linear min, mag and mip filtering, unlike Vulkan's anisotropyEnable which keeps the
+	// requested filters; only use it when the game asked for linear everywhere, so point-magnified sheets (fonts) stay sharp
+	if (maxAniso > 0 && minFilter == D3D12_FILTER_TYPE_LINEAR && magFilter == D3D12_FILTER_TYPE_LINEAR && mipFilter == D3D12_FILTER_TYPE_LINEAR)
 	{
 		desc.Filter = D3D12_ENCODE_ANISOTROPIC_FILTER(reduction);
 		desc.MaxAnisotropy = std::min<UINT>(1u << maxAniso, 16);
