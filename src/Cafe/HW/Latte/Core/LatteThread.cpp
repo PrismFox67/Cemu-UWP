@@ -116,6 +116,11 @@ void LatteThread_HandleOSScreen()
 int Latte_ThreadEntry()
 {
 	SetThreadName("LatteThread");
+#if BOOST_OS_WINDOWS
+	// above the emulated CPU threads and the pipeline/shader compile threads (below normal), so a busy CPU doesn't delay
+	// command processing and presents (#574, from danprice142/Cemu-UWP 0.2.7.x)
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
 	sint32 w,h;
 	WindowSystem::GetWindowPhysSize(w,h);
 
