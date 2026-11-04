@@ -463,6 +463,28 @@ static void LatteTC_ReleaseForMemoryPressure()
 		s_loggedPressureLevel = s_textureMemoryPressure;
 		LatteTC_LogTextureMemory(deletable.size());
 	}
+	// soft pressure (level 1): large 2D arrays loaded from RAM (BOTW's terrain materials, 1024x1024x83 BC3) are kept until
+	// unused for ~2 minutes, their reload decodes every slice on the CPU again (adapted from Dushe22/Cemu-UWP and
+	// danprice142/Cemu-UWP, MPL-2.0)
+	if (s_textureMemoryPressure == 1)
+	{
+		static uint32 s_keptLogCount = 0;
+		std::erase_if(deletable, [](LatteTexture* tex) {
+			if (tex->dim != Latte::E_DIM::DIM_2D_ARRAY || tex->depth < 16 || tex->isUpdatedOnGPU || LatteGPUState.frameCounter - tex->lastAccessFrameCount >= 3600)
+				return false;
+			uint64 bytes = (uint64)tex->width * (uint64)tex->height * (uint64)tex->depth * tex->GetBPP() / 8;
+			if (tex->IsCompressedFormat())
+				bytes /= 16;
+			if (bytes < 8ull * 1024 * 1024)
+				return false;
+			if (s_keptLogCount < 16)
+			{
+				s_keptLogCount++;
+				cemuLog_log(LogType::Force, "Memory pressure: keeping large array {:08x} {}x{}x{} fmt {:04x} (soft pressure)", tex->physAddress, tex->width, tex->height, tex->depth, (uint32)tex->format);
+			}
+			return true;
+		});
+	}
 	if (deletable.empty())
 		return;
 	std::sort(deletable.begin(), deletable.end(), [](LatteTexture* a, LatteTexture* b) { return a->lastAccessFrameCount < b->lastAccessFrameCount; });
