@@ -6,6 +6,7 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-03
+- Breath of the Wild: missing or flickering short grass (vertex data past the size the emulator computed read as 0). Adapted from Dushe22/Cemu-UWP.
 
 ### Xbox app
 - **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
