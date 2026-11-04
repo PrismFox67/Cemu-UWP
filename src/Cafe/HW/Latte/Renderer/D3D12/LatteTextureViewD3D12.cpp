@@ -1,3 +1,4 @@
+#include <atomic>
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
@@ -74,7 +75,12 @@ LatteTextureViewD3D12::LatteTextureViewD3D12(D3D12Renderer* renderer, LatteTextu
 		if (srv != DXGI_FORMAT_UNKNOWN)
 			m_srvFormat = srv;
 		else
-			cemuLog_logDebugOnce(LogType::Force, "D3D12: View format {:04x} is not compatible with texture format {:04x}, using the base format", (uint32)format, (uint32)texture->format);
+		{
+			// release builds log the first 64 (was debug-only): a wrongly reinterpreted view is a suspect for magenta surfaces (#560)
+			static std::atomic<uint32> s_incompatibleViewLogs{0};
+			if (s_incompatibleViewLogs.fetch_add(1) < 64)
+				cemuLog_log(LogType::Force, "D3D12: View format {:04x} is not compatible with texture format {:04x} ({}x{}, phys {:08x}), using the base format", (uint32)format, (uint32)texture->format, texture->width, texture->height, texture->physAddress);
+		}
 		if (!texture->isDepth && m_rtvFormat != DXGI_FORMAT_UNKNOWN)
 		{
 			DXGI_FORMAT rtv = D3D12Format::GetCompatibleViewFormat(support, texture->GetDesc().Format, format, false, true);
