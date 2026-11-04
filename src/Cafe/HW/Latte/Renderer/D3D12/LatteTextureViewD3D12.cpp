@@ -381,8 +381,13 @@ D3D12_CPU_DESCRIPTOR_HANDLE LatteTextureViewD3D12::GetRTV()
 	{
 		desc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
 		desc.Texture3D.MipSlice = firstMip;
-		desc.Texture3D.FirstWSlice = firstSlice;
-		desc.Texture3D.WSize = numSlice;
+		// #635: keep the W range inside the mip's depth, a range past it is invalid
+		const uint32 mipDepth = m_baseTexture->GetDepthAtMip(firstMip);
+		const uint32 first = std::min<uint32>(firstSlice, mipDepth - 1);
+		if (first != (uint32)firstSlice || first + numSlice > mipDepth)
+			cemuLog_logOnce(LogType::Force, "D3D12: 3D RTV slices {}+{} clamped to mip {} depth {}", firstSlice, numSlice, firstMip, mipDepth);
+		desc.Texture3D.FirstWSlice = first;
+		desc.Texture3D.WSize = std::min<uint32>(numSlice, mipDepth - first);
 	}
 	else if (m_baseTexture->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
 	{

@@ -27,6 +27,9 @@ public:
 	bool Is3DTexture() const { return m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D; }
 
 	uint32 GetMipCount() const { return m_desc.MipLevels; }
+	// depth of a mip level of a 3D texture (1 for other textures); a W slice at or past it is out of range for D3D12
+	uint32 GetDepthAtMip(uint32 mip) const { return Is3DTexture() ? std::max<uint32>(1u, (uint32)m_desc.DepthOrArraySize >> mip) : 1u; }
+	bool Is3DSliceInRange(uint32 mip, uint32 slice) const { return !Is3DTexture() || slice < GetDepthAtMip(mip); }
 	uint32 GetArraySize() const { return Is3DTexture() ? 1 : m_desc.DepthOrArraySize; }
 	uint32 GetPlaneCount() const { return m_planeCount; }
 	uint32 GetSubresourceIndex(uint32 mip, uint32 slice, uint32 plane = 0) const
