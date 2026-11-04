@@ -7,6 +7,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-04
 ### D3D12
+- Shadows: shadow-map (comparison) samplers no longer use anisotropic filtering, a possible cause of blocky or doubled shadows (GitHub #5, #8, not confirmed on Xbox yet). For testing, an empty `depth_d32.txt` in the user folder stores depth in a higher-precision format.
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
 - **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
 ### Games
