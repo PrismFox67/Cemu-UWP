@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include <chrono>
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "WindowSystem.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
@@ -55,6 +56,36 @@ void LattePerformanceMonitor_frameEnd()
 	performanceMonitor.gpuTime_dcStageMRT.frameFinished();
 	performanceMonitor.gpuTime_dcStageDrawcallAPI.frameFinished();
 	performanceMonitor.gpuTime_waitForAsync.frameFinished();
+
+	// stutter log (#574): frames that took more than 100 ms of real time, with where the GPU thread spent it, so a tester
+	// log names the cause of hitches (new pipelines/shaders, waiting for the CPU or a readback, texture uploads)
+	{
+		static std::chrono::steady_clock::time_point s_lastFrameEnd{};
+		static uint32 s_stutterLogs = 0, s_stuttersSinceSummary = 0;
+		static std::chrono::steady_clock::time_point s_lastSummary{};
+		const auto now = std::chrono::steady_clock::now();
+		const sint64 frameMs = s_lastFrameEnd.time_since_epoch().count() ? std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastFrameEnd).count() : 0;
+		s_lastFrameEnd = now;
+		if (frameMs >= 100 && frameMs < 10000) // longer gaps are pauses and loading, not stutter
+		{
+			auto ms = [](LattePerfStatTimer& t) { return (double)PPCTimer_tscToMicroseconds(t.getPreviousFrameValue()) / 1000.0; };
+			if (s_stutterLogs < 100)
+			{
+				s_stutterLogs++;
+				cemuLog_log(LogType::Force, "Stutter: frame {} ms; GPU thread: shader/pipeline create {:.0f}, waiting for readbacks/queries {:.0f}, fence {:.0f}, texture stage {:.0f}, idle (waiting for the CPU) {:.0f}, draw API {:.0f}",
+					frameMs, ms(performanceMonitor.gpuTime_shaderCreate), ms(performanceMonitor.gpuTime_waitForAsync), ms(performanceMonitor.gpuTime_fenceTime),
+					ms(performanceMonitor.gpuTime_dcStageTextures), ms(performanceMonitor.gpuTime_idleTime), ms(performanceMonitor.gpuTime_dcStageDrawcallAPI));
+			}
+			else
+				s_stuttersSinceSummary++;
+		}
+		if (s_stuttersSinceSummary && now - s_lastSummary >= std::chrono::seconds(60))
+		{
+			s_lastSummary = now;
+			cemuLog_log(LogType::Force, "Stutter: {} more frames over 100 ms in the last minute", s_stuttersSinceSummary);
+			s_stuttersSinceSummary = 0;
+		}
+	}
 
 	uint32 elapsedTime = GetTickCount() - performanceMonitor.cycle[performanceMonitor.cycleIndex].lastUpdate;
 	if (elapsedTime >= 1000)
