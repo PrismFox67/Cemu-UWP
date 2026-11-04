@@ -1376,17 +1376,30 @@ void D3D12PipelineCache::Clear()
 // bias continuously and otherwise compiled a new pipeline for most shadow draws)
 struct _DepthBias
 {
-	static constexpr float kSlopeStepsPerUnit = 16.0f;
 	sint32 offset;
-	sint32 slopeSteps;
+	float slope; // as passed to D3D12: SCALE / 16 like Vulkan's vkCmdSetDepthBias
 	float clamp;
+
+	// Floats rounded to 6 mantissa bits (at most 0.8% off): BOTW recomputes its shadow slope every frame (-0.214672,
+	// -0.214671, ...) and the bias is baked into the pipeline. Relative, not absolute steps: the earlier rounding to whole
+	// 1/16 units turned BOTW's -0.2147 into 0, i.e. no slope bias on shadow casters (#570, GitHub #5/#8). Adapted from
+	// Dushe22/Cemu-UWP (MPL-2.0)
+	static float Quantize(float value)
+	{
+		constexpr uint32 kDroppedBits = 23 - 6;
+		uint32 bits = std::bit_cast<uint32>(value);
+		if ((bits & 0x7F800000u) == 0x7F800000u)
+			return value; // inf/nan
+		bits += 1u << (kDroppedBits - 1);
+		return std::bit_cast<float>(bits & ~((1u << kDroppedBits) - 1u));
+	}
 
 	static _DepthBias FromRegisters(const LatteContextRegister& lcr)
 	{
 		_DepthBias b;
 		b.offset = (sint32)std::lround(lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET());
-		b.slopeSteps = (sint32)std::lround(lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE() / 16.0f * kSlopeStepsPerUnit);
-		b.clamp = lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP();
+		b.slope = Quantize(lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE()) / 16.0f;
+		b.clamp = Quantize(lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP());
 		return b;
 	}
 };
@@ -1427,8 +1440,8 @@ uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, co
 		// games that animate the bias slightly (BOTW shadow cascades) don't create a pipeline per value
 		const _DepthBias bias = _DepthBias::FromRegisters(lcr);
 		mix((uint32)bias.offset, 11);
-		mix((uint32)bias.slopeSteps, 11);
-		mix(lcr.PA_SU_POLY_OFFSET_CLAMP.getRawValue(), 11);
+		mix(std::bit_cast<uint32>(bias.slope), 11);
+		mix(std::bit_cast<uint32>(bias.clamp), 11);
 	}
 	// blend
 	const uint32 colorControl = ctxRegister[Latte::REGADDR::CB_COLOR_CONTROL];
@@ -1713,7 +1726,7 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 	{
 		const _DepthBias bias = _DepthBias::FromRegisters(lcr);
 		desc.RasterizerState.DepthBias = bias.offset;
-		desc.RasterizerState.SlopeScaledDepthBias = (float)bias.slopeSteps / _DepthBias::kSlopeStepsPerUnit;
+		desc.RasterizerState.SlopeScaledDepthBias = bias.slope;
 		desc.RasterizerState.DepthBiasClamp = bias.clamp;
 	}
 	const bool zClipEnable = lcr.PA_CL_CLIP_CNTL.get_ZCLIP_FAR_DISABLE() == false;
