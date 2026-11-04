@@ -155,6 +155,9 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	precompile_pipelines = graphic.get("PrecompilePipelines", precompile_pipelines);
 	precompile_in_background = graphic.get("PrecompileInBackground", precompile_in_background);
+	// the default changed to on (quick start, #567); a saved off was almost always the old default, move it once
+	if (!graphic.get("PrecompileInBackgroundDefaultOn", false))
+		precompile_in_background = true;
 	frame_interpolation = graphic.get("FrameInterpolation", frame_interpolation);
 	pipeline_wait = graphic.get("PipelineWait", pipeline_wait);
 	// the default changed from Balanced (1) to Smooth (0); a saved Balanced was almost always the old default, move it once
@@ -405,6 +408,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("PrecompilePipelines", precompile_pipelines.GetValue());
 	graphic.set("PrecompileInBackground", precompile_in_background.GetValue());
+	graphic.set("PrecompileInBackgroundDefaultOn", true);
 	graphic.set("FrameInterpolation", frame_interpolation.GetValue());
 	graphic.set("PipelineWait", pipeline_wait.GetValue());
 	graphic.set("PipelineWaitSmoothDefault", true);
