@@ -1350,7 +1350,7 @@ uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size, uint8*& writableOu
 	if( codeMemoryBlockIndex+size > codeMemoryBlockSize )
 	{
 		// allocate new block
-		codeMemoryBlockSize = std::max(1024*1024*4, size+1024); // 4MB (or more if the function is larger than 4MB)
+		codeMemoryBlockSize = std::max(1024*1024*4, (size+1024+0xFFF) & ~0xFFF); // 4MB (or more if the function is larger than 4MB)
 		codeMemoryBlockIndex = 0;
 		void* writable = nullptr;
 		codeMemoryBlock = (uint8*)MemMapper::AllocateExecutableMemory(codeMemoryBlockSize, writable);
@@ -1364,8 +1364,9 @@ uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size, uint8*& writableOu
 	uint8* codeMem = codeMemoryBlock + codeMemoryBlockIndex;
 	writableOut = codeMemoryBlockWritable + codeMemoryBlockIndex;
 	codeMemoryBlockIndex += size;
-	// pad to 4 byte alignment
-	while (codeMemoryBlockIndex & 3)
+	// #572 test build (GitHub #7/#12 multi-core crashes): no packing, every function starts on its own 4 KiB page, so code
+	// is never written into a page another core is executing (DanP 0.2.7.8 disabled his packed code memory for crashes)
+	while (codeMemoryBlockIndex & 0xFFF)
 	{
 		codeMemoryBlockWritable[codeMemoryBlockIndex] = 0x90;
 		codeMemoryBlockIndex++;
@@ -1609,6 +1610,9 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 	// copy code to executable memory
 	std::span<uint8> codeBuffer = x64GenContext.emitter->GetBuffer();
 	memcpy(writableMemory, codeBuffer.data(), codeBuffer.size_bytes());
+#ifdef _WIN32
+	FlushInstructionCache(GetCurrentProcess(), executableMemory, codeBuffer.size_bytes()); // #572 test build
+#endif
 	// set code
 	PPCRecFunction->x86Code = executableMemory;
 	PPCRecFunction->x86Size = codeBuffer.size_bytes();
