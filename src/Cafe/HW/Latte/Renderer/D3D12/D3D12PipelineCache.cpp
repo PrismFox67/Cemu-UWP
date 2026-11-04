@@ -169,7 +169,8 @@ public:
 			auto it = m_inMemory.find(name);
 			if (it != m_inMemory.end())
 			{
-				pso = it->second; // pipeline state objects are immutable and can be shared
+				pso = it->second.pso; // pipeline state objects are immutable and can be shared
+				it->second.used = true;
 				return true;
 			}
 			if (!m_blobMode || m_probePending)
@@ -197,7 +198,7 @@ public:
 				pso.Reset();
 				return false;
 			}
-			m_inMemory.emplace(name, pso);
+			m_inMemory.emplace(name, InMemoryPipeline{ pso, true });
 			return true;
 		}
 		return SUCCEEDED(m_library->LoadGraphicsPipeline(name.c_str(), &desc, IID_PPV_ARGS(&pso)));
@@ -208,7 +209,7 @@ public:
 		std::unique_lock lock(m_mutex);
 		if (!m_library)
 		{
-			m_inMemory.emplace(name, pso);
+			m_inMemory.emplace(name, InMemoryPipeline{ pso, false });
 			if (!m_blobMode || m_blobIndex.count(name) != 0)
 				return;
 			// the test starts before GetCachedBlob: on the Xbox that call already removed the device
@@ -261,6 +262,27 @@ public:
 				return;
 		}
 		Save();
+	}
+
+	// Under memory pressure (#567): drops pipelines that were created ahead of time but no draw loaded yet. Without a
+	// pipeline library (Xbox) every preloaded pipeline is otherwise held for the whole session; a draw that needs one
+	// later creates it again (from the blob cache when there is one). Pipelines draws use are also held by the pipeline
+	// cache, so dropping their entry here frees nothing and costs nothing. Returns the number released
+	uint32 ReleaseUnused()
+	{
+		std::unique_lock lock(m_mutex);
+		uint32 count = 0;
+		for (auto it = m_inMemory.begin(); it != m_inMemory.end();)
+		{
+			if (!it->second.used)
+			{
+				it = m_inMemory.erase(it);
+				count++;
+			}
+			else
+				++it;
+		}
+		return count;
 	}
 
 	void Save()
@@ -364,7 +386,12 @@ private:
 	fs::path m_path;
 	std::vector<uint8> m_blob; // declared before m_library, which references it
 	ComPtr<ID3D12PipelineLibrary> m_library; // null in memory only mode
-	std::unordered_map<std::wstring, ComPtr<ID3D12PipelineState>> m_inMemory;
+	struct InMemoryPipeline
+	{
+		ComPtr<ID3D12PipelineState> pso;
+		bool used; // loaded by a draw this session; false = only created ahead of time (preload) so far
+	};
+	std::unordered_map<std::wstring, InMemoryPipeline> m_inMemory;
 	bool m_dirty = false;
 	std::chrono::steady_clock::time_point m_lastSave;
 	// blob mode (see OpenBlobs)
@@ -1334,6 +1361,13 @@ void D3D12PipelineCache::TickScenePreload()
 void D3D12PipelineCache::TickBackgroundPreload()
 {
 	TickScenePreload();
+	// adapted from Dushe22/Cemu-UWP and danprice142/Cemu-UWP (MPL-2.0): drop unused preloaded pipelines under memory pressure
+	if (m_diskCache && LatteTC_GetMemoryPressure() >= 1 && std::chrono::steady_clock::now() - m_lastUnusedRelease >= std::chrono::seconds(10))
+	{
+		m_lastUnusedRelease = std::chrono::steady_clock::now();
+		if (const uint32 released = m_diskCache->ReleaseUnused())
+			cemuLog_log(LogType::Force, "D3D12: Memory pressure: released {} preloaded pipelines no draw used yet", released);
+	}
 	// the app is often closed without a clean shutdown (Xbox), so the usage history is written every 30 s
 	if (m_recordFile && std::chrono::steady_clock::now() - m_lastUsageSave >= std::chrono::seconds(30))
 	{
