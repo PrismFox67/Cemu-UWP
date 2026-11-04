@@ -1,6 +1,42 @@
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "WindowSystem.h"
+#include "Cafe/HW/Latte/Core/LatteTexture.h"
+#include "Cafe/HW/Latte/Renderer/Renderer.h"
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.h"
+#endif
+
+namespace
+{
+	uint32 s_cacheLogCountdown = 59;
+
+	// every 60 s while a game runs: texture cache and descriptor sizes, so a tester log from a long session shows whether
+	// state that only re-entering a stage clears (GitHub #10, SLW foliage after ~3 h) grows over time (#556/#563)
+	void LogCacheStats()
+	{
+		uint32 textureCount = 0, viewCount = 0;
+		for (LatteTexture* tex : LatteTexture::GetAllTextures())
+		{
+			if (!tex)
+				continue;
+			textureCount++;
+			viewCount += (uint32)tex->views.size();
+		}
+		uint32 srv = 0, rtv = 0, dsv = 0;
+#ifdef ENABLE_D3D12
+		if (g_renderer && g_renderer->GetType() == RendererAPI::D3D12)
+		{
+			D3D12Renderer* r = D3D12Renderer::GetInstance();
+			srv = r->GetStagingViewHeap().GetAllocatedCount();
+			rtv = r->GetStagingRTVHeap().GetAllocatedCount();
+			dsv = r->GetStagingDSVHeap().GetAllocatedCount();
+		}
+#endif
+		cemuLog_log(LogType::Force, "Cache: {} textures, {} views, staging descriptors SRV {} RTV {} DSV {}", textureCount, viewCount, srv, rtv, dsv);
+	}
+}
 
 performanceMonitor_t performanceMonitor{};
 
@@ -112,6 +148,11 @@ void LattePerformanceMonitor_frameEnd()
 		{
 			LatteOverlay_updateStats(fps, drawCallCounter / elapsedFrames, fastDrawCallCounter / elapsedFrames);
 			WindowSystem::UpdateWindowTitles(false, false, fps);
+			if (s_cacheLogCountdown-- == 0)
+			{
+				s_cacheLogCountdown = 59;
+				LogCacheStats();
+			}
 		}
 	}
 }
