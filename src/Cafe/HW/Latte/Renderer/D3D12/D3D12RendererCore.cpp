@@ -238,7 +238,9 @@ void D3D12Renderer::draw_buildSamplerDesc(LatteDecompilerShader* shader, uint32 
 
 	// D3D12's anisotropic filter forces linear min, mag and mip filtering, unlike Vulkan's anisotropyEnable which keeps the
 	// requested filters; only use it when the game asked for linear everywhere, so point-magnified sheets (fonts) stay sharp
-	if (maxAniso > 0 && minFilter == D3D12_FILTER_TYPE_LINEAR && magFilter == D3D12_FILTER_TYPE_LINEAR && mipFilter == D3D12_FILTER_TYPE_LINEAR)
+	// #642: never on comparison (shadow map) samplers, how many compare taps it takes along which axis is up to the
+	// hardware (blocky shadows on AMD/Xbox suspected); a graphic pack's anisotropy level reached these samplers too
+	if (maxAniso > 0 && !depthCompare && minFilter == D3D12_FILTER_TYPE_LINEAR && magFilter == D3D12_FILTER_TYPE_LINEAR && mipFilter == D3D12_FILTER_TYPE_LINEAR)
 	{
 		desc.Filter = D3D12_ENCODE_ANISOTROPIC_FILTER(reduction);
 		desc.MaxAnisotropy = std::min<UINT>(1u << maxAniso, 16);
