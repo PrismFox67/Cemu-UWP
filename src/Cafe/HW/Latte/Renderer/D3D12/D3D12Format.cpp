@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Format.h"
 #include "Cafe/HW/Latte/Core/LatteTextureLoader.h"
+#include "config/ActiveSettings.h"
 
 static bool _CheckFormat(ID3D12Device* device, DXGI_FORMAT format, D3D12_FORMAT_SUPPORT1 required)
 {
@@ -17,6 +18,16 @@ void D3D12Format::InitFormatSupport(ID3D12Device* device, D3D12FormatSupport& su
 	support.b5g5r5a1 = _CheckFormat(device, DXGI_FORMAT_B5G5R5A1_UNORM, sampleAndRender);
 	support.b4g4r4a4 = _CheckFormat(device, DXGI_FORMAT_B4G4R4A4_UNORM, sampleAndRender);
 	support.d24s8 = _CheckFormat(device, DXGI_FORMAT_D24_UNORM_S8_UINT, (D3D12_FORMAT_SUPPORT1)(D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL));
+	// #642 shadow test: <user>/depth_d32.txt stores D24S8 depth as D32_FLOAT_S8X24 (what Vulkan Cemu gets on AMD, which
+	// has no native 24-bit depth); the depth bias units then follow the float format like on Vulkan/AMD
+	{
+		std::error_code ec;
+		if (support.d24s8 && fs::exists(ActiveSettings::GetUserDataPath("depth_d32.txt"), ec))
+		{
+			support.d24s8 = false;
+			cemuLog_log(LogType::Force, "D3D12: depth_d32.txt found, D24S8 depth buffers use D32_FLOAT_S8X24");
+		}
+	}
 	D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
 	if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))))
 		support.logicOp = options.OutputMergerLogicOp != FALSE;
