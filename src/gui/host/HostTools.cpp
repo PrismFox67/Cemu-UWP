@@ -184,7 +184,29 @@ fs::path HostTools::GetExportRoot()
 		if (fallback.empty())
 			fallback = root;
 	}
-	return fallback;
+	if (!fallback.empty())
+		return fallback;
+	// GitHub #12: no game folders (games installed into mlc01) - use the first writable drive D: to Z: that isn't the
+	// app's own, which on the Xbox is the USB drive
+	for (wchar_t letter = L'D'; letter <= L'Z'; letter++)
+	{
+		const fs::path root = fs::path(std::wstring{ letter, L':', L'\\' });
+		if (root == ownRoot)
+			continue;
+		std::error_code ec;
+		if (!fs::is_directory(root, ec))
+			continue;
+		const fs::path probe = root / ".cemu_write_test";
+		{
+			std::unique_ptr<FileStream> f(FileStream::createFile2(probe));
+			if (!f)
+				continue;
+		}
+		fs::remove(probe, ec);
+		cemuLog_log(LogType::Force, "Host: no game folder drive, exporting to {}", _pathToUtf8(root));
+		return root;
+	}
+	return {};
 }
 
 void HostTools::StartSaveLogs()
@@ -192,7 +214,7 @@ void HostTools::StartSaveLogs()
 	const fs::path root = GetExportRoot();
 	if (root.empty())
 	{
-		HostUI::PushMessage("No game drive", "Add a game folder on your USB drive first (Settings > Game folders), the logs are saved to that drive.");
+		HostUI::PushMessage("No USB drive", "Plug in a USB drive (formatted NTFS or exFAT), the logs are saved to it.");
 		return;
 	}
 	_RunTask("Saving logs...", [root]() {
@@ -221,7 +243,7 @@ void HostTools::StartBackupSaves()
 	const fs::path root = GetExportRoot();
 	if (root.empty())
 	{
-		HostUI::PushMessage("No game drive", "Add a game folder on your USB drive first (Settings > Game folders), the backup is saved to that drive.");
+		HostUI::PushMessage("No USB drive", "Plug in a USB drive (formatted NTFS or exFAT), the backup is saved to it.");
 		return;
 	}
 	_RunTask("Backing up saves...", [root]() {
