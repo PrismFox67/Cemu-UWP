@@ -63,6 +63,7 @@ namespace
 		kMenuStickTilt,
 		kMenuAmiibo,
 		kMenuSkylander,
+		kMenuSaveLogs,
 		kMenuExitGame,
 		kMenuExit,
 		kMenuCount,
@@ -748,6 +749,11 @@ namespace
 		case kMenuSkylander:
 			_ToggleSkylander();
 			break;
+		case kMenuSaveLogs:
+			// GitHub #12: same as Settings -> Save logs to USB, without leaving the game
+			if (!HostTools::IsBusy())
+				HostTools::StartSaveLogs();
+			break;
 		case kMenuExitGame:
 			s_menuOpen = false;
 			s_exitGameRequested = true;
@@ -1424,6 +1430,7 @@ void HostApp::DrawInGameMenu()
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
 			_AmiiboLabel(),
 			_SkylanderLabel(),
+			HostTools::IsBusy() ? "Save logs to USB (busy...)" : "Save logs to USB",
 			"Exit to game list",
 			"Quit Cemu",
 		};
