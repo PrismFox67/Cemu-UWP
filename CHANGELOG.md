@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-04
+### D3D12
+- **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
+
 ## 2026-11-03
 
 ### Xbox app

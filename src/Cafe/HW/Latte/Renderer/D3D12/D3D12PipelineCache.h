@@ -86,6 +86,9 @@ private:
 
 	D3D12Renderer* m_renderer;
 	std::unordered_map<uint64, std::shared_ptr<D3D12PipelineInfo>> m_pipelines;
+	// Smooth mode stand-ins (#573): pipelines grouped by _SubstituteKey, up to 4 per key
+	std::unordered_map<uint64, std::vector<std::shared_ptr<D3D12PipelineInfo>>> m_substitutes;
+	D3D12PipelineInfo* FindSubstitute(uint64 substituteKey);
 	std::shared_ptr<D3D12PipelineCompileQueue> m_compileQueue;
 	void OpenDiskCaches(uint64 titleId);
 	bool ResolveRecordedShaders(D3D12PipelineCompileJob& job);
