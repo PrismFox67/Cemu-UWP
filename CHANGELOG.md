@@ -8,6 +8,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-04
 ### D3D12
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
+### Games
+- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
 
 ## 2026-11-03
 ### Games
