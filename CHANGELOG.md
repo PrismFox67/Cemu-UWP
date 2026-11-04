@@ -5,7 +5,13 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-04
+### D3D12
+- Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
+
 ## 2026-11-03
+### Games
+- Breath of the Wild: missing or flickering short grass (vertex data past the size the emulator computed read as 0). Adapted from Dushe22/Cemu-UWP.
 
 ### Xbox app
 - **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
