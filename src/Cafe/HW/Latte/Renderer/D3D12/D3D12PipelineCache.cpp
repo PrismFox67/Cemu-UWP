@@ -24,6 +24,8 @@
 #include <thread>
 #include <unordered_set>
 
+extern std::atomic<uint64> g_pipelineDriverCreateMs; // LattePerformanceMonitor.cpp
+
 extern std::atomic_int g_compiling_pipelines;
 extern std::atomic_int g_compiling_pipelines_async;
 
@@ -268,13 +270,13 @@ public:
 	// pipeline library (Xbox) every preloaded pipeline is otherwise held for the whole session; a draw that needs one
 	// later creates it again (from the blob cache when there is one). Pipelines draws use are also held by the pipeline
 	// cache, so dropping their entry here frees nothing and costs nothing. Returns the number released
-	uint32 ReleaseUnused()
+	uint32 ReleaseUnused(bool keepStartup)
 	{
 		std::unique_lock lock(m_mutex);
 		uint32 count = 0;
 		for (auto it = m_inMemory.begin(); it != m_inMemory.end();)
 		{
-			if (!it->second.used)
+			if (!it->second.used && !(keepStartup && it->second.startup))
 			{
 				it = m_inMemory.erase(it);
 				count++;
@@ -283,6 +285,14 @@ public:
 				++it;
 		}
 		return count;
+	}
+
+	// #671: what Quick start built on the loading screen is what sessions need soon, soft memory pressure leaves it alone
+	void MarkCurrentAsStartup()
+	{
+		std::unique_lock lock(m_mutex);
+		for (auto& it : m_inMemory)
+			it.second.startup = true;
 	}
 
 	void Save()
@@ -390,6 +400,7 @@ private:
 	{
 		ComPtr<ID3D12PipelineState> pso;
 		bool used; // loaded by a draw this session; false = only created ahead of time (preload) so far
+		bool startup = false; // created on the Quick start loading screen
 	};
 	std::unordered_map<std::wstring, InMemoryPipeline> m_inMemory;
 	bool m_dirty = false;
@@ -579,6 +590,7 @@ private:
 		D3D12PipelineQuarantine::t_creatingKey = 0;
 		D3D12_Checkpoint(device.Get(), "game pipeline created");
 		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+		g_pipelineDriverCreateMs += (uint64)ms; // #671: on the Stutter line, a long create may hold a driver lock the GPU thread needs
 		if (FAILED(hr))
 		{
 			cemuLog_log(LogType::Force, "D3D12: CreateGraphicsPipelineState failed ({}) for VS {:016x} PS {:016x}", D3D12_HResultToString(hr), vsHash, psHash);
@@ -1256,10 +1268,25 @@ bool D3D12PipelineCache::UpdatePreload(uint32& finishedCount, bool blocking)
 	// background (once per game frame) keep it to two at a time, so the emulator keeps its CPU cores (menus would stutter
 	// otherwise) and a pipeline a draw waits for isn't stuck behind preloads
 	const uint32 kMaxInFlight = blocking ? 32 : 2;
-	if (!blocking && LatteTC_GetMemoryPressure() >= 1)
+	if (!blocking)
 	{
-		finishedCount = *m_preload.finished + m_preload.skipped;
-		return true; // paused until memory use is back down
+		// #671: the background preload filled memory, pressure released it again, and so on for the whole session (Xbox,
+		// BOTW). Wait a minute after pressure ends, and after the third time give up for this session
+		const auto now = std::chrono::steady_clock::now();
+		const bool pressure = LatteTC_GetMemoryPressure() >= 1;
+		if (pressure && !m_preload.underPressure && ++m_preload.pressureEvents >= 3)
+		{
+			cemuLog_log(LogType::Force, "D3D12: Quick start: background preload stopped for this session, memory stays high ({} of {} pipelines done)", m_preload.next, m_preload.limit);
+			m_preload.next = m_preload.limit;
+		}
+		m_preload.underPressure = pressure;
+		if (pressure)
+			m_preload.resumeAt = now + std::chrono::seconds(60);
+		if (m_preload.next < m_preload.limit && now < m_preload.resumeAt)
+		{
+			finishedCount = *m_preload.finished + m_preload.skipped;
+			return true; // paused until memory use is back down
+		}
 	}
 	const auto sliceEnd = std::chrono::steady_clock::now() + std::chrono::milliseconds(blocking ? 20 : 2);
 	while (m_preload.next < m_preload.limit && m_preload.submitted - *m_preload.finished < kMaxInFlight && std::chrono::steady_clock::now() < sliceEnd)
@@ -1298,6 +1325,8 @@ void D3D12PipelineCache::ContinuePreloadInBackground()
 	cemuLog_log(LogType::Force, "D3D12: Quick start: {} pipelines created in {}ms, creating the other {} in the background", m_preload.submitted, ms, m_preload.order.size() - m_preload.limit);
 	m_preload.limit = m_preload.order.size();
 	m_backgroundPreload = true;
+	if (m_diskCache)
+		m_diskCache->MarkCurrentAsStartup();
 }
 
 void D3D12PipelineCache::BeginStartupWindow()
@@ -1365,7 +1394,7 @@ void D3D12PipelineCache::TickBackgroundPreload()
 	if (m_diskCache && LatteTC_GetMemoryPressure() >= 1 && std::chrono::steady_clock::now() - m_lastUnusedRelease >= std::chrono::seconds(10))
 	{
 		m_lastUnusedRelease = std::chrono::steady_clock::now();
-		if (const uint32 released = m_diskCache->ReleaseUnused())
+		if (const uint32 released = m_diskCache->ReleaseUnused(LatteTC_GetMemoryPressure() < 2))
 			cemuLog_log(LogType::Force, "D3D12: Memory pressure: released {} preloaded pipelines no draw used yet", released);
 	}
 	// the app is often closed without a clean shutdown (Xbox), so the usage history is written every 30 s
@@ -1376,6 +1405,12 @@ void D3D12PipelineCache::TickBackgroundPreload()
 	}
 	if (!m_backgroundPreload)
 		return;
+	const auto progressNow = std::chrono::steady_clock::now();
+	if (progressNow - m_lastPreloadLog >= std::chrono::seconds(30))
+	{
+		m_lastPreloadLog = progressNow;
+		cemuLog_log(LogType::Force, "D3D12: Quick start: background preload {} done, {} left{}", m_preload.next, m_preload.limit - m_preload.next, progressNow < m_preload.resumeAt ? ", paused (memory)" : "");
+	}
 	uint32 finished = 0;
 	if (!UpdatePreload(finished, false))
 	{
