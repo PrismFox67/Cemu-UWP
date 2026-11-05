@@ -21,6 +21,12 @@ on every change:
 | `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
 | `MK8_FirstPerson.zip` | The Mario Kart 8 first person pack on its own, for other Cemu builds (the downloads above already include it) |
 
+#### Older versions
+Every earlier Xbox build is on the **[older versions page](https://github.com/PrismFox67/Cemu-UWP/releases/tag/older-versions)**,
+no GitHub account needed. Useful when something used to work and you want to find the build where it changed. An older
+build may refuse to install over a newer one: back up your saves first (Settings → Logs and backups), then uninstall Cemu
+and install the older build.
+
 ### Game compatibility
 Games players have tested on Xbox Series X|S; the **[compatibility list](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md)**
 has the resolution, FPS and notes for each one.
@@ -64,7 +70,8 @@ available.
   DSU / cemuhook app on the same Wi-Fi.
 - **In-game menu** (click both sticks, or hold View + Menu; a hint shows when a game starts): switch between the TV and
   GamePad screens, a **GamePad overlay** (the GamePad screen small in a corner of the TV image, e.g. MK8's minimap;
-  corner, size and opacity, remembered per game), a touch cursor for GamePad-touch games, FPS counter, VSync, volume and player 1's stick deadzone
+  a corner, the center (where split-screen lines cross) or side by side (TV image shrunk to the left, GamePad screen
+  next to it); size and opacity, remembered per game, defaults for other games in Settings), a touch cursor for GamePad-touch games, FPS counter, VSync, volume and player 1's stick deadzone
   (applied right away), motion on/off, **amiibo** (dumps in `LocalState/amiibo`), a **Skylanders portal** (figures in
   `LocalState/skylanders`), and exit to the game list.
 - **Wii U dialogs with a controller.** The on-screen keyboard and error dialogs can be used with the controller.
