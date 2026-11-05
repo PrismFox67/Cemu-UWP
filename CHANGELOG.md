@@ -8,6 +8,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-05
 ### Xbox app
 - Quick start no longer competes with the game when memory runs low: background pipeline creation waits a minute after memory pressure and stops for the session after the third time, and what the loading screen built is kept unless memory is critical.
+### Site and CI
+- **Older versions:** every Xbox build is now kept on the [older versions page](https://github.com/PrismFox67/Cemu-UWP/releases/tag/older-versions), no GitHub account needed, so you can go back and find the build where something changed. New builds are added automatically.
 
 ## 2026-11-04
 ### D3D12
