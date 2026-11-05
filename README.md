@@ -21,6 +21,12 @@ on every change:
 | `cemu-host-win32-x64.zip` | The Xbox frontend as a Windows program, for testing it on a PC |
 | `MK8_FirstPerson.zip` | The Mario Kart 8 first person pack on its own, for other Cemu builds (the downloads above already include it) |
 
+#### Older versions
+Every earlier Xbox build is on the **[older versions page](https://github.com/PrismFox67/Cemu-UWP/releases/tag/older-versions)**,
+no GitHub account needed. Useful when something used to work and you want to find the build where it changed. An older
+build may refuse to install over a newer one: back up your saves first (Settings → Logs and backups), then uninstall Cemu
+and install the older build.
+
 ### Game compatibility
 Games players have tested on Xbox Series X|S; the **[compatibility list](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md)**
 has the resolution, FPS and notes for each one.

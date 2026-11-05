@@ -369,6 +369,7 @@ jobs:
           bash tools/ci/keep_download_count.sh cemu-uwp-x64.zip || true   # GitHub resets the count on replace
           gh release upload ci-latest cemu-uwp-x64.zip --clobber
           bash tools/ci/keep_download_count.sh --json || true   # totals.json for the README badge + release notes line
+          bash tools/ci/older_versions.sh cemu-uwp-x64.zip "0.1.${{ github.run_number }}" || true   # permanent copy, see the script
         fi
 
     - name: "Upload artifact"
