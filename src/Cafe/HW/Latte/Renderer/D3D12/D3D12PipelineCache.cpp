@@ -786,6 +786,12 @@ public:
 		file.write((const char*)&h, sizeof(h));
 	}
 
+	bool IsKnown(const std::vector<uint8>& record)
+	{
+		std::lock_guard lock(m_mutex);
+		return m_known.count(_Hash(record)) != 0;
+	}
+
 	void Add(const std::vector<uint8>& record)
 	{
 		std::lock_guard lock(m_mutex);
@@ -1665,9 +1671,12 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		result->isReady.store(true, std::memory_order_release); // stays invalid, the draws are skipped
 		return result;
 	}
+	// #681: log only. A pipeline earlier sessions recorded: Quick start hasn't reached it yet or memory pressure dropped it
+	bool recordedBefore = false;
 	if (m_recordFile)
 	{
 		const std::vector<uint8> record = job->SerializeRecord();
+		recordedBefore = m_recordFile->IsKnown(record);
 		m_recordFile->Add(record);
 		m_recordFile->MarkUsed(record);
 		if (m_scene)
@@ -1711,9 +1720,30 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		{
 			g_compiling_pipelines_async++;
 			// Smooth: draw with a near-identical ready pipeline instead of skipping the draw (less pop-in)
+			D3D12PipelineInfo* substitute = nullptr;
 			if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
-				if (D3D12PipelineInfo* substitute = FindSubstitute(substituteKey))
-					return substitute;
+				substitute = FindSubstitute(substituteKey);
+			// 8 per 10 s, not just the first ones: loading uses those up and the pass to find runs when the player acts
+			static uint32 s_missLogs = 0, s_missLogsInWindow = 0;
+			static std::chrono::steady_clock::time_point s_missWindowStart{};
+			if (now - s_missWindowStart >= std::chrono::seconds(10))
+			{
+				s_missWindowStart = now;
+				s_missLogsInWindow = 0;
+			}
+			if (s_missLogsInWindow < 8 && s_missLogs < 2000)
+			{
+				s_missLogsInWindow++;
+				s_missLogs++;
+				uint32 targets = 0;
+				if (fbo)
+					for (auto& color : fbo->colorBuffer)
+						targets += color.texture ? 1 : 0;
+				cemuLog_log(LogType::Force, "D3D12: pipeline not ready ({}): vs {:016x} ps {:016x} target {}x{} {} colour buffer(s), draw {}", recordedBefore ? "recorded" : "new",
+					vertexShader ? vertexShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0, fbo ? fbo->m_size.x : 0, fbo ? fbo->m_size.y : 0, targets, substitute ? "substituted" : "skipped");
+			}
+			if (substitute)
+				return substitute;
 		}
 	}
 	else
