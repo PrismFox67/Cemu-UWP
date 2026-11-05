@@ -5,13 +5,17 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-05
+### D3D12
+- Runes (Magnesis, Stasis) failing until you look elsewhere: with "New shaders: Smooth", pipelines recorded in earlier sessions are now waited for briefly instead of skipping the draw (GitHub #5, not confirmed on Xbox yet).
+
 ## 2026-11-04
 ### D3D12
 - Shadows: shadow-map (comparison) samplers no longer use anisotropic filtering, a possible cause of blocky or doubled shadows (GitHub #5, #8, not confirmed on Xbox yet). For testing, an empty `depth_d32.txt` in the user folder stores depth in a higher-precision format.
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
 - **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
 ### Games
-- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
+- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set.
 ### Xbox app
 - **Save logs / Back up saves to USB work without a game folder**: if your games are installed instead of in a game folder, Cemu now finds the USB drive by itself (GitHub #12).
 - **Quick start is on by default** (Settings, pipelines): the loading screen only creates the pipelines the menus and the start of play needed last time, the rest are created in the background while you play. Turned on once for existing settings; turn it off again if you prefer the full wait.
