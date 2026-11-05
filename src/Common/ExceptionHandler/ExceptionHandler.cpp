@@ -104,6 +104,27 @@ void ExceptionHandler_LogGeneralInfo()
         sprintf(dumpLine, "r24=%08x r25=%08x r26=%08x r27=%08x r28=%08x r29=%08x r30=%08x r31=%08x", gprs[24], gprs[25], gprs[26], gprs[27], gprs[28], gprs[29], gprs[30], gprs[31]);
         CrashLog_WriteLine(dumpLine);
 
+        // #694: a jump to a null or bad address leaves no clue in the registers. The code before LR and the objects the
+        // argument registers point at show which pointer it came from
+        sprintf(dumpLine, "CTR=%08x", hCPU->spr.CTR);
+        CrashLog_WriteLine(dumpLine);
+        auto dumpWords = [&](const char* name, uint32 addr) {
+            addr &= ~3u;
+            if (!memory_isAddressRangeAccessible(addr, 8 * 4))
+                return;
+            const uint32* words = (const uint32*)memory_getPointerFromVirtualOffset(addr);
+            sprintf(dumpLine, "%s [0x%08x] %08x %08x %08x %08x %08x %08x %08x %08x", name, addr, _swapEndianU32(words[0]), _swapEndianU32(words[1]), _swapEndianU32(words[2]),
+                _swapEndianU32(words[3]), _swapEndianU32(words[4]), _swapEndianU32(words[5]), _swapEndianU32(words[6]), _swapEndianU32(words[7]));
+            CrashLog_WriteLine(dumpLine);
+        };
+        for (uint32 i = 0; i < 4; i++)
+            dumpWords("code", hCPU->spr.LR - 0x60 + i * 0x20);
+        for (uint32 i = 0; i < 4; i++)
+            dumpWords("r3", hCPU->gpr[3] + i * 0x20);
+        dumpWords("r9", hCPU->gpr[9]);
+        dumpWords("r11", hCPU->gpr[11]);
+        CrashLog_WriteLine("");
+
         // stack trace
         MPTR currentStackVAddr = hCPU->gpr[1];
         CrashLog_WriteLine("");
