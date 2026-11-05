@@ -23,6 +23,7 @@ Every Xbox app build that has been on [ci-latest]($base/releases/tag/ci-latest),
 
 - **No GitHub account needed**, just click a file. New builds are added here automatically.
 - **Installing:** same as any other build, see the [Xbox tester guide]($base/blob/d3d12-backend/docs/XBOX_TESTERS.md).
+- **Builds up to 0.1.60** all report package version 0.1.0.0, so going by the version shown in Windows or on the Xbox won't tell them apart.
 - **Going back to an older build:** it has a lower version number than the one installed, so it may refuse to install over it. If it does, uninstall Cemu first. Uninstalling can remove what's in Cemu's own storage, so back up your saves first (Settings → Logs and backups), or keep them on USB (Settings → Folders → Save folder).
 - **What changed when:** [CHANGELOG.md]($base/blob/d3d12-backend/CHANGELOG.md) lists changes by date.
 
