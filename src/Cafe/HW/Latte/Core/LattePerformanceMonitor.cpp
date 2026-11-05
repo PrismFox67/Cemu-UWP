@@ -40,6 +40,7 @@ namespace
 }
 
 performanceMonitor_t performanceMonitor{};
+std::atomic<uint64> g_pipelineDriverCreateMs{ 0 }; // D3D12 pipelines created by the driver since the last frame, in ms
 
 void LattePerformanceMonitor_frameEnd()
 {
@@ -66,15 +67,16 @@ void LattePerformanceMonitor_frameEnd()
 		const auto now = std::chrono::steady_clock::now();
 		const sint64 frameMs = s_lastFrameEnd.time_since_epoch().count() ? std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastFrameEnd).count() : 0;
 		s_lastFrameEnd = now;
+		const uint64 pipelineDriverMs = g_pipelineDriverCreateMs.exchange(0); // on the compile threads, summed
 		if (frameMs >= 100 && frameMs < 10000) // longer gaps are pauses and loading, not stutter
 		{
 			auto ms = [](LattePerfStatTimer& t) { return (double)PPCTimer_tscToMicroseconds(t.getPreviousFrameValue()) / 1000.0; };
 			if (s_stutterLogs < 100)
 			{
 				s_stutterLogs++;
-				cemuLog_log(LogType::Force, "Stutter: frame {} ms; GPU thread: shader/pipeline create {:.0f}, waiting for readbacks/queries {:.0f}, fence {:.0f}, texture stage {:.0f}, idle (waiting for the CPU) {:.0f}, draw API {:.0f}",
+				cemuLog_log(LogType::Force, "Stutter: frame {} ms; GPU thread: shader/pipeline create {:.0f}, waiting for readbacks/queries {:.0f}, fence {:.0f}, texture stage {:.0f}, idle (waiting for the CPU) {:.0f}, draw API {:.0f}; compile threads: driver pipeline create {}",
 					frameMs, ms(performanceMonitor.gpuTime_shaderCreate), ms(performanceMonitor.gpuTime_waitForAsync), ms(performanceMonitor.gpuTime_fenceTime),
-					ms(performanceMonitor.gpuTime_dcStageTextures), ms(performanceMonitor.gpuTime_idleTime), ms(performanceMonitor.gpuTime_dcStageDrawcallAPI));
+					ms(performanceMonitor.gpuTime_dcStageTextures), ms(performanceMonitor.gpuTime_idleTime), ms(performanceMonitor.gpuTime_dcStageDrawcallAPI), pipelineDriverMs);
 			}
 			else
 				s_stuttersSinceSummary++;

@@ -105,6 +105,10 @@ private:
 		uint32 skipped = 0; // records whose shaders are missing (e.g. the shader cache was deleted)
 		std::shared_ptr<std::atomic<uint32>> finished;
 		std::chrono::steady_clock::time_point start;
+		// background preload under memory pressure (#671)
+		bool underPressure = false;
+		uint32 pressureEvents = 0;
+		std::chrono::steady_clock::time_point resumeAt{};
 	} m_preload;
 	bool m_backgroundPreload = false;
 	void TickScenePreload();
@@ -119,4 +123,5 @@ private:
 	std::chrono::milliseconds m_waitedInWindow{ 0 };
 	std::chrono::steady_clock::time_point m_lastUsageSave{};
 	std::chrono::steady_clock::time_point m_lastUnusedRelease{};
+	std::chrono::steady_clock::time_point m_lastPreloadLog{};
 };
