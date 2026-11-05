@@ -84,7 +84,22 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 
 	D3D12_HEAP_PROPERTIES heapProps = D3D12_HeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	const D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
-	HRESULT hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
+	HRESULT hr = E_FAIL;
+	// #677: buffer copies place array slices above 0 of block compressed textures wrongly on Xbox, CPU writes place them
+	// correctly (GitHub #9/#12 broken letters: fonts are BC4 arrays). Adapted from danprice142/Cemu-UWP (MPL-2.0).
+	// bc_array_gpu_copy in magnesis_ab.txt keeps the copies, for comparing on Xbox
+	if (m_formatInfo.isCompressed && renderer->IsUma() && m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D && m_desc.DepthOrArraySize > 1 && m_desc.Flags == D3D12_RESOURCE_FLAG_NONE && !D3D12_AbToggle("bc_array_gpu_copy"))
+	{
+		D3D12_HEAP_PROPERTIES cpuHeap{};
+		cpuHeap.Type = D3D12_HEAP_TYPE_CUSTOM;
+		cpuHeap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+		cpuHeap.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+		hr = renderer->GetDevice()->CreateCommittedResource(&cpuHeap, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
+		m_cpuWritable = SUCCEEDED(hr);
+		cemuLog_logOnce(LogType::Force, "D3D12: block compressed arrays are uploaded with CPU writes (first: {}x{}x{} fmt {:04x}, {})", m_desc.Width, m_desc.Height, m_desc.DepthOrArraySize, (uint32)format, m_cpuWritable ? "ok" : "failed, using copies");
+	}
+	if (!m_cpuWritable)
+		hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
 	// CEMU_D3D12_TEST_TEXTURE_OOM=1: every 300th texture allocation fails once, to exercise the recovery below on a PC
 	static const bool s_testOom = [] { char* v = nullptr; size_t n = 0; const bool on = _dupenv_s(&v, &n, "CEMU_D3D12_TEST_TEXTURE_OOM") == 0 && v && v[0] == '1'; free(v); return on; }();

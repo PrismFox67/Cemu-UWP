@@ -24,6 +24,7 @@ public:
 	const D3D12TextureFormatInfo& GetFormatInfo() const { return m_formatInfo; }
 	bool IsAlternateFormat() const { return m_formatInfo.isAlternateFormat; }
 	bool IsCompressedFormat() const { return m_formatInfo.isCompressed; }
+	bool IsCpuWritable() const { return m_cpuWritable; } // uploaded with WriteToSubresource (#677)
 	bool Is3DTexture() const { return m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D; }
 
 	uint32 GetMipCount() const { return m_desc.MipLevels; }
@@ -57,5 +58,6 @@ private:
 	D3D12_RESOURCE_DESC m_desc{};
 	D3D12TextureFormatInfo m_formatInfo;
 	uint32 m_planeCount = 1;
+	bool m_cpuWritable = false;
 	std::vector<D3D12_RESOURCE_STATES> m_states;
 };

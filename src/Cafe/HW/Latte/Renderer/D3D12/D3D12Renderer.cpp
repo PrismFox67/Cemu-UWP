@@ -247,6 +247,8 @@ void D3D12Renderer::CreateDevice()
 		}
 	}
 	D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
+	D3D12_FEATURE_DATA_ARCHITECTURE architecture{};
+	m_isUma = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_ARCHITECTURE, &architecture, sizeof(architecture))) && architecture.UMA;
 	if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))))
 		m_bindingTier = options.ResourceBindingTier;
 	if (m_bindingTier < D3D12_RESOURCE_BINDING_TIER_3)
@@ -1427,6 +1429,7 @@ namespace
 		{ "query_sync", nullptr },
 		{ "flip_pacing", nullptr },
 		{ "feedback_copy", nullptr },
+		{ "bc_array_gpu_copy", nullptr }, // #677: opts out of CPU writes for block compressed arrays
 		{ "relgpr_off", nullptr }, // #457: opts out of the relgpr_selects default of UWP builds
 	};
 	std::mutex s_abMutex;
@@ -1893,13 +1896,44 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 	if (!_Check3DSlice(tex, mipIndex, sliceIndex, "upload"))
 		return;
 
-	TransitionTexture(tex, mipIndex, 1, is3D ? 0 : sliceIndex, 1, D3D12_RESOURCE_STATE_COPY_DEST);
-	FlushBarriers();
-
 	const D3D12_RESOURCE_DESC& desc = tex->GetDesc();
 	const uint32 blockDim = fmt.isCompressed ? 4 : 1;
 	const uint32 widthInBlocks = (uint32)(width + blockDim - 1) / blockDim;
 	const uint32 heightInBlocks = (uint32)(height + blockDim - 1) / blockDim;
+
+	if (tex->IsCpuWritable())
+	{
+		// #677: written by the CPU right now, so the GPU must be done with the texture. Every GPU use leaves it out of COMMON
+		const uint32 sub = tex->GetSubresourceIndex(mipIndex, sliceIndex);
+		D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+		UINT numRows;
+		UINT64 rowSize, totalBytes;
+		m_device->GetCopyableFootprints(&desc, sub, 1, 0, &layout, &numRows, &rowSize, &totalBytes);
+		const uint32 srcRowBytes = heightInBlocks ? compressedImageSize / heightInBlocks : 0;
+		if (numRows == heightInBlocks && srcRowBytes >= rowSize)
+		{
+			if (!tex->AllSubresourcesInState(D3D12_RESOURCE_STATE_COMMON))
+			{
+				TransitionTextureAll(tex, D3D12_RESOURCE_STATE_COMMON);
+				FlushBarriers();
+				SubmitCommandList(true);
+			}
+			if (SUCCEEDED(resource->Map(sub, nullptr, nullptr)))
+			{
+				const HRESULT hr = resource->WriteToSubresource(sub, nullptr, pixelData, srcRowBytes, srcRowBytes * numRows);
+				resource->Unmap(sub, nullptr);
+				if (SUCCEEDED(hr))
+				{
+					tex->MarkContentWritten();
+					return;
+				}
+			}
+			cemuLog_logOnce(LogType::Force, "D3D12: CPU texture upload failed (fmt {:04x}), using a copy", (uint32)tex->format);
+		}
+	}
+
+	TransitionTexture(tex, mipIndex, 1, is3D ? 0 : sliceIndex, 1, D3D12_RESOURCE_STATE_COPY_DEST);
+	FlushBarriers();
 
 	auto copyPlane = [&](uint32 plane, const uint8* src, uint32 srcRowBytes) {
 		const uint32 sub = tex->GetSubresourceIndex(mipIndex, sliceIndex, plane);

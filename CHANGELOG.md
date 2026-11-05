@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-05
+### Xbox app
+- Broken letters and missing glyph pieces: block compressed texture arrays (game fonts) are now written by the CPU, as copies can misplace their slices on Xbox (GitHub #9, #12, not confirmed on Xbox yet).
+
 ## 2026-11-04
 ### D3D12
 - Shadows: shadow-map (comparison) samplers no longer use anisotropic filtering, a possible cause of blocky or doubled shadows (GitHub #5, #8, not confirmed on Xbox yet). For testing, an empty `depth_d32.txt` in the user folder stores depth in a higher-precision format.
