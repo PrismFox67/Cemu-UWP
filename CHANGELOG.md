@@ -6,8 +6,11 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-05
+### Games
+- **Broken letters:** block compressed texture arrays are now written by the CPU on Xbox, because GPU copies put every layer after the first in the wrong place. A tester confirmed clean Arabic text in Breath of the Wild on Xbox (GitHub #12). Wind Waker HD pause letters (GitHub #9) use the same kind of font texture but haven't been checked yet. Adapted from danprice142/Cemu-UWP.
 ### Xbox app
 - Quick start no longer competes with the game when memory runs low: background pipeline creation waits a minute after memory pressure and stops for the session after the third time, and what the loading screen built is kept unless memory is critical.
+- Crash logs: when a game thread crashes, the log now shows more about the code that was running, to help track down the Sonic Lost World crash (GitHub #12). Logging only.
 ### Site and CI
 - **Older versions:** every Xbox build is now kept on the [older versions page](https://github.com/PrismFox67/Cemu-UWP/releases/tag/older-versions), no GitHub account needed, so you can go back and find the build where something changed. New builds are added automatically.
 
@@ -17,7 +20,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Shadows: slope-scaled depth bias was rounded to 0 for small values (Breath of the Wild's shadow casters got none), a likely cause of blocky, doubled or missing shadows (GitHub #5, #8). Adapted from Dushe22/Cemu-UWP.
 - **Less pop-in with "New shaders: Smooth"**: while a new pipeline is created, the draw uses a ready one with the same shaders and targets (only blend factors, depth/stencil tests, culling or depth bias differ) instead of being skipped. Draws with stream-out are never skipped now.
 ### Games
-- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set; may help fonts with thin strokes (GitHub #9/#12, not confirmed yet).
+- Text and sprites whose game asks for sharp (point) magnification are no longer blurred by the D3D12 backend when anisotropic filtering is set.
 ### Xbox app
 - **Save logs / Back up saves to USB work without a game folder**: if your games are installed instead of in a game folder, Cemu now finds the USB drive by itself (GitHub #12).
 - **Quick start is on by default** (Settings, pipelines): the loading screen only creates the pipelines the menus and the start of play needed last time, the rest are created in the background while you play. Turned on once for existing settings; turn it off again if you prefer the full wait.
