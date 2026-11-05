@@ -774,6 +774,12 @@ public:
 		file.write((const char*)&h, sizeof(h));
 	}
 
+	bool IsKnown(const std::vector<uint8>& record)
+	{
+		std::lock_guard lock(m_mutex);
+		return m_known.count(_Hash(record)) != 0;
+	}
+
 	void Add(const std::vector<uint8>& record)
 	{
 		std::lock_guard lock(m_mutex);
@@ -1630,9 +1636,12 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		result->isReady.store(true, std::memory_order_release); // stays invalid, the draws are skipped
 		return result;
 	}
+	// a pipeline earlier sessions recorded: Quick start may not have reached it yet, or memory pressure dropped it (#567b)
+	bool recordedBefore = false;
 	if (m_recordFile)
 	{
 		const std::vector<uint8> record = job->SerializeRecord();
+		recordedBefore = m_recordFile->IsKnown(record);
 		m_recordFile->Add(record);
 		m_recordFile->MarkUsed(record);
 		if (m_scene)
@@ -1663,7 +1672,10 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		// black for good, as the probe was never drawn again)
 		auto timeout = std::max(std::chrono::milliseconds(0), std::chrono::milliseconds(2000) - m_waitedInWindow);
 		const int waitMode = GetConfig().pipeline_wait.GetValue();
-		if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
+		// #669 (GitHub #5, Magnesis/Stasis failing until later): a recorded pipeline comes from the driver cache in a few ms,
+		// so wait for it within the budget. Rarely used passes like the rune pick pass aren't small or query counted, and
+		// skipping or substituting them gave the game a wrong result; only pipelines never seen before are skipped
+		if (waitMode == 0 && !IsLikelyOneOffTarget(fbo) && !recordedBefore)
 			timeout = std::chrono::milliseconds(0);
 		else if (waitMode == 2)
 			timeout = std::chrono::hours(1);
@@ -1676,9 +1688,22 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		{
 			g_compiling_pipelines_async++;
 			// Smooth: draw with a near-identical ready pipeline instead of skipping the draw (less pop-in)
+			D3D12PipelineInfo* substitute = nullptr;
 			if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
-				if (D3D12PipelineInfo* substitute = FindSubstitute(substituteKey))
-					return substitute;
+				substitute = FindSubstitute(substituteKey);
+			static uint32 s_missLogs = 0;
+			if (s_missLogs < 64)
+			{
+				s_missLogs++;
+				uint32 targets = 0;
+				if (fbo)
+					for (auto& color : fbo->colorBuffer)
+						targets += color.texture ? 1 : 0;
+				cemuLog_log(LogType::Force, "D3D12: pipeline not ready ({}): vs {:016x} ps {:016x} target {}x{} {} colour buffer(s), draw {}", recordedBefore ? "recorded" : "new",
+					vertexShader ? vertexShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0, fbo ? fbo->m_size.x : 0, fbo ? fbo->m_size.y : 0, targets, substitute ? "substituted" : "skipped");
+			}
+			if (substitute)
+				return substitute;
 		}
 	}
 	else
