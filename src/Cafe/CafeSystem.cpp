@@ -1205,13 +1205,21 @@ namespace CafeSystem
 
 	void RequestRecreateCanvas()
 	{
-		s_implementation->CafeRecreateCanvas();
+		if (s_implementation)
+			s_implementation->CafeRecreateCanvas();
+	}
+
+	void NotifyPPCProcessExiting()
+	{
+		if (s_implementation)
+			s_implementation->CafePPCProcessExiting();
 	}
 
 	void NotifyPPCProcessExit(sint32 status)
 	{
 		s_foregroundReturnStatus = status;
-		s_implementation->CafePPCProcessExit();
+		if (s_implementation)
+			s_implementation->CafePPCProcessExit();
 	}
 
 	std::optional<sint32> GetForegroundTitleReturnStatus()

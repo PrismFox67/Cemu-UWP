@@ -303,6 +303,8 @@ namespace
 		return false;
 	}
 
+	void _StartVirtualConsoleLogging();
+
 	void _LaunchGame(const fs::path& path)
 	{
 		HostIcons::Stop(); // it mounts titles, finish before the game's title is mounted
@@ -324,6 +326,8 @@ namespace
 				hasUpdate ? fmt::format("v{}", updateVersion) : std::string("none"),
 				hasDlc ? fmt::format("v{}", dlcVersion) : std::string("none"));
 		}
+
+		_StartVirtualConsoleLogging();
 
 		// the emulator renders into the same window, the launcher has to give up its swap chain first
 		s_launcher.reset();
@@ -810,11 +814,47 @@ namespace
 			cemuLog_log(LogType::Force, "Host: memory {} MB", usage >> 20);
 	}
 
+	// #709: the title ended itself (coreinit.exit, e.g. a Virtual Console emulator that gave up). Cafe OS shuts it down on
+	// its own thread, the host only has to stay away from the renderer meanwhile and go back to the game list after
+	std::atomic_bool s_titleExiting = false, s_titleExited = false;
+	class HostSystemImplementation : public CafeSystem::SystemImplementation
+	{
+	public:
+		void CafeRecreateCanvas() override {} // the window and its swap chain stay
+		void CafePPCProcessExiting() override { s_titleExiting = true; }
+		void CafePPCProcessExit() override { s_titleExited = true; }
+	} s_systemImplementation;
+
+	// #709: Virtual Console DS titles abort about a second after boot on Xbox, cause unknown. Their OS calls are logged for
+	// the first 15 s so the log shows what failed before the abort (only calls with a log type, not every call)
+	std::chrono::steady_clock::time_point s_vcLoggingEnd{};
+
+	void _StartVirtualConsoleLogging()
+	{
+		if (CafeSystem::GetForegroundTitleArgStr().find("hachihachi") == std::string::npos)
+			return;
+		cemuLog_log(LogType::Force, "Host: Virtual Console title, logging its OS calls for 15 s");
+		uint64 mask = 0;
+		for (LogType type : { LogType::APIErrors, LogType::UnsupportedAPI, LogType::CoreinitFile, LogType::CoreinitMem, LogType::CoreinitMemoryMapping, LogType::CoreinitLogging, LogType::Save })
+			mask |= cemuLog_getFlag(type);
+		cemuLog_setActiveLoggingFlags(s_loggingFlagMask | mask);
+		s_vcLoggingEnd = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+	}
+
+	void _StopVirtualConsoleLogging()
+	{
+		if (s_vcLoggingEnd == std::chrono::steady_clock::time_point{})
+			return;
+		s_vcLoggingEnd = {};
+		cemuLog_setActiveLoggingFlags(GetConfig().log_flag.GetValue());
+	}
+
 	// stops the title (the GPU thread destroys the renderer and its swap chain on the way out) and shows the launcher
 	// again, which recreates its own swap chain for the window
 	void _ExitToLauncher()
 	{
 		cemuLog_log(LogType::Force, "Host: stopping the title, back to the game list");
+		_StopVirtualConsoleLogging();
 		s_menuOpen = false;
 		s_comboActive = false;
 		if (s_touchCursor)
@@ -1045,6 +1085,7 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	ImGui::SetCurrentContext(previous);
 	HostTools::StartUpdateCheck();
 
+	CafeSystem::SetImplementation(&s_systemImplementation);
 	if (!options.launchPath.empty())
 		s_pendingLaunch = options.launchPath;
 	return true;
@@ -1080,6 +1121,23 @@ bool HostApp::RunFrame()
 		_RenderLauncherFrame();
 		break;
 	case State::Running:
+		if (s_vcLoggingEnd != std::chrono::steady_clock::time_point{} && std::chrono::steady_clock::now() >= s_vcLoggingEnd)
+			_StopVirtualConsoleLogging();
+		if (s_titleExiting)
+		{
+			if (s_titleExited)
+			{
+				s_titleExiting = false;
+				s_titleExited = false;
+				_ExitToLauncher();
+				const sint32 status = CafeSystem::GetForegroundTitleReturnStatus().value_or(0);
+				cemuLog_log(LogType::Force, "Host: the game ended itself (status {})", status);
+				HostUI::PushMessage("The game closed itself", fmt::format("It ended with status {}. If you didn't expect that, save the logs to USB and report it.", status));
+			}
+			else
+				std::this_thread::sleep_for(std::chrono::milliseconds(4));
+			break;
+		}
 		if (s_exitGameRequested)
 		{
 			s_exitGameRequested = false;

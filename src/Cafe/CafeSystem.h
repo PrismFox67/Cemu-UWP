@@ -13,6 +13,7 @@ namespace CafeSystem
 	public:
 		virtual void CafeRecreateCanvas() = 0;
 		virtual void CafePPCProcessExit() = 0; // emulated process exited
+		virtual void CafePPCProcessExiting() {} // about to shut the title down on another thread
 	};
 
 	enum class PREPARE_STATUS_CODE
@@ -56,6 +57,7 @@ namespace CafeSystem
 	uint32 GetRPXHashBase();
 	uint32 GetRPXHashUpdated();
 	void RequestRecreateCanvas();
+	void NotifyPPCProcessExiting();
 	void NotifyPPCProcessExit(sint32 status);
 
 	void DumpCurrentRPX();
