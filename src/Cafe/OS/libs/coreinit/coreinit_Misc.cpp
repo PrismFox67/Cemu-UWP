@@ -704,6 +704,7 @@ namespace coreinit
 
 	void OSShutdownThread(sint32 status)
 	{
+		CafeSystem::NotifyPPCProcessExiting();
 		CafeSystem::ShutdownTitle();
 		CafeSystem::NotifyPPCProcessExit(status);
 	}
