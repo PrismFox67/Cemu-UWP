@@ -1914,9 +1914,25 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 		{
 			if (!tex->AllSubresourcesInState(D3D12_RESOURCE_STATE_COMMON))
 			{
+				// #710: this waits for the GPU to go idle, a suspect for freezes when BOTW opens the map or a rune. Logged at most once a second
+				const auto waitStart = std::chrono::steady_clock::now();
 				TransitionTextureAll(tex, D3D12_RESOURCE_STATE_COMMON);
 				FlushBarriers();
 				SubmitCommandList(true);
+				static uint32 s_waits = 0;
+				static double s_waitedMs = 0.0;
+				static auto s_lastLog = waitStart;
+				const auto waitEnd = std::chrono::steady_clock::now();
+				s_waits++;
+				s_waitedMs += std::chrono::duration<double, std::milli>(waitEnd - waitStart).count();
+				if (waitEnd - s_lastLog >= std::chrono::seconds(1))
+				{
+					if (s_waitedMs >= 50.0)
+						cemuLog_log(LogType::Force, "D3D12: CPU texture uploads waited for the GPU {} times, {:.0f} ms in the last {:.1f} s", s_waits, s_waitedMs, std::chrono::duration<double>(waitEnd - s_lastLog).count());
+					s_waits = 0;
+					s_waitedMs = 0.0;
+					s_lastLog = waitEnd;
+				}
 			}
 			if (SUCCEEDED(resource->Map(sub, nullptr, nullptr)))
 			{
