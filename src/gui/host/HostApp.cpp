@@ -830,6 +830,72 @@ namespace
 	std::chrono::steady_clock::time_point s_vcLoggingEnd{};
 	bool s_vcLoggingTitle = false;
 
+	// #747: Virtual Console DS titles abort in FFLInitRes without the Mii resources of system title 0005001b-10056000. FFL only
+	// checks the magic and version of a 0x4A00 byte header at startup, so a generated file with that header and zeros gets
+	// them past it. It holds no Mii data: anything that draws a Mii from it may fail. A real dump is never overwritten
+	constexpr size_t kMiiStandInSize = 0x4A00;
+
+	fs::path _MiiResourcePath(const char* name)
+	{
+		return ActiveSettings::GetMlcPath("sys/title/0005001b/10056000/content/{}", name);
+	}
+
+	bool _HasRealMiiResources()
+	{
+		std::error_code ec;
+		const auto size = fs::file_size(_MiiResourcePath("FFLResMiddle.dat"), ec);
+		return !ec && size != kMiiStandInSize;
+	}
+
+	void _CreateMiiStandIn()
+	{
+		std::vector<char> data(kMiiStandInSize, 0);
+		const char header[8] = { 'F', 'F', 'R', 'A', 0, 7, 0, 0 };
+		std::copy(std::begin(header), std::end(header), data.begin());
+		for (const char* name : { "FFLResMiddle.dat", "FFLResHigh.dat" })
+		{
+			const fs::path path = _MiiResourcePath(name);
+			std::error_code ec;
+			if (fs::exists(path, ec))
+				continue;
+			fs::create_directories(path.parent_path(), ec);
+			std::ofstream file(path, std::ios::binary);
+			file.write(data.data(), data.size());
+			cemuLog_log(LogType::Force, "Host: {} stand-in for {}", file.good() ? "created Mii resource" : "failed to write Mii resource", name);
+		}
+	}
+
+	// FFL returns an error when it has to format a missing Mii database, and these titles abort on it, so a first launch would
+	// always stop. An empty database is the magic, zeros and a CRC16 over the rest. FFL creates its other files without an error
+	void _CreateEmptyMiiDatabases()
+	{
+		constexpr size_t kOfficialDatabaseSize = 0x43840;
+		std::vector<uint8> data(kOfficialDatabaseSize, 0);
+		const uint8 magic[4] = { 'F', 'F', 'O', 'C' };
+		std::copy(std::begin(magic), std::end(magic), data.begin());
+		uint16 crc = 0;
+		for (size_t i = 0; i < data.size() - 2; i++)
+		{
+			crc ^= (uint16)(data[i] << 8);
+			for (int bit = 0; bit < 8; bit++)
+				crc = (crc & 0x8000) ? (uint16)((crc << 1) ^ 0x1021) : (uint16)(crc << 1);
+		}
+		data[data.size() - 2] = (uint8)(crc >> 8);
+		data[data.size() - 1] = (uint8)crc;
+		// one shared save per console region
+		for (const char* titleLow : { "1004a000", "1004a100", "1004a200" })
+		{
+			const fs::path path = ActiveSettings::GetMlcPath("usr/save/00050010/{}/user/common/db/FFL_ODB.dat", titleLow);
+			std::error_code ec;
+			if (fs::exists(path, ec))
+				continue;
+			fs::create_directories(path.parent_path(), ec);
+			std::ofstream file(path, std::ios::binary);
+			file.write((const char*)data.data(), data.size());
+			cemuLog_log(LogType::Force, "Host: {} for {}", file.good() ? "created empty Mii database" : "failed to write Mii database", titleLow);
+		}
+	}
+
 	void _StartVirtualConsoleLogging()
 	{
 		s_vcLoggingTitle = false;
@@ -837,6 +903,8 @@ namespace
 			return;
 		s_vcLoggingTitle = true;
 		cemuLog_log(LogType::Force, "Host: Virtual Console title, logging its OS calls for 15 s");
+		_CreateMiiStandIn();
+		_CreateEmptyMiiDatabases();
 		uint64 mask = 0;
 		for (LogType type : { LogType::APIErrors, LogType::UnsupportedAPI, LogType::CoreinitFile, LogType::CoreinitMem, LogType::CoreinitMemoryMapping, LogType::CoreinitLogging, LogType::Save })
 			mask |= cemuLog_getFlag(type);
@@ -1136,10 +1204,9 @@ bool HostApp::RunFrame()
 				const sint32 status = CafeSystem::GetForegroundTitleReturnStatus().value_or(0);
 				cemuLog_log(LogType::Force, "Host: the game ended itself (status {})", status);
 				// #709: Virtual Console DS titles abort at startup when the Mii resources of the console aren't there
-				std::error_code ec;
-				if (s_vcLoggingTitle && !fs::exists(ActiveSettings::GetMlcPath("sys/title/0005001b/10056000/content/FFLResMiddle.dat"), ec))
+				if (s_vcLoggingTitle && !_HasRealMiiResources())
 				{
-					cemuLog_log(LogType::Force, "Host: FFLResMiddle.dat is missing, Virtual Console DS titles need system title 0005001b-10056000");
+					cemuLog_log(LogType::Force, "Host: no real FFLResMiddle.dat, Virtual Console DS titles need system title 0005001b-10056000");
 					HostUI::PushMessage("Wii U system files missing", "DS Virtual Console games need the Mii files of a Wii U. Dump system title 0005001b-10056000 from your own console and copy it to mlc01/sys/title/0005001b/10056000.");
 				}
 				else
