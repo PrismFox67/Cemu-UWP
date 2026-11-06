@@ -8,7 +8,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-05
 ### Games
 - **Broken letters:** block compressed texture arrays are now written by the CPU on Xbox, because GPU copies put every layer after the first in the wrong place. A tester confirmed clean Arabic text in Breath of the Wild on Xbox (GitHub #12). Wind Waker HD pause letters (GitHub #9) use the same kind of font texture but haven't been checked yet. Adapted from danprice142/Cemu-UWP.
+- Breath of the Wild shadows: three testers report them right on Xbox since this change (GitHub #5). The cause isn't proven.
 ### Xbox app
+- A game that closes itself no longer crashes Cemu: you go back to the game list with a message. DS Virtual Console games need Mii system files from your own Wii U (system title 0005001b-10056000); without them they stop at startup and Cemu now tells you so.
 - Quick start no longer competes with the game when memory runs low: background pipeline creation waits a minute after memory pressure and stops for the session after the third time, and what the loading screen built is kept unless memory is critical.
 - Crash logs: when a game thread crashes, the log now shows more about the code that was running, to help track down the Sonic Lost World crash (GitHub #12). Logging only.
 ### Site and CI
