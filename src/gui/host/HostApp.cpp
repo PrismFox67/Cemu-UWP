@@ -828,11 +828,14 @@ namespace
 	// #709: Virtual Console DS titles abort about a second after boot on Xbox, cause unknown. Their OS calls are logged for
 	// the first 15 s so the log shows what failed before the abort (only calls with a log type, not every call)
 	std::chrono::steady_clock::time_point s_vcLoggingEnd{};
+	bool s_vcLoggingTitle = false;
 
 	void _StartVirtualConsoleLogging()
 	{
+		s_vcLoggingTitle = false;
 		if (CafeSystem::GetForegroundTitleArgStr().find("hachihachi") == std::string::npos)
 			return;
+		s_vcLoggingTitle = true;
 		cemuLog_log(LogType::Force, "Host: Virtual Console title, logging its OS calls for 15 s");
 		uint64 mask = 0;
 		for (LogType type : { LogType::APIErrors, LogType::UnsupportedAPI, LogType::CoreinitFile, LogType::CoreinitMem, LogType::CoreinitMemoryMapping, LogType::CoreinitLogging, LogType::Save })
@@ -1132,7 +1135,15 @@ bool HostApp::RunFrame()
 				_ExitToLauncher();
 				const sint32 status = CafeSystem::GetForegroundTitleReturnStatus().value_or(0);
 				cemuLog_log(LogType::Force, "Host: the game ended itself (status {})", status);
-				HostUI::PushMessage("The game closed itself", fmt::format("It ended with status {}. If you didn't expect that, save the logs to USB and report it.", status));
+				// #709: Virtual Console DS titles abort at startup when the Mii resources of the console aren't there
+				std::error_code ec;
+				if (s_vcLoggingTitle && !fs::exists(ActiveSettings::GetMlcPath("sys/title/0005001b/10056000/content/FFLResMiddle.dat"), ec))
+				{
+					cemuLog_log(LogType::Force, "Host: FFLResMiddle.dat is missing, Virtual Console DS titles need system title 0005001b-10056000");
+					HostUI::PushMessage("Wii U system files missing", "DS Virtual Console games need the Mii files of a Wii U. Dump system title 0005001b-10056000 from your own console and copy it to mlc01/sys/title/0005001b/10056000.");
+				}
+				else
+					HostUI::PushMessage("The game closed itself", fmt::format("It ended with status {}. If you didn't expect that, save the logs to USB and report it.", status));
 			}
 			else
 				std::this_thread::sleep_for(std::chrono::milliseconds(4));
