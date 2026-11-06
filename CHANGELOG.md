@@ -16,6 +16,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Breath of the Wild shadows: three testers report them right on Xbox since this change (GitHub #5). The cause isn't proven.
 ### Xbox app
 - Logging only: the log now shows how long texture uploads wait for the GPU, to help track down the Breath of the Wild freezes when selecting a rune, opening the map or teleporting (GitHub #5). No fix yet.
+- LEGO Dimensions Toy Pad in the in-game menu (GitHub #15): pick one of the 7 spaces, then place any built-in figure or your own .bin dump from the dimensions folder, no real figures needed. Only the menu has been tested, on PC; it hasn't been tried with the game or on Xbox yet.
 - A game that closes itself no longer crashes Cemu: you go back to the game list with a message. DS Virtual Console games need Mii system files from your own Wii U (system title 0005001b-10056000); without them they stop at startup and Cemu now tells you so.
 - Quick start no longer competes with the game when memory runs low: background pipeline creation waits a minute after memory pressure and stops for the session after the third time, and what the loading screen built is kept unless memory is critical.
 - Crash logs: when a game thread crashes, the log now shows more about the code that was running, to help track down the Sonic Lost World crash (GitHub #12). Logging only.
