@@ -376,6 +376,7 @@ void D3D12Renderer::WaitForSubmission(uint64 submissionId)
 	cemu_assert_debug(submissionId <= m_lastSubmittedFenceValue);
 	if (GetCompletedSubmissionId() >= submissionId)
 		return;
+	LatteGpuPhase phase("GPU fence wait");
 	D3D12_ThrowIfFailed(m_fence->SetEventOnCompletion(submissionId, m_fenceEvent), "SetEventOnCompletion");
 	WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
 	GetCompletedSubmissionId();

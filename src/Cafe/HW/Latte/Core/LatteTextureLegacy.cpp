@@ -1,3 +1,4 @@
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
@@ -38,6 +39,7 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 
 void LatteTexture_ReloadData(LatteTexture* tex)
 {
+	LatteGpuPhase phase("texture reload");
 	tex->reloadCount++;
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
 	{

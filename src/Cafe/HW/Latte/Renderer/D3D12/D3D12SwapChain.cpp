@@ -1,3 +1,4 @@
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12SwapChain.h"
 
 #include <dxgi1_5.h>
@@ -118,7 +119,11 @@ bool D3D12SwapChain::Present(uint32 syncInterval)
 	if (syncInterval == 0 && m_allowTearing)
 		flags |= DXGI_PRESENT_ALLOW_TEARING;
 	const auto start = std::chrono::steady_clock::now();
-	HRESULT hr = m_swapChain->Present(syncInterval, flags);
+	HRESULT hr;
+	{
+		LatteGpuPhase phase("Present");
+		hr = m_swapChain->Present(syncInterval, flags);
+	}
 	const double blockedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 	m_presentStats.presents++;
 	m_presentStats.blockedMs += blockedMs;
