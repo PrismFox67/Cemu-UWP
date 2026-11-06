@@ -1,5 +1,8 @@
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include <chrono>
+#include <thread>
+#include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
+#include "Cafe/CafeSystem.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "WindowSystem.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
@@ -9,8 +12,42 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12DescriptorHeaps.h"
 #endif
 
+std::atomic<const char*> g_gpuThreadPhase{"commands"};
+
 namespace
 {
+	// #733: BOTW freezes of 5.3 s that no Stutter bucket accounts for. While no frame finishes for over a second this logs,
+	// from its own thread, what the GPU thread is in and which guest threads run. The guest state is read without locks,
+	// it can be slightly out of date
+	std::atomic<sint64> s_lastFrameMs{0};
+	sint64 FreezeWatchNowMs()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+
+	void FreezeWatchThread()
+	{
+		uint32 logs = 0;
+		while (logs < 60)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			const sint64 last = s_lastFrameMs.load();
+			const sint64 stalled = FreezeWatchNowMs() - last;
+			if (stalled < 1000 || stalled > 15000 || !CafeSystem::IsTitleRunning()) // guest memory goes away when the title stops
+				continue;
+			logs++;
+			std::string running;
+			for (sint32 i = 0; i < activeThreadCount; i++)
+			{
+				OSThread_t* thread = (OSThread_t*)memory_getPointerFromVirtualOffset(activeThread[i]);
+				if (thread->state != OSThread_t::THREAD_STATE::STATE_RUNNING)
+					continue;
+				running += fmt::format(" {:08x}/{:08x}", _swapEndianU32(thread->context.srr0), _swapEndianU32(thread->context.lr));
+			}
+			cemuLog_log(LogType::Force, "Freeze watch: no frame for {} ms, GPU thread in '{}', running guest threads IP/LR:{}", stalled, g_gpuThreadPhase.load(), running);
+		}
+	}
+
 	uint32 s_cacheLogCountdown = 59;
 
 	// every 60 s while a game runs: texture cache and descriptor sizes, so a tester log from a long session shows whether
@@ -67,6 +104,9 @@ void LattePerformanceMonitor_frameEnd()
 		const auto now = std::chrono::steady_clock::now();
 		const sint64 frameMs = s_lastFrameEnd.time_since_epoch().count() ? std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastFrameEnd).count() : 0;
 		s_lastFrameEnd = now;
+		s_lastFrameMs = FreezeWatchNowMs();
+		static std::once_flag s_watchStarted;
+		std::call_once(s_watchStarted, [] { std::thread(FreezeWatchThread).detach(); });
 		const uint64 pipelineDriverMs = g_pipelineDriverCreateMs.exchange(0); // on the compile threads, summed
 		if (frameMs >= 100 && frameMs < 10000) // longer gaps are pauses and loading, not stutter
 		{
