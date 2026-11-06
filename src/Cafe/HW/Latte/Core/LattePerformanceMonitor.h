@@ -1,10 +1,20 @@
 #pragma once
+#include <atomic>
 
 #define PERFORMANCE_MONITOR_TRACK_CYCLES	(5) // one cycle lasts one second
 
 // todo - replace PPCTimer with HighResolutionTimer.h
 uint64 PPCTimer_getRawTsc();
 uint64 PPCTimer_tscToMicroseconds(uint64 us);
+
+// #733: what the GPU thread is blocked in, named in the log by the freeze watchdog
+extern std::atomic<const char*> g_gpuThreadPhase;
+struct LatteGpuPhase
+{
+	const char* m_previous;
+	explicit LatteGpuPhase(const char* phase) : m_previous(g_gpuThreadPhase.exchange(phase)) {}
+	~LatteGpuPhase() { g_gpuThreadPhase = m_previous; }
+};
 
 class LattePerfStatTimer
 {
