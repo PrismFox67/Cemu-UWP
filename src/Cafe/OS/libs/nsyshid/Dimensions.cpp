@@ -617,9 +617,40 @@ namespace nsyshid
 		m_queries.push(q_result);
 	}
 
-	uint32 DimensionsUSB::LoadFigure(const std::array<uint8, 0x2D * 0x04>& buf, std::unique_ptr<FileStream> file, uint8 pad, uint8 index)
+	void DimensionsUSB::MakeVehicleTag(std::array<uint8, 0x2D * 0x04>& data, uint32 id)
+	{
+		std::fill(data.begin() + 36 * 4, data.begin() + 39 * 4, 0);
+		data[36 * 4 + 0] = uint8(id & 0xFF);
+		data[36 * 4 + 1] = uint8((id >> 8) & 0xFF);
+		data[36 * 4 + 2] = uint8((id >> 16) & 0xFF);
+		data[36 * 4 + 3] = uint8((id >> 24) & 0xFF);
+		data[38 * 4 + 1] = 1;
+		std::memcpy(&data[43 * 4], PWDGenerate(data).data(), 4);
+	}
+
+	uint32 DimensionsUSB::LoadFigure(const std::array<uint8, 0x2D * 0x04>& bufIn, std::unique_ptr<FileStream> file, uint8 pad, uint8 index)
 	{
 		std::lock_guard lock(m_dimensionsMutex);
+
+		std::array<uint8, 0x2D * 0x04> buf = bufIn;
+		// Vehicle files created by earlier builds have the vehicle ID encrypted like a character's (both halves equal after
+		// decryption). Rewrite them in the vehicle layout so they spawn (#799)
+		{
+			const std::array<uint8, 16> figureKey = GenerateFigureKey(buf);
+			const std::array<uint8, 8> decrypted = Decrypt(std::span<const uint8, 8>{buf.begin() + (36 * 4), 8}, figureKey);
+			const uint32 lo = (uint32&)decrypted[0];
+			const uint32 hi = (uint32&)decrypted[4];
+			if (lo == hi && lo >= 1000 && lo < 0x10000)
+			{
+				MakeVehicleTag(buf, lo);
+				cemuLog_log(LogType::Force, "Toy Pad: vehicle file with an encrypted ID {} converted to the vehicle layout", lo);
+				if (file)
+				{
+					file->SetPosition(0);
+					file->writeData(buf.data(), buf.size());
+				}
+			}
+		}
 
 		const uint32 id = GetFigureId(buf);
 
@@ -719,7 +750,14 @@ namespace nsyshid
 		// Only characters are created with their ID encrypted and stored in pages 36 and 37,
 		// as well as a password stored in page 43. Blank tags have their information populated
 		// by the game when it calls the write_block command.
-		if (id != 0)
+		if (id >= 1000)
+		{
+			// Vehicles and gadgets (#799): the model number is stored as plain little endian in page 36 (page 37 holds the
+			// upgrades, 0 = none) and page 38 reads 00 01 00 00 like on a real tag. Encrypting it like a character's ID made
+			// the game reject the tag, so placed vehicles never spawned
+			MakeVehicleTag(fileData, id);
+		}
+		else if (id != 0)
 		{
 			const std::array<uint8, 16> figureKey = GenerateFigureKey(fileData);
 
