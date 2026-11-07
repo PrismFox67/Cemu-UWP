@@ -1383,6 +1383,23 @@ void HostApp::SetOverlayDefaults(const LatteScreenPiP& pip)
 	_SaveOverlaySettings(0, pip);
 }
 
+// #791: the hint boxes were ImGui windows sized by AlwaysAutoResize, which only catches up on the next frame; while a
+// game presents few frames (Virtual Console boot) the box stayed narrower than its text. Drawn directly, sized every frame
+static void _DrawBottomHint(const std::string& text, float scale)
+{
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImFont* font = ImGui_GetFont(24.0f * scale);
+	const float size = font ? font->FontSize : ImGui::GetFontSize();
+	const ImVec2 textSize = font ? font->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str()) : ImGui::CalcTextSize(text.c_str());
+	const ImVec2 pad(12.0f * scale, 8.0f * scale);
+	const float bottom = viewport->Pos.y + viewport->Size.y - 60.0f * scale;
+	const ImVec2 boxMin(viewport->Pos.x + (viewport->Size.x - textSize.x) * 0.5f - pad.x, bottom - textSize.y - pad.y * 2.0f);
+	const ImVec2 boxMax(boxMin.x + textSize.x + pad.x * 2.0f, bottom);
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	draw->AddRectFilled(boxMin, boxMax, IM_COL32(15, 15, 15, 191), 4.0f * scale);
+	draw->AddText(font, size, ImVec2(boxMin.x + pad.x, boxMin.y + pad.y), IM_COL32(255, 255, 255, 255), text.c_str());
+}
+
 void HostApp::DrawInGameMenu()
 {
 	if (s_touchCursor && !s_menuOpen)
@@ -1404,31 +1421,13 @@ void HostApp::DrawInGameMenu()
 	if (!s_menuOpen && !pairing && std::chrono::steady_clock::now() < s_menuHintUntil)
 	{
 		// bottom center, small and out of the way of the game's own HUD
-		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y - 60.0f * scale), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-		ImGui::SetNextWindowBgAlpha(0.75f);
-		ImFont* hintFont = ImGui_GetFont(24.0f * scale);
-		if (hintFont)
-			ImGui::PushFont(hintFont);
-		if (ImGui::Begin("##menuhint", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
-			ImGui::TextUnformatted("Menu: click both sticks (or hold View + Menu)");
-		ImGui::End();
-		if (hintFont)
-			ImGui::PopFont();
+		_DrawBottomHint("Menu: click both sticks (or hold View + Menu)", scale);
 	}
 	int joinPad = -1, joinPlayer = -1;
 	if (!s_menuOpen && !pairing && HostControllers::GetJoinPrompt(joinPad, joinPlayer))
 	{
 		// #489: same place and style as the menu hint
-		ImGui::SetNextWindowPos(ImVec2(viewport->Pos.x + viewport->Size.x * 0.5f, viewport->Pos.y + viewport->Size.y - 60.0f * scale), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
-		ImGui::SetNextWindowBgAlpha(0.75f);
-		ImFont* joinFont = ImGui_GetFont(24.0f * scale);
-		if (joinFont)
-			ImGui::PushFont(joinFont);
-		if (ImGui::Begin("##joinprompt", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs))
-			ImGui::Text("Controller %d: press A again to join as player %d", joinPad + 1, joinPlayer + 1);
-		ImGui::End();
-		if (joinFont)
-			ImGui::PopFont();
+		_DrawBottomHint(fmt::format("Controller {}: press A again to join as player {}", joinPad + 1, joinPlayer + 1), scale);
 	}
 	if (!s_menuOpen && !pairing)
 		return;
