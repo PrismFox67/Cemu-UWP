@@ -249,6 +249,18 @@ void D3D12Renderer::CreateDevice()
 	D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
 	D3D12_FEATURE_DATA_ARCHITECTURE architecture{};
 	m_isUma = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_ARCHITECTURE, &architecture, sizeof(architecture))) && architecture.UMA;
+	m_isCacheCoherentUma = m_isUma && architecture.CacheCoherentUMA;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// CEMU_D3D12_FORCE_UMA=1 takes the Xbox (UMA) code paths on a PC, e.g. CPU writes of block compressed arrays (#677/#783)
+	{
+		char* v = nullptr;
+		size_t n = 0;
+		if (_dupenv_s(&v, &n, "CEMU_D3D12_FORCE_UMA") == 0 && v && v[0] == '1')
+			m_isUma = true;
+		free(v);
+	}
+#endif
+	cemuLog_log(LogType::Force, "D3D12: UMA {}, cache coherent {}", m_isUma, m_isCacheCoherentUma);
 	if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options))))
 		m_bindingTier = options.ResourceBindingTier;
 	if (m_bindingTier < D3D12_RESOURCE_BINDING_TIER_3)
@@ -1431,6 +1443,8 @@ namespace
 		{ "flip_pacing", nullptr },
 		{ "feedback_copy", nullptr },
 		{ "bc_array_gpu_copy", nullptr }, // #677: opts out of CPU writes for block compressed arrays
+		{ "bc_array_write_back", nullptr }, // #783: cached pages for those CPU writes (cache coherent UMA only)
+		{ "bc_array_rewrite_all", nullptr }, // #783: writes every slice on a reload, not only changed ones
 		{ "relgpr_off", nullptr }, // #457: opts out of the relgpr_selects default of UWP builds
 	};
 	std::mutex s_abMutex;
@@ -1884,6 +1898,33 @@ static bool _Check3DSlice(LatteTextureD3D12* tex, uint32 mip, uint32 slice, cons
 	return false;
 }
 
+extern uint32 g_textureReloadSkippedSubresources;
+
+// #783: change detection for CPU texture uploads, not cryptographic. 4 lanes of 64 bit multiply-xor, 0 is reserved for unknown
+static uint64 _HashUploadData(const void* data, size_t size)
+{
+	const uint8* p = (const uint8*)data;
+	uint64 lane[4] = { 0x9E3779B97F4A7C15ull, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull };
+	size_t i = 0;
+	for (; i + 32 <= size; i += 32)
+	{
+		for (int l = 0; l < 4; l++)
+		{
+			uint64 v;
+			memcpy(&v, p + i + l * 8, 8);
+			lane[l] = (lane[l] ^ v) * 0x100000001B3ull;
+			lane[l] ^= lane[l] >> 29;
+		}
+	}
+	uint64 h = size;
+	for (; i < size; i++)
+		h = (h ^ p[i]) * 0x100000001B3ull;
+	for (int l = 0; l < 4; l++)
+		h = (h ^ lane[l]) * 0x9E3779B97F4A7C15ull;
+	h ^= h >> 31;
+	return h ? h : 1;
+}
+
 void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto* tex = static_cast<LatteTextureD3D12*>(hostTexture);
@@ -1913,6 +1954,14 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 		const uint32 srcRowBytes = heightInBlocks ? compressedImageSize / heightInBlocks : 0;
 		if (numRows == heightInBlocks && srcRowBytes >= rowSize)
 		{
+			// #783: BOTW reloads its whole 83 slice terrain array when part of it changes, ~4 ms per subresource on Xbox.
+			// Unchanged subresources are skipped, before the GPU wait below
+			const uint64 hash = _HashUploadData(pixelData, (size_t)srcRowBytes * numRows);
+			if (!D3D12_AbToggle("bc_array_rewrite_all") && tex->IsUploadUnchanged(sub, hash))
+			{
+				g_textureReloadSkippedSubresources++;
+				return;
+			}
 			if (!tex->AllSubresourcesInState(D3D12_RESOURCE_STATE_COMMON))
 			{
 				// #710: this waits for the GPU to go idle, a suspect for freezes when BOTW opens the map or a rune. Logged at most once a second
@@ -1942,6 +1991,7 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 				if (SUCCEEDED(hr))
 				{
 					tex->MarkContentWritten();
+					tex->SetUploadHash(sub, hash);
 					return;
 				}
 			}

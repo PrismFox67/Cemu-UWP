@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-07
+### Games
+- Breath of the Wild: fewer multi-second freezes when opening the map, selecting a rune or teleporting on Xbox. The game kept asking to reload its big terrain textures with unchanged contents, which took about 3.5 s each time on Xbox; unchanged parts are now skipped. Measured on PC, still needs confirming on Xbox (GitHub #5, #12).
+
 ## 2026-11-05
 ### Games
 - **Broken letters:** block compressed texture arrays are now written by the CPU on Xbox, because GPU copies put every layer after the first in the wrong place. A tester confirmed clean Arabic text in Breath of the Wild on Xbox (GitHub #12). Wind Waker HD pause letters (GitHub #9) use the same kind of font texture but haven't been checked yet. Adapted from danprice142/Cemu-UWP.

@@ -214,6 +214,7 @@ public:
 	void SubmitCommandList(bool waitIdle = false);
 	void WaitForIdle();
 	bool IsUma() const { return m_isUma; }
+	bool IsCacheCoherentUma() const { return m_isCacheCoherentUma; }
 	// like Vulkan: a query or readback result the game waits for is submitted within a few draws, not at the end of a
 	// 2000 draw list or when the command processor idles (BOTW's Magnesis/Stasis targeting reads occlusion queries, #71)
 	void RequestSubmitSoon() { m_submitSoon = true; m_submitThreshold = std::min(m_submitThreshold, m_drawsInCommandList + kSubmitSoonDrawDelay); }
@@ -289,6 +290,7 @@ private:
 	ComPtr<IDXGIAdapter1> m_adapter;
 	ComPtr<ID3D12Device> m_device;
 	bool m_isUma = false;
+	bool m_isCacheCoherentUma = false;
 	ComPtr<ID3D12CommandQueue> m_queue;
 	ComPtr<ID3D12Fence> m_fence;
 	HANDLE m_fenceEvent = nullptr;

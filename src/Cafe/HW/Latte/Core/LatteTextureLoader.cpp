@@ -592,6 +592,7 @@ void LatteTextureLoader_loadTextureDataIntoSlice(LatteTexture* hostTexture, sint
 // #780: time spent decoding and handing slices to the renderer, read by LatteTexture_ReloadData (GPU thread only)
 uint64 g_textureReloadDecodeUs = 0;
 uint64 g_textureReloadUploadUs = 0;
+uint32 g_textureReloadSkippedSubresources = 0; // set by the D3D12 renderer (#783)
 
 static uint64 _ElapsedUs(std::chrono::steady_clock::time_point since)
 {
