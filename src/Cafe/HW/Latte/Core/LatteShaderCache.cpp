@@ -574,7 +574,8 @@ void LatteShaderCache_Load()
 		{
 			const uint64 pipelinePhaseMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pipelinePhaseStart).count();
 			cemuLog_log(LogType::Force, "Loading screen: shaders {} ms, pipelines {} ms (bar split {:.0f}/{:.0f})", shaderPhaseMs, pipelinePhaseMs, shaderShare * 100.0f, (1.0f - shaderShare) * 100.0f);
-			if (!Latte_GetStopSignal())
+			// a launch that compiled shaders takes many times longer than the next ones, keep the earlier split then
+			if (!Latte_GetStopSignal() && shaderCacheScreenStats.compiledShaderCount < 3)
 				_WriteLoadTimes(cacheTitleId, shaderPhaseMs, pipelinePhaseMs);
 		}
 		// every session adds to the startup set that quick start creates on the loading screen
@@ -611,7 +612,7 @@ void LatteShaderCache_Load()
 
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines)
 {
-	auto lastFrameUpdate = tick_cached();
+	auto lastFrameUpdate = tick_cached() - std::chrono::seconds(1); // draw right away
 
 	while (true)
 	{
@@ -653,7 +654,7 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 				label = "Compiling shaders";
 			else
 				label = "Loading shaders";
-			const std::string caption = fmt::format("{} ({} / {})", label, done, total);
+			const std::string caption = total ? fmt::format("{} ({} / {})", label, done, total) : std::string(label);
 			const std::string percent = fmt::format("{}%", (int)(fraction * 100.0f));
 
 			ImDrawList* draw = ImGui::GetForegroundDrawList();
@@ -709,6 +710,11 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 #ifdef ENABLE_D3D12
 	const bool quickStart = g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_in_background.GetValue();
 #endif
+	// opening the pipeline caches takes seconds (D3D12 on a PC: the driver's pipeline library), show the bar meanwhile
+	g_shaderCacheLoaderState.pipelineFileCount = 0;
+	g_shaderCacheLoaderState.loadedPipelines = 0;
+	bool drawnOnce = false;
+	LatteShaderCache_ShowProgress([&drawnOnce]() { return !std::exchange(drawnOnce, true); }, true);
 	switch(g_renderer->GetType())
 	{
 	#ifdef ENABLE_VULKAN
