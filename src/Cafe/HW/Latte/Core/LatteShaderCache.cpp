@@ -81,6 +81,37 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId);
 bool LatteShaderCache_updatePipelineLoadingProgress();
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines);
 
+// #786: one bar over shader loading and pipeline creation. Each phase gets the share of the bar it took at the last
+// launch of the title (<cache>/shaderCache/info/<titleId>_loadtimes.txt), so the bar runs 0-100% once without jumping
+namespace
+{
+	float s_progressStart = 0.0f; // where the current phase starts on the bar
+	float s_progressSpan = 1.0f; // and how much of it it covers
+
+	fs::path _LoadTimesPath(uint64 cacheTitleId)
+	{
+		return ActiveSettings::GetCachePath("shaderCache/info/{:016x}_loadtimes.txt", cacheTitleId);
+	}
+
+	// shader phase share of the bar; without a measurement shaders get a third, they usually load faster than pipelines
+	float _ReadShaderShare(uint64 cacheTitleId)
+	{
+		std::ifstream file(_LoadTimesPath(cacheTitleId));
+		uint64 shaderMs = 0, pipelineMs = 0;
+		if (file >> shaderMs >> pipelineMs && shaderMs + pipelineMs > 0)
+			return std::clamp((float)shaderMs / (float)(shaderMs + pipelineMs), 0.05f, 0.95f);
+		return 1.0f / 3.0f;
+	}
+
+	void _WriteLoadTimes(uint64 cacheTitleId, uint64 shaderMs, uint64 pipelineMs)
+	{
+		std::error_code ec;
+		fs::create_directories(_LoadTimesPath(cacheTitleId).parent_path(), ec);
+		std::ofstream file(_LoadTimesPath(cacheTitleId));
+		file << shaderMs << " " << pipelineMs << std::endl;
+	}
+}
+
 struct
 {
 	struct
@@ -500,6 +531,17 @@ void LatteShaderCache_Load()
 		return true;
 	};
 
+	bool pipelinePhase = false;
+#ifdef ENABLE_D3D12
+	pipelinePhase = g_renderer->GetType() == RendererAPI::D3D12 && GetConfig().precompile_pipelines.GetValue();
+#endif
+#if defined(ENABLE_VULKAN) || defined(ENABLE_METAL)
+	pipelinePhase |= g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal;
+#endif
+	const float shaderShare = pipelinePhase ? _ReadShaderShare(cacheTitleId) : 1.0f;
+	s_progressStart = 0.0f;
+	s_progressSpan = shaderShare;
+	const auto shaderPhaseStart = std::chrono::steady_clock::now();
 	LatteShaderCache_ShowProgress(LoadShadersUpdate, false);
 
 	LatteShaderCache_updateCompileQueue(0);
@@ -514,6 +556,10 @@ void LatteShaderCache_Load()
 	cemuLog_log(LogType::Force, "Shader cache loaded with {} shaders. Commited mem {}MB. Took {}ms", numLoadedShaders, (sint32)(memCommited/1024/1024), timeLoad);
 #endif
 	LatteShaderCache_finish();
+	const uint64 shaderPhaseMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - shaderPhaseStart).count();
+	s_progressStart = shaderShare;
+	s_progressSpan = 1.0f - shaderShare;
+	const auto pipelinePhaseStart = std::chrono::steady_clock::now();
 	// if Vulkan or Metal then also load pipeline cache
 #if defined(ENABLE_VULKAN) || defined(ENABLE_METAL)
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
@@ -524,6 +570,13 @@ void LatteShaderCache_Load()
 	{
 		if (GetConfig().precompile_pipelines.GetValue())
 			LatteShaderCache_LoadPipelineCache(cacheTitleId);
+		if (pipelinePhase)
+		{
+			const uint64 pipelinePhaseMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - pipelinePhaseStart).count();
+			cemuLog_log(LogType::Force, "Loading screen: shaders {} ms, pipelines {} ms (bar split {:.0f}/{:.0f})", shaderPhaseMs, pipelinePhaseMs, shaderShare * 100.0f, (1.0f - shaderShare) * 100.0f);
+			if (!Latte_GetStopSignal())
+				_WriteLoadTimes(cacheTitleId, shaderPhaseMs, pipelinePhaseMs);
+		}
 		// every session adds to the startup set that quick start creates on the loading screen
 		D3D12Renderer::GetInstance()->GetPipelineCache()->BeginStartupWindow();
 	}
@@ -590,7 +643,8 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 			const auto caption_font = ImGui_GetFont(window_size.y / 48.0f); // = 15 at 720p
 			const uint32 done = isPipelines ? g_shaderCacheLoaderState.loadedPipelines : g_shaderCacheLoaderState.loadedShaderFiles;
 			const uint32 total = isPipelines ? g_shaderCacheLoaderState.pipelineFileCount : g_shaderCacheLoaderState.shaderFileCount;
-			const float fraction = total ? std::clamp((float)done / (float)total, 0.0f, 1.0f) : 0.0f;
+			const float phaseFraction = total ? std::clamp((float)done / (float)total, 0.0f, 1.0f) : 0.0f;
+			const float fraction = std::clamp(s_progressStart + s_progressSpan * phaseFraction, 0.0f, 1.0f);
 
 			const char* label;
 			if (isPipelines)

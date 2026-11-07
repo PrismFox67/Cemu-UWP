@@ -9,6 +9,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### Mario Kart 8 first person pack
 - The character and kart screens show your whole driver again: the first person view and the driver hiding now only apply during races and battles.
 - Bowser on bikes: his arms no longer block the cockpit view; only his hands stay on the handlebars.
+### Xbox app
+- The loading screen has one bar from 0 to 100% for shaders and pipelines together, instead of starting over for the pipelines. The caption still says which step is running. How much of the bar each step gets comes from how long it took the last time you started that game.
 
 ## 2026-11-05
 ### Games
