@@ -589,6 +589,15 @@ void LatteTextureLoader_loadTextureDataIntoSlice(LatteTexture* hostTexture, sint
 	}
 }
 
+// #780: time spent decoding and handing slices to the renderer, read by LatteTexture_ReloadData (GPU thread only)
+uint64 g_textureReloadDecodeUs = 0;
+uint64 g_textureReloadUploadUs = 0;
+
+static uint64 _ElapsedUs(std::chrono::steady_clock::time_point since)
+{
+	return (uint64)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - since).count();
+}
+
 void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIndex, uint32 mipIndex, MPTR physImagePtr, MPTR physMipPtr, Latte::E_DIM dim, uint32 width, uint32 height, uint32 depth, uint32 mipLevels, uint32 pitch, Latte::E_HWTILEMODE tileMode, uint32 swizzle, bool dumpTex)
 {
 	LatteTextureLoaderCtx textureLoader = { 0 };
@@ -685,7 +694,9 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 #endif
 	if (tex->overwriteInfo.hasFormatOverwrite == false && tex->overwriteInfo.hasResolutionOverwrite == false)
 	{
+		const auto decodeStart = std::chrono::steady_clock::now();
 		texDecoder->decode(&textureLoader, pixelData);
+		g_textureReloadDecodeUs += _ElapsedUs(decodeStart);
 	}
 #ifdef BENCHMARK_TEXTURE_DECODING
 	QueryPerformanceCounter(&benchmark_end);
@@ -722,7 +733,9 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	}
 	// load slice
 	//debug_printf("[Load Slice] Addr: %08x MIP: %02d Slice: %02d Res %04x/%04x Texel Res %04x/%04x Fmt %04x Tm %d\n", textureLoader.physAddress, mipIndex, sliceIndex, textureLoader.width, textureLoader.height, textureLoader.texelCountX, textureLoader.texelCountY, (int)format, tileMode);
+	const auto uploadStart = std::chrono::steady_clock::now();
 	LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
+	g_textureReloadUploadUs += _ElapsedUs(uploadStart);
 	// write texture dump
 	if (textureLoader.dump)
 	{
