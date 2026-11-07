@@ -39,6 +39,7 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 
 extern uint64 g_textureReloadDecodeUs;
 extern uint64 g_textureReloadUploadUs;
+extern uint32 g_textureReloadSkippedSubresources;
 
 void LatteTexture_ReloadData(LatteTexture* tex)
 {
@@ -49,6 +50,7 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 	const auto start = std::chrono::steady_clock::now();
 	g_textureReloadDecodeUs = 0;
 	g_textureReloadUploadUs = 0;
+	g_textureReloadSkippedSubresources = 0;
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
 	{
 		if(tex->dim == Latte::E_DIM::DIM_2D_ARRAY ||
@@ -85,8 +87,8 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 	if (totalMs >= 50 && s_logged < 200)
 	{
 		s_logged++;
-		cemuLog_log(LogType::Force, "Texture reload: {} ms (decode {} ms, upload {} ms), {} {:08x} {}x{}x{} mips {} fmt {:04x} tm {} dim {}, load #{}",
-			totalMs, g_textureReloadDecodeUs / 1000, g_textureReloadUploadUs / 1000, tex->reloadCount == 1 ? "new" : "changed",
+		cemuLog_log(LogType::Force, "Texture reload: {} ms (decode {} ms, upload {} ms, {} unchanged skipped), {} {:08x} {}x{}x{} mips {} fmt {:04x} tm {} dim {}, load #{}",
+			totalMs, g_textureReloadDecodeUs / 1000, g_textureReloadUploadUs / 1000, g_textureReloadSkippedSubresources, tex->reloadCount == 1 ? "new" : "changed",
 			tex->physAddress, tex->width, tex->height, tex->depth, tex->mipLevels, (uint32)tex->format, (uint32)tex->tileMode, (uint32)tex->dim, tex->reloadCount);
 	}
 }

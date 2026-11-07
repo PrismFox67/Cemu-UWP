@@ -25,6 +25,10 @@ public:
 	bool IsAlternateFormat() const { return m_formatInfo.isAlternateFormat; }
 	bool IsCompressedFormat() const { return m_formatInfo.isCompressed; }
 	bool IsCpuWritable() const { return m_cpuWritable; } // uploaded with WriteToSubresource (#677)
+	// #783: hash of the data last written by the CPU per subresource, so a reload skips unchanged slices and mips. Dropped
+	// whenever the GPU wrote the texture since
+	bool IsUploadUnchanged(uint32 subresource, uint64 hash);
+	void SetUploadHash(uint32 subresource, uint64 hash);
 	bool Is3DTexture() const { return m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D; }
 
 	uint32 GetMipCount() const { return m_desc.MipLevels; }
@@ -59,5 +63,7 @@ private:
 	D3D12TextureFormatInfo m_formatInfo;
 	uint32 m_planeCount = 1;
 	bool m_cpuWritable = false;
+	std::vector<uint64> m_uploadHashes; // 0 = unknown
+	uint64 m_uploadHashVersion = 0;
 	std::vector<D3D12_RESOURCE_STATES> m_states;
 };
