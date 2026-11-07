@@ -13,6 +13,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Breath of the Wild: fewer multi-second freezes when opening the map, selecting a rune or teleporting on Xbox. The game kept asking to reload its big terrain textures with unchanged contents, which took about 3.5 s each time on Xbox; unchanged parts are now skipped. Measured on PC, still needs confirming on Xbox (GitHub #5, #12).
 ### Xbox app
 - The loading screen has one bar from 0 to 100% for shaders and pipelines together, instead of starting over for the pipelines. The caption still says which step is running. How much of the bar each step gets comes from how long it took the last time you started that game.
+## 2026-11-06
+### Xbox app
+- LEGO Dimensions: the Toy Pad now turns on by itself when the game starts, so there is no first-time restart. Other games still only get it if you turn it on in the menu. Not tried with the game yet (GitHub #15).
 
 ## 2026-11-05
 ### Games
