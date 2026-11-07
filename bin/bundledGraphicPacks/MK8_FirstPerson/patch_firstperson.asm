@@ -79,7 +79,9 @@ cmpwi r0, 0
 bne _fpDriveDone
 # mode 2 = the game's own camera: nothing hidden
 mr r12, r8
-lwz r0, 156(r12)
+mflr r11
+bl _fpMode
+mtlr r11
 cmpwi r0, 2
 bne _fpDriveOn
 mr r12, r8
@@ -422,7 +424,9 @@ mr r3, r30
 # 0x02171d6c returns the field of view, which the caller scales and stores at +0x2c: widen it by $fpFov in the
 # first person modes (the eye is low and far forward)
 mr r12, r8
-lwz r0, 156(r12)
+mflr r11
+bl _fpMode
+mtlr r11
 cmpwi r0, 2
 beq _fpDriveTail
 mflr r0
@@ -492,6 +496,34 @@ _fpNormC:
 .float 0.5
 .float 1.5
 .float 0.00000001
+# #787 first person only in a race: the race camera controller also runs in the menus (character and kart screens: the
+# turntable driver was hidden). The racers' item slot update (0x02163f4c) runs only in a race/battle: it stamps _fpRace
+# with the frame counter, and _fpMode reports the game's own camera (mode 2) when that stamp is more than 10 frames old.
+_fpRace:
+.int 0x80000000
+# r12 = player block: r0 = its mode, or 2 outside a race. Uses r9, r10
+_fpMode:
+lis r10, _fpRace@ha
+lwz r10, _fpRace@l(r10)
+lis r9, _fpFrame@ha
+lwz r9, _fpFrame@l(r9)
+subf r9, r10, r9
+li r0, 2
+cmplwi r9, 10
+bgtlr
+lwz r0, 156(r12)
+blr
+# 0x02163f54 stw r28, 32(sp) (r0 holds the caller's lr until 0x02163f68, so it is left alone). Uses r11, r12
+_fpRaceTick:
+stw r28, 32(r1)
+lis r12, _fpFrame@ha
+lwz r11, _fpFrame@l(r12)
+lis r12, _fpRace@ha
+stw r11, _fpRace@l(r12)
+blr
+
+0x02163f54 = bl _fpRaceTick
+
 0x021720e4 = bl _fpDrive
 
 # look-back camera: 0x02170d94(r3 = controller, r4 = controller + 0x34, r5)
@@ -505,7 +537,7 @@ bl 0x02170d94
 lwz r3, 12(r1)
 bl _fpSlot
 mr r8, r12
-lwz r0, 156(r12)
+bl _fpMode
 cmpwi r0, 2
 beq _fpBackDone
 lwz r3, 8(r1)
@@ -783,11 +815,18 @@ blr
 
 # every player's hide centre (split screen: the bones are shared by all views, so a hidden head is hidden for all)
 _fpHideBones:
+lis r7, _fpFrame@ha
+lwz r7, _fpFrame@l(r7)
+# #787/#794 nothing hidden outside a race: the hide flag can stay set from the attract demo while the menu camera keeps
+# its old eye (controller +157), which skips the reset in _fpDrive
+lis r12, _fpRace@ha
+lwz r12, _fpRace@l(r12)
+subf r12, r12, r7
+cmplwi r12, 10
+bgt _fpHideSkip
 lis r12, _fpP@ha
 addi r12, r12, _fpP@l
 li r8, 4
-lis r7, _fpFrame@ha
-lwz r7, _fpFrame@l(r7)
 _fpHideOne:
 lwz r0, 12(r12)
 cmpwi r0, 0
@@ -923,6 +962,9 @@ lfs f3, 0(r10)
 lfs f4, 4(r10)
 li r0, 1
 stw r0, 160(r12)
+# #794 Bowser (the only 36-matrix driver) gets his own rule
+cmpwi r5, 54
+beq _fpHideKoopa
 _fpHideScanned:
 mr r10, r4
 _fpHideLoop:
@@ -978,7 +1020,82 @@ _fpHideDone:
 addi r12, r12, 216
 addic. r8, r8, -1
 bne _fpHideOne
+_fpHideSkip:
 b 0x0267e364
+
+# #794 Bowser: arms invisible, hands stay on the bars. Matrices are bone world matrices (+12/+28/+44 = the joint), the
+# matrix index is the bone index (Koopa.bfres: 19-21 ShoulderL/ArmL/ElbowL, 22-26 HandL + fingers, 27-29 right arm,
+# 30-34 right hand, 35 rigid head). Hiding a bone in place left its skin stretched between the hidden joints and the
+# hands (the yellow sheets of #511), so every hidden bone gets a zero rotation AND is moved: the left arm onto the left
+# wrist, the right arm onto the right wrist, body/legs/tail/head onto the point halfway between the wrists. All hidden
+# vertices then lie on the line between the hands and draw nothing. Uses r0, r9, r10, f0-f9
+_fpHideKoopa:
+lfs f0, 1068(r4)
+lfs f1, 1084(r4)
+lfs f2, 1100(r4)
+lfs f5, 1452(r4)
+lfs f6, 1468(r4)
+lfs f7, 1484(r4)
+lis r10, _fpHalf@ha
+lfs f9, _fpHalf@l(r10)
+fadds f3, f0, f5
+fmuls f3, f3, f9
+fadds f4, f1, f6
+fmuls f4, f4, f9
+fadds f8, f2, f7
+fmuls f8, f8, f9
+mr r10, r4
+li r9, 0
+li r0, 0
+_fpKpLoop:
+cmpwi r9, 22
+blt _fpKpHide
+cmpwi r9, 26
+ble _fpKpNext
+cmpwi r9, 30
+blt _fpKpHide
+cmpwi r9, 34
+ble _fpKpNext
+_fpKpHide:
+stw r0, 0(r10)
+stw r0, 4(r10)
+stw r0, 8(r10)
+stw r0, 16(r10)
+stw r0, 20(r10)
+stw r0, 24(r10)
+stw r0, 32(r10)
+stw r0, 36(r10)
+stw r0, 40(r10)
+cmpwi r9, 19
+blt _fpKpMid
+cmpwi r9, 21
+ble _fpKpL
+cmpwi r9, 27
+blt _fpKpMid
+cmpwi r9, 29
+ble _fpKpR
+_fpKpMid:
+stfs f3, 12(r10)
+stfs f4, 28(r10)
+stfs f8, 44(r10)
+b _fpKpNext
+_fpKpL:
+stfs f0, 12(r10)
+stfs f1, 28(r10)
+stfs f2, 44(r10)
+b _fpKpNext
+_fpKpR:
+stfs f5, 12(r10)
+stfs f6, 28(r10)
+stfs f7, 44(r10)
+_fpKpNext:
+addi r10, r10, 48
+addi r9, r9, 1
+cmpwi r9, 36
+blt _fpKpLoop
+b _fpHideDone
+_fpHalf:
+.float 0.5
 
 0x0267e5e0 = bl _fpHideBones
 
