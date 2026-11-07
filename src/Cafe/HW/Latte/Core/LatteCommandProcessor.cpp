@@ -175,6 +175,7 @@ uint32 LatteCP_readU32Deprc()
 			return cmdWord;
 
 		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
+		LatteGpuPhase idlePhase("idle, no commands from the game"); // #789: tells Freeze watch apart from GPU work
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
 		for (sint32 busy = 0; busy < 80; busy++)
@@ -474,6 +475,7 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 	const uint32 GPU7_WAIT_MEM_OP_NEVER = 7;
 
 	LatteCP_signalEnterWait();
+	LatteGpuPhase waitPhase("waiting on a game memory value"); // #789
 
 	bool stalls = false;
 	if ((word0 & 0x10) != 0)

@@ -42,7 +42,7 @@ namespace
 				OSThread_t* thread = (OSThread_t*)memory_getPointerFromVirtualOffset(activeThread[i]);
 				if (thread->state != OSThread_t::THREAD_STATE::STATE_RUNNING)
 					continue;
-				running += fmt::format(" {:08x}/{:08x}", _swapEndianU32(thread->context.srr0), _swapEndianU32(thread->context.lr));
+				running += fmt::format(" {:08x}/{:08x}", thread->context.srr0, _swapEndianU32(thread->context.lr)); // #789: srr0 is stored host-endian, lr big-endian
 			}
 			cemuLog_log(LogType::Force, "Freeze watch: no frame for {} ms, GPU thread in '{}', running guest threads IP/LR:{}", stalled, g_gpuThreadPhase.load(), running);
 		}
