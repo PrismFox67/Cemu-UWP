@@ -37,10 +37,18 @@ void LatteTexture_setEffectiveTextureScale(LatteConst::ShaderType shaderType, si
 
 void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIndex, uint32 mipIndex, MPTR physImagePtr, MPTR physMipPtr, Latte::E_DIM dim, uint32 width, uint32 height, uint32 depth, uint32 mipLevels, uint32 pitch, Latte::E_HWTILEMODE tileMode, uint32 swizzle, bool dumpTex);
 
+extern uint64 g_textureReloadDecodeUs;
+extern uint64 g_textureReloadUploadUs;
+
 void LatteTexture_ReloadData(LatteTexture* tex)
 {
 	LatteGpuPhase phase("texture reload");
 	tex->reloadCount++;
+	// #780: BOTW freezes sit in here for seconds on Xbox. Log every load from 50 ms (at most 200), split into CPU decode
+	// (untiling into the upload buffer) and the renderer's slice upload; the rest is per-slice overhead
+	const auto start = std::chrono::steady_clock::now();
+	g_textureReloadDecodeUs = 0;
+	g_textureReloadUploadUs = 0;
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
 	{
 		if(tex->dim == Latte::E_DIM::DIM_2D_ARRAY ||
@@ -72,6 +80,15 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 		}
 	}
 	tex->lastUpdateEventCounter = LatteTexture_getNextUpdateEventCounter();
+	const uint64 totalMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	static uint32 s_logged = 0;
+	if (totalMs >= 50 && s_logged < 200)
+	{
+		s_logged++;
+		cemuLog_log(LogType::Force, "Texture reload: {} ms (decode {} ms, upload {} ms), {} {:08x} {}x{}x{} mips {} fmt {:04x} tm {} dim {}, load #{}",
+			totalMs, g_textureReloadDecodeUs / 1000, g_textureReloadUploadUs / 1000, tex->reloadCount == 1 ? "new" : "changed",
+			tex->physAddress, tex->width, tex->height, tex->depth, tex->mipLevels, (uint32)tex->format, (uint32)tex->tileMode, (uint32)tex->dim, tex->reloadCount);
+	}
 }
 
 LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
