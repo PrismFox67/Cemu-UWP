@@ -92,11 +92,15 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 	{
 		D3D12_HEAP_PROPERTIES cpuHeap{};
 		cpuHeap.Type = D3D12_HEAP_TYPE_CUSTOM;
-		cpuHeap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+		// #783: the driver lays out the texels itself, which scatters writes; into write-combined memory that ran at ~33 MB/s
+		// on Xbox (3.5 s for BOTW's 1024x1024x83 terrain array). bc_array_write_back tries cached pages where the GPU sees
+		// CPU caches
+		const bool writeBack = renderer->IsCacheCoherentUma() && D3D12_AbToggle("bc_array_write_back");
+		cpuHeap.CPUPageProperty = writeBack ? D3D12_CPU_PAGE_PROPERTY_WRITE_BACK : D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
 		cpuHeap.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
 		hr = renderer->GetDevice()->CreateCommittedResource(&cpuHeap, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
 		m_cpuWritable = SUCCEEDED(hr);
-		cemuLog_logOnce(LogType::Force, "D3D12: block compressed arrays are uploaded with CPU writes (first: {}x{}x{} fmt {:04x}, {})", m_desc.Width, m_desc.Height, m_desc.DepthOrArraySize, (uint32)format, m_cpuWritable ? "ok" : "failed, using copies");
+		cemuLog_logOnce(LogType::Force, "D3D12: block compressed arrays are uploaded with CPU writes (first: {}x{}x{} fmt {:04x}, {}, {} pages)", m_desc.Width, m_desc.Height, m_desc.DepthOrArraySize, (uint32)format, m_cpuWritable ? "ok" : "failed, using copies", writeBack ? "write-back" : "write-combined");
 	}
 	if (!m_cpuWritable)
 		hr = renderer->GetDevice()->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &m_desc, initialState, nullptr, IID_PPV_ARGS(&m_resource));
@@ -161,4 +165,24 @@ bool LatteTextureD3D12::AllSubresourcesInState(D3D12_RESOURCE_STATES state) cons
 void LatteTextureD3D12::SetAllSubresourceStates(D3D12_RESOURCE_STATES state)
 {
 	std::fill(m_states.begin(), m_states.end(), state);
+}
+
+bool LatteTextureD3D12::IsUploadUnchanged(uint32 subresource, uint64 hash)
+{
+	if (m_uploadHashVersion != m_contentVersion)
+	{
+		// the GPU wrote the texture since the last CPU upload, the stored hashes no longer describe it
+		m_uploadHashes.clear();
+		m_uploadHashVersion = m_contentVersion;
+	}
+	return subresource < m_uploadHashes.size() && m_uploadHashes[subresource] == hash;
+}
+
+void LatteTextureD3D12::SetUploadHash(uint32 subresource, uint64 hash)
+{
+	if (m_uploadHashes.size() < GetSubresourceCount())
+		m_uploadHashes.resize(GetSubresourceCount(), 0);
+	if (subresource < m_uploadHashes.size())
+		m_uploadHashes[subresource] = hash;
+	m_uploadHashVersion = m_contentVersion;
 }
