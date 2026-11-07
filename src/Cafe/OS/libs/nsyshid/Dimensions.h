@@ -99,6 +99,7 @@ namespace nsyshid
 		std::array<uint8, 4> PWDGenerate(const std::array<uint8, 0x2D * 0x04>& uid);
 		std::array<uint8, 4> DimensionsRandomize(const std::vector<uint8> key, uint8 count);
 		uint32 GetFigureId(const std::array<uint8, 0x2D * 0x04>& buf);
+		void MakeVehicleTag(std::array<uint8, 0x2D * 0x04>& data, uint32 id);
 		uint32 Scramble(const std::array<uint8, 7>& uid, uint8 count);
 		uint32 GetNext();
 		DimensionsMini& GetFigureByIndex(uint8 index);
