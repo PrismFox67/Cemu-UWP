@@ -3,6 +3,7 @@
 #include "Dimensions.h"
 #include "Infinity.h"
 #include "Skylander.h"
+#include "Cafe/CafeSystem.h"
 #include "config/CemuConfig.h"
 #include "SkylanderXbox360.h"
 
@@ -45,7 +46,7 @@ namespace nsyshid::backend::emulated
 			auto device = std::make_shared<InfinityBaseDevice>();
 			AttachDevice(device);
 		}
-		if (GetConfig().emulated_usb_devices.emulate_dimensions_toypad && !FindDeviceById(0x0E6F, 0x0241))
+		if ((GetConfig().emulated_usb_devices.emulate_dimensions_toypad || IsDimensionsTitle(CafeSystem::GetForegroundTitleId())) && !FindDeviceById(0x0E6F, 0x0241))
 		{
 			cemuLog_logDebug(LogType::Force, "Attaching Emulated Toypad");
 			// Add Dimensions Toypad

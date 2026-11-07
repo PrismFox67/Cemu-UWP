@@ -720,7 +720,7 @@ namespace
 
 	bool _DimensionsOn()
 	{
-		return GetConfig().emulated_usb_devices.emulate_dimensions_toypad.GetValue();
+		return GetConfig().emulated_usb_devices.emulate_dimensions_toypad.GetValue() || nsyshid::IsDimensionsTitle(CafeSystem::GetForegroundTitleId());
 	}
 
 	std::string _DimSpaceLabel()

@@ -41,6 +41,12 @@ namespace nsyshid
 		bool m_IsOpened;
 	};
 
+	// LEGO Dimensions gets the Toy Pad without the setting, the IDs are those of the community graphic packs
+	constexpr bool IsDimensionsTitle(uint64 titleId)
+	{
+		return titleId == 0x0005000010194200 || titleId == 0x0005000010195D00;
+	}
+
 	class DimensionsUSB
 	{
 	  public:
