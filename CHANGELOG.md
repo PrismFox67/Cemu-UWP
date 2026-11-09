@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-09
+### Xbox launcher
+- The "closed unexpectedly" notice above the game list is smaller. Down moves to the game list without dismissing it, so you can start a game right away; up goes back. While its buttons have the focus, left/right only moves between them and no game looks selected.
+
 ## 2026-11-07
 ### Mario Kart 8 first person pack
 - The character and kart screens show your whole driver again: the first person view and the driver hiding now only apply during races and battles.
