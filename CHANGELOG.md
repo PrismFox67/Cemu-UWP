@@ -9,6 +9,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### Mario Kart 8 first person pack
 - The character and kart screens show your whole driver again: the first person view and the driver hiding now only apply during races and battles.
 - Bowser on bikes: his arms no longer block the cockpit view; only his hands stay on the handlebars.
+### Games
+- Breath of the Wild: fewer multi-second freezes when opening the map, selecting a rune or teleporting on Xbox. The game kept asking to reload its big terrain textures with unchanged contents, which took about 3.5 s each time on Xbox; unchanged parts are now skipped. Measured on PC, still needs confirming on Xbox (GitHub #5, #12).
 
 ## 2026-11-05
 ### Games
@@ -39,6 +41,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-03
 ### Games
 - Breath of the Wild: missing or flickering short grass (vertex data past the size the emulator computed read as 0). Adapted from Dushe22/Cemu-UWP.
+- Breath of the Wild: when memory gets tight, the large terrain textures stay loaded while they were used in the last ~2 minutes instead of being reloaded slice by slice. Adapted from Dushe22/Cemu-UWP.
 
 ### Xbox app
 - **CPU mode setting** (Settings -> CPU, GitHub #11): Automatic (default, multi-core with 4+ cores), Single-core recompiler
