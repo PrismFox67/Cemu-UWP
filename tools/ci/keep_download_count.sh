@@ -39,8 +39,21 @@ if [ "${1:-}" = "--show" ] || [ "${1:-}" = "--json" ]; then
     json="$json\"$a\": $total, "
     notes="$notes$a: $total, "
   done
+  # Test builds and older-versions: their files are never replaced, so GitHub's own counts are the totals. Xbox
+  # packages are the cemu-uwp-x64*.zip files.
+  others=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name != "'$REL'" and .tag_name != "'$STATS'" and .tag_name != "ci-logs") | .assets[] | select(.name | endswith(".zip")) | "\(.name) \(.download_count)"' 2>/dev/null)
+  test_all=0; test_xbox=0
+  while read -r name cnt; do
+    [ -z "${name:-}" ] && continue
+    test_all=$(( test_all + cnt ))
+    case "$name" in cemu-uwp-x64*.zip) test_xbox=$(( test_xbox + cnt )) ;; esac
+  done <<<"$others"
+  echo "test builds and older versions: $test_all total ($test_xbox Xbox)"
+  json="$json\"test_builds\": $test_all, \"test_builds_xbox\": $test_xbox, "
+  notes="${notes}test builds and older versions: $test_all, "
   if [ "$1" = "--json" ]; then
     xbox=$(sed -n 's/.*"cemu-uwp-x64.zip": \([0-9]*\).*/\1/p' <<<"$json")
+    xbox=$(( ${xbox:-0} + test_xbox ))
     tmp=$(mktemp -d)
     printf '%s"xbox": %s, "updated": "%s", "since": "2026-10-19"}\n' "$json" "${xbox:-0}" "$(date -u +%Y-%m-%dT%H:%MZ)" > "$tmp/totals.json"
     gh release upload $STATS "$tmp/totals.json" --clobber >/dev/null 2>&1 || true
