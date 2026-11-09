@@ -42,6 +42,7 @@ public:
 	[[nodiscard]] bool IsAudioDisabled() const { return m_disableAudio; }
 
 	[[nodiscard]] const std::array< std::optional<std::string>, 8>& GetControllerProfile() const { return m_controllerProfile; }
+	void SetControllerProfile(size_t player, std::optional<std::string> name) { m_controllerProfile.at(player) = std::move(name); }
 
 private:
 	uint64_t m_title_id = 0;

@@ -63,6 +63,10 @@ namespace HostControllers
 	void SetMotionServer(int player, const std::string& ip);
 
 	constexpr int kProfileSlots = 3;
+	// per-game profile (#817): the slot the game's profile (gameProfiles/<title id>.ini, [Controller] controllerN) loads for
+	// this player when the game boots, -1 for none or a profile that isn't an Xbox profile slot
+	int GetGameProfileSlot(uint64 titleId, int player);
+	void SetGameProfileSlot(uint64 titleId, int player, int slot);
 	bool HasProfile(int slot);
 	void SaveProfile(int player, int slot);
 	bool LoadProfile(int player, int slot); // A<->B and X<->Y swapped, the button positions of a Nintendo controller
