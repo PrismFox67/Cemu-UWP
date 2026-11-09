@@ -5,12 +5,21 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-09
+### Xbox launcher
+- The "closed unexpectedly" notice above the game list is smaller. Down moves to the game list without dismissing it, so you can start a game right away; up goes back. While its buttons have the focus, left/right only moves between them and no game looks selected.
+
 ## 2026-11-07
 ### Mario Kart 8 first person pack
 - The character and kart screens show your whole driver again: the first person view and the driver hiding now only apply during races and battles.
 - Bowser on bikes: his arms no longer block the cockpit view; only his hands stay on the handlebars.
 ### Games
 - Breath of the Wild: fewer multi-second freezes when opening the map, selecting a rune or teleporting on Xbox. The game kept asking to reload its big terrain textures with unchanged contents, which took about 3.5 s each time on Xbox; unchanged parts are now skipped. Measured on PC, still needs confirming on Xbox (GitHub #5, #12).
+### Xbox app
+- The loading screen has one bar from 0 to 100% for shaders and pipelines together, instead of starting over for the pipelines. The caption still says which step is running. How much of the bar each step gets comes from how long it took the last time you started that game.
+## 2026-11-06
+### Xbox app
+- LEGO Dimensions: the Toy Pad now turns on by itself when the game starts, so there is no first-time restart. Other games still only get it if you turn it on in the menu. Not tried with the game yet (GitHub #15).
 
 ## 2026-11-05
 ### Games
@@ -18,6 +27,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Breath of the Wild shadows: three testers report them right on Xbox since this change (GitHub #5). The cause isn't proven.
 ### Xbox app
 - Logging only: the log now shows how long texture uploads wait for the GPU, to help track down the Breath of the Wild freezes when selecting a rune, opening the map or teleporting (GitHub #5). No fix yet.
+- LEGO Dimensions Toy Pad in the in-game menu (GitHub #15): pick one of the 7 spaces, then place any built-in figure or your own .bin dump from the dimensions folder, no real figures needed. Only the menu has been tested, on PC; it hasn't been tried with the game or on Xbox yet.
 - A game that closes itself no longer crashes Cemu: you go back to the game list with a message. DS Virtual Console games need Mii system files from your own Wii U (system title 0005001b-10056000); without them they stop at startup and Cemu now tells you so.
 - Quick start no longer competes with the game when memory runs low: background pipeline creation waits a minute after memory pressure and stops for the session after the third time, and what the loading screen built is kept unless memory is critical.
 - Crash logs: when a game thread crashes, the log now shows more about the code that was running, to help track down the Sonic Lost World crash (GitHub #12). Logging only.
