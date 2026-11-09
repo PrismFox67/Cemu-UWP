@@ -4,6 +4,7 @@
 #include "config/ActiveSettings.h"
 #include "input/InputManager.h"
 #include "Cafe/GameProfile/GameProfile.h"
+#include <unordered_map>
 #include "input/api/XInput/XInputController.h"
 #include "input/api/Keyboard/KeyboardController.h"
 #include "input/api/DSU/DSUController.h"
@@ -601,6 +602,42 @@ bool HostControllers::LoadProfile(int player, int slot)
 	input.save(player);
 	cemuLog_log(LogType::Force, "Host: player {} loaded {}", player + 1, _ProfileName(slot));
 	return true;
+}
+
+// the controller tab asks every frame, the ini is read once per game until a slot is set
+static std::unordered_map<uint64, std::array<int, 8>> s_gameProfileSlots;
+
+int HostControllers::GetGameProfileSlot(uint64 titleId, int player)
+{
+	auto it = s_gameProfileSlots.find(titleId);
+	if (it == s_gameProfileSlots.end())
+	{
+		std::array<int, 8> slots;
+		slots.fill(-1);
+		GameProfile profile;
+		if (profile.Load(titleId))
+		{
+			for (size_t p = 0; p < slots.size(); p++)
+			{
+				const auto& name = profile.GetControllerProfile()[p];
+				for (int slot = 0; name && slot < kProfileSlots; slot++)
+					if (*name == _ProfileName(slot))
+						slots[p] = slot;
+			}
+		}
+		it = s_gameProfileSlots.emplace(titleId, slots).first;
+	}
+	return (player >= 0 && player < 8) ? it->second[player] : -1;
+}
+
+void HostControllers::SetGameProfileSlot(uint64 titleId, int player, int slot)
+{
+	GameProfile profile;
+	profile.Load(titleId); // keeps the game's other settings, a missing profile starts from the defaults
+	profile.SetControllerProfile(player, slot >= 0 ? std::optional<std::string>(_ProfileName(slot)) : std::nullopt);
+	profile.Save(titleId);
+	s_gameProfileSlots.erase(titleId);
+	cemuLog_log(LogType::Force, "Host: game {:016x} player {} uses {}", titleId, player + 1, slot >= 0 ? _ProfileName(slot) : "the current mapping");
 }
 
 void HostControllers::ResetButtonMapping(int player)

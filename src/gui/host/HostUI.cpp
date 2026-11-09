@@ -1369,6 +1369,27 @@ namespace
 				ImGui::SameLine(0.0f, 40.0f * s_scale);
 			ImGui::PopID();
 		}
+		// #817: a profile slot for the game selected in the game list, loaded when that game boots
+		if (!s_games.empty())
+		{
+			const GameEntry& game = s_games[std::clamp(s_selectedGame, 0, (int)s_games.size() - 1)];
+			const int current = GetGameProfileSlot(game.titleId, player);
+			std::string items[kProfileSlots + 1];
+			const char* itemPtrs[kProfileSlots + 1];
+			items[0] = _TR("Current mapping");
+			for (int slot = 0; slot < kProfileSlots; slot++)
+				items[slot + 1] = HasProfile(slot) ? fmt::format("Profile {}", slot + 1) : fmt::format("Profile {} (empty)", slot + 1);
+			for (int i = 0; i <= kProfileSlots; i++)
+				itemPtrs[i] = items[i].c_str();
+			int choice = current + 1;
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::Combo(fmt::format("For {}", game.name).c_str(), &choice, itemPtrs, kProfileSlots + 1) && choice != current + 1)
+			{
+				const uint64 titleId = game.titleId;
+				const int slot = choice - 1;
+				s_deferred.emplace_back([titleId, player, slot]() { SetGameProfileSlot(titleId, player, slot); });
+			}
+		}
 		ImGui::Unindent();
 	}
 
