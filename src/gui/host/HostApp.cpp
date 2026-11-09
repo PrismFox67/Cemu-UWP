@@ -524,13 +524,13 @@ namespace
 	}
 
 	// Skylanders: figure dumps (.sky/.bin/.dmp) in <user data>/skylanders, picked with left/right on the menu item. A puts the
-	// picked figure on the emulated portal (replacing the one there) or takes it off again. The portal is only emulated
+	// picked figure on the emulated portal or takes it off again; several can stand on it at once (#818: two players, traps,
+	// Swap Force top and bottom halves), up to the portal's 16. The portal is only emulated
 	// when the folder has figures at game launch (see _EnableSkylanderPortal), like desktop Cemu's opt-in setting
 	std::mutex s_skyMutex;
 	std::vector<fs::path> s_skyFiles;
 	int s_skyIndex = 0;
-	std::optional<uint8> s_skyPortalSlot; // portal slot of the placed figure
-	fs::path s_skyPlaced;
+	std::vector<std::pair<fs::path, uint8>> s_skyPlaced; // figures on the portal and their portal slots
 
 	std::vector<fs::path> _ListSkylanderFiles()
 	{
@@ -587,8 +587,13 @@ namespace
 		if (!GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
 			return "Skylander: restart the game to connect the portal";
 		std::string label = fmt::format("Skylander: < {} >", _pathToUtf8(file.stem()));
-		if (s_skyPortalSlot && file == s_skyPlaced)
+		const bool placed = std::any_of(s_skyPlaced.begin(), s_skyPlaced.end(), [&](const auto& p) { return p.first == file; });
+		if (placed)
 			label += "  (on the portal, A removes)";
+		else if (!s_skyPlaced.empty())
+			label += "  (A adds)";
+		if (!s_skyPlaced.empty())
+			label += fmt::format("  [{} on the portal]", s_skyPlaced.size());
 		return label;
 	}
 
@@ -598,15 +603,14 @@ namespace
 		if (s_skyFiles.empty() || !GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
 			return;
 		const fs::path file = s_skyFiles[s_skyIndex];
-		const bool wasThis = s_skyPortalSlot && file == s_skyPlaced;
-		if (s_skyPortalSlot)
+		auto placed = std::find_if(s_skyPlaced.begin(), s_skyPlaced.end(), [&](const auto& p) { return p.first == file; });
+		if (placed != s_skyPlaced.end())
 		{
-			nsyshid::g_skyportal.RemoveSkylander(*s_skyPortalSlot);
-			cemuLog_log(LogType::Force, "Host: skylander {} removed from the portal", _pathToUtf8(s_skyPlaced));
-			s_skyPortalSlot.reset();
-		}
-		if (wasThis)
+			nsyshid::g_skyportal.RemoveSkylander(placed->second);
+			cemuLog_log(LogType::Force, "Host: skylander {} removed from the portal", _pathToUtf8(file));
+			s_skyPlaced.erase(placed);
 			return;
+		}
 		std::unique_ptr<FileStream> skyFile(FileStream::openFile2(file, true));
 		std::array<uint8, nsyshid::SKY_FIGURE_SIZE> data;
 		if (!skyFile || skyFile->readData(data.data(), data.size()) != data.size())
@@ -620,9 +624,8 @@ namespace
 			cemuLog_log(LogType::Force, "Host: skylander {}: the portal is full", _pathToUtf8(file));
 			return;
 		}
-		s_skyPortalSlot = slot;
-		s_skyPlaced = file;
-		cemuLog_log(LogType::Force, "Host: skylander {} placed on the portal (slot {})", _pathToUtf8(file), slot);
+		s_skyPlaced.emplace_back(file, slot);
+		cemuLog_log(LogType::Force, "Host: skylander {} placed on the portal (slot {}, {} on the portal)", _pathToUtf8(file), slot, s_skyPlaced.size());
 	}
 
 	// LEGO Dimensions (GitHub #15): the emulated Toy Pad has 7 spaces (left pad: 3, centre: 1, right: 3; pad/index pairs as
