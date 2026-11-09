@@ -468,6 +468,10 @@ static void LatteTC_ReleaseForMemoryPressure()
 	// danprice142/Cemu-UWP, MPL-2.0)
 	if (s_textureMemoryPressure == 1)
 	{
+		// #816: soft pressure only releases textures unused for ~10 s. With the 3-frame threshold, a few frames of
+		// BOTW's inventory released the whole world's textures, and closing it reloaded them (world black for ~4 s).
+		// Level 2 still releases everything unused for 3 frames.
+		std::erase_if(deletable, [](LatteTexture* tex) { return LatteGPUState.frameCounter - tex->lastAccessFrameCount < 600; });
 		static uint32 s_keptLogCount = 0;
 		std::erase_if(deletable, [](LatteTexture* tex) {
 			if (tex->dim != Latte::E_DIM::DIM_2D_ARRAY || tex->depth < 16 || tex->isUpdatedOnGPU || LatteGPUState.frameCounter - tex->lastAccessFrameCount >= 3600)
