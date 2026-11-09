@@ -81,6 +81,9 @@ namespace
 	std::function<void*(uint64, const uint8*, int, int)> s_textureProvider;
 	std::optional<Message> s_lastSessionProblem; // shown above the game list
 	bool s_updateDismissed = false;
+	// #812: the crash notice has the controller's focus (its buttons), not the game list. Down leaves it, up comes back
+	bool s_noticeFocused = true;
+	bool s_noticeWantsNavFocus = true;
 	// first launch: a setup screen (game folder, keys, graphic packs) instead of the tabs until it's finished once
 	bool s_setupChecked = false;
 	bool s_showSetup = false;
@@ -407,16 +410,28 @@ namespace
 	{
 		if (s_lastSessionProblem)
 		{
-			ImGui::PushFont(s_fontLarge);
+			// #812: compact, the game list stays the main thing on the screen
+			ImGui::SetWindowFontScale(0.8f);
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f * s_scale, 2.0f * s_scale));
+			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * s_scale, 3.0f * s_scale));
 			ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", s_lastSessionProblem->title.c_str());
-			ImGui::PopFont();
-			ImGui::TextWrapped("%s", s_lastSessionProblem->text.c_str());
-			ImGui::TextWrapped(_TR("To report it, save the logs to your USB drive and attach them to a bug report on GitHub."));
+			ImGui::TextWrapped("%s %s", s_lastSessionProblem->text.c_str(), _TR("To report it, save the logs to your USB drive and attach them to a bug report on GitHub."));
+			// the focus goes here only once ImGui's navigation is on again (it's off while the carousel has the input)
+			if (s_noticeFocused && s_noticeWantsNavFocus && (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableGamepad))
+			{
+				ImGui::SetKeyboardFocusHere();
+				s_noticeWantsNavFocus = false;
+			}
+			const size_t deferredBefore = s_deferred.size();
 			_DrawToolButtons(true, false);
+			if (s_deferred.size() != deferredBefore)
+				s_noticeFocused = false; // logs are being saved: on to the game list
 			ImGui::SameLine();
 			if (ImGui::Button(_TR("Dismiss")))
 				s_lastSessionProblem.reset();
 			ImGui::Separator();
+			ImGui::PopStyleVar(2);
+			ImGui::SetWindowFontScale(1.0f);
 		}
 		const std::string newer = HostTools::GetNewerBuild();
 		if (!newer.empty() && !s_updateDismissed && s_tab != kTabGames)
@@ -517,7 +532,7 @@ namespace
 	{
 		std::optional<fs::path> launch;
 		// the crash notice has buttons that need ImGui's navigation, the update notice is hidden with View
-		const bool notices = s_lastSessionProblem.has_value();
+		const bool notices = s_lastSessionProblem.has_value() && s_noticeFocused;
 		if (!HostTools::GetNewerBuild().empty() && !s_updateDismissed && ImGui::IsKeyPressed(ImGuiKey_GamepadBack, false))
 			s_updateDismissed = true;
 		_DrawNotices();
@@ -537,12 +552,29 @@ namespace
 			s_carouselActive = !notices;
 			const int count = (int)s_games.size();
 			s_selectedGame = std::clamp(s_selectedGame, 0, count - 1);
-			if (!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))
+			const bool noPopup = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+			// #812: down from the notice goes to the game list without dismissing it, up goes back
+			if (noPopup && notices && _CarouselKey(ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown, ImGuiKey_DownArrow))
+			{
+				s_noticeFocused = false;
+				s_carouselActive = true;
+			}
+			else if (noPopup && !notices && s_lastSessionProblem && _CarouselKey(ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp, ImGuiKey_UpArrow))
+			{
+				s_noticeFocused = true;
+				s_noticeWantsNavFocus = true;
+				s_carouselActive = false;
+			}
+			// while the notice has the focus, left/right only move between its buttons
+			if (noPopup && !notices && s_carouselActive)
 			{
 				if (_CarouselKey(ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft, ImGuiKey_LeftArrow) && s_selectedGame > 0)
 					s_selectedGame--;
 				if (_CarouselKey(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight, ImGuiKey_RightArrow) && s_selectedGame < count - 1)
 					s_selectedGame++;
+			}
+			if (noPopup)
+			{
 				if (s_carouselActive && (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
 					launch = s_games[s_selectedGame].path;
 				if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, false))
@@ -561,8 +593,6 @@ namespace
 				s_carouselScroll = (float)s_selectedGame;
 
 			ImVec2 area = ImGui::GetContentRegionAvail();
-			if (!s_carouselActive)
-				area.y -= ImGui::GetFrameHeightWithSpacing(); // the buttons below
 			const ImVec2 origin = ImGui::GetCursorScreenPos();
 			ImDrawList* drawList = ImGui::GetWindowDrawList();
 			const float infoFontSize = ImGui::GetFontSize() * 0.85f;
@@ -580,12 +610,13 @@ namespace
 				const float x = centerX + offset * (cardWidth + spacing);
 				if (x + cardWidth < origin.x - cardWidth || x - cardWidth > origin.x + area.x + cardWidth)
 					continue;
-				const float closeness = std::max(0.0f, 1.0f - std::abs(offset)); // 1 for the selected card
+				// #812: no selected look while the notice has the focus, no game can be started then
+				const float closeness = s_carouselActive ? std::max(0.0f, 1.0f - std::abs(offset)) : 0.0f; // 1 for the selected card
 				const float width = cardWidth * (1.0f + 0.2f * closeness);
 				const float height = width / kCaseAspect;
 				const float alpha = std::clamp(1.0f - std::abs(offset) * 0.12f, 0.45f, 1.0f);
 				const ImVec2 min(x - width * 0.5f, rowCenterY - height * 0.5f);
-				_DrawCard(drawList, s_games[i], min, width, i == s_selectedGame, alpha);
+				_DrawCard(drawList, s_games[i], min, width, s_carouselActive && i == s_selectedGame, alpha);
 				// mouse/touch: a click selects, a click on the selected card starts it
 				const ImVec2 max(min.x + width, min.y + height);
 				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsMouseHoveringRect(min, max) && ImGui::IsWindowHovered())
@@ -623,7 +654,7 @@ namespace
 			}
 			ImGui::Dummy(area);
 		}
-		if (!s_carouselActive)
+		if (s_games.empty())
 		{
 			if (ImGui::Button(_TR("Open file...")))
 			{
@@ -1884,7 +1915,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 			struct Hint { const char* glyph; ImU32 color; const char* text; };
 			std::vector<Hint> hints;
 			if (s_tab == kTabGames && !s_showSetup)
-				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Start") }, { "X", IM_COL32(30, 110, 220, 255), _TR("Refresh") }, { kGlyphSticks, 0, _TR("In-Game Menu") }, { "Y", IM_COL32(220, 170, 20, 255), _TR("Settings") } };
+				hints = { { "A", IM_COL32(40, 170, 60, 255), s_carouselActive ? _TR("Start") : _TR("Select") }, { "X", IM_COL32(30, 110, 220, 255), _TR("Refresh") }, { kGlyphSticks, 0, _TR("In-Game Menu") }, { "Y", IM_COL32(220, 170, 20, 255), _TR("Settings") } };
 			else
 				hints = { { "A", IM_COL32(40, 170, 60, 255), _TR("Select") }, { "B", IM_COL32(210, 50, 50, 255), _TR("Back") }, { "LB/RB", 0, _TR("Switch") } };
 			float total = 0.0f;
@@ -1996,6 +2027,8 @@ bool HostUI::HandleBack()
 void HostUI::SetLastSessionProblem(std::string title, std::string text)
 {
 	s_lastSessionProblem = Message{ std::move(title), std::move(text) };
+	s_noticeFocused = true;
+	s_noticeWantsNavFocus = true;
 }
 
 void HostUI::SetTextureProvider(std::function<void*(uint64 key, const uint8* rgba, int width, int height)> provider)
