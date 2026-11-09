@@ -53,6 +53,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ### Xbox launcher
 - The "closed unexpectedly" notice above the game list is smaller. Down moves to the game list without dismissing it, so you can start a game right away; up goes back. While its buttons have the focus, left/right only moves between them and no game looks selected.
 - Controllers: each player can pick one of the three saved profiles for the game selected in the game list ("For <game>"); that game loads the profile when it starts, other games keep the normal mapping.
+- Skylanders: several figures can stand on the portal at once (two players, traps, Swap Force top and bottom halves). A on a figure in the in-game menu adds it or takes it off; the others stay. To swap a figure, take the old one off first.
 
 ## 2026-11-07
 ### Mario Kart 8 first person pack
