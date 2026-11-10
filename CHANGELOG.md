@@ -6,6 +6,8 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-10
+### Games
+- Sonic Lost World always runs with the Single-Core CPU mode and VSync off, the settings testers found stable on Xbox (no crashes, smooth cutscenes). Your VSync setting is kept for other games; the in-game menu and a notice at start say so.
 ### Xbox launcher
 - Graphic packs: a row of your games sits at the top of the tab. Left/right picks the game and its packs are listed right below; down goes to the packs, up from the top of the list goes back to the row. The selected game is the same as on the Games tab.
 

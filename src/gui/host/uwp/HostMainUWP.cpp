@@ -5,6 +5,7 @@
 // from the view's Run() loop, swallow the back button so B doesn't suspend the app on Xbox, query the HDMI mode on Xbox
 // so rendering happens at the TV's real resolution, and save state when the app is suspended.
 
+#include "config/ActiveSettings.h"
 #include "Common/precompiled.h" // this file is built without the shared PCH (C++/WinRT)
 
 #include "interface/WindowSystem.h"
@@ -101,7 +102,7 @@ namespace
 	void _UpdateRefreshRate()
 	{
 		static int s_applied = -1;
-		const int wanted = GetConfig().frame_interpolation.GetValue() && GetConfig().vsync.GetValue() != 0 ? 1 : 0;
+		const int wanted = GetConfig().frame_interpolation.GetValue() && GetConfig().vsync.GetValue() != 0 && !ActiveSettings::IsVSyncForcedOff() ? 1 : 0;
 		if (!s_isXbox || wanted == s_applied)
 			return;
 		s_applied = wanted;
