@@ -122,6 +122,9 @@ public:
 
 	virtual void texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex) = 0;
 	virtual void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) = 0;
+	// #826: the slices loaded between begin and end may be written later (at the latest in end), so a renderer can batch them
+	virtual void texture_beginUploadBatch() {}
+	virtual void texture_endUploadBatch() {}
 	virtual void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) = 0;
 	virtual void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) = 0;
 

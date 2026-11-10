@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-10
+### Games
+- Breath of the Wild on Xbox: the big terrain textures are written by several CPU threads at once when they load, aimed at the multi-second freezes when opening the map or a rune (not confirmed yet on Xbox).
+
 ### Xbox launcher
 - Graphic packs: a row of your games sits at the top of the tab. Left/right picks the game and its packs are listed right below; down goes to the packs, up from the top of the list goes back to the row. The selected game is the same as on the Games tab.
 
