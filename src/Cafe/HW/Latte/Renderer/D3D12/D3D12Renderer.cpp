@@ -1925,6 +1925,57 @@ static uint64 _HashUploadData(const void* data, size_t size)
 	return h ? h : 1;
 }
 
+void D3D12Renderer::texture_beginUploadBatch()
+{
+	m_uploadBatchOpen = true;
+}
+
+void D3D12Renderer::texture_endUploadBatch()
+{
+	FlushPendingCpuUploads();
+	m_uploadBatchOpen = false;
+}
+
+void D3D12Renderer::FlushPendingCpuUploads()
+{
+	if (m_pendingCpuUploads.empty())
+		return;
+	std::vector<PendingCpuUpload> jobs = std::move(m_pendingCpuUploads);
+	m_pendingCpuUploads.clear();
+	m_pendingCpuUploadBytes = 0;
+	// the writes are independent subresources; Map/WriteToSubresource/Unmap are free-threaded
+	std::vector<uint8> ok(jobs.size(), 0);
+	auto work = [&](size_t first, size_t step) {
+		for (size_t i = first; i < jobs.size(); i += step)
+		{
+			PendingCpuUpload& job = jobs[i];
+			ID3D12Resource* resource = job.tex->GetResource();
+			if (resource && SUCCEEDED(resource->Map(job.subresource, nullptr, nullptr)))
+			{
+				ok[i] = SUCCEEDED(resource->WriteToSubresource(job.subresource, nullptr, job.data.data(), job.rowBytes, job.rowBytes * job.rows)) ? 1 : 0;
+				resource->Unmap(job.subresource, nullptr);
+			}
+		}
+	};
+	const size_t threadCount = std::min<size_t>(jobs.size(), std::clamp<size_t>(std::thread::hardware_concurrency() / 2, 1, 4));
+	std::vector<std::thread> threads;
+	for (size_t t = 1; t < threadCount; t++)
+		threads.emplace_back(work, t, threadCount);
+	work(0, threadCount);
+	for (auto& t : threads)
+		t.join();
+	for (size_t i = 0; i < jobs.size(); i++)
+	{
+		if (ok[i])
+		{
+			jobs[i].tex->MarkContentWritten();
+			jobs[i].tex->SetUploadHash(jobs[i].subresource, jobs[i].hash);
+		}
+		else
+			cemuLog_logOnce(LogType::Force, "D3D12: CPU texture upload failed in a batch (fmt {:04x})", (uint32)jobs[i].tex->format);
+	}
+}
+
 void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize)
 {
 	auto* tex = static_cast<LatteTextureD3D12*>(hostTexture);
@@ -1983,6 +2034,24 @@ void D3D12Renderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 					s_waitedMs = 0.0;
 					s_lastLog = waitEnd;
 				}
+			}
+			// #826: during a texture reload the writes are queued and done by several threads (BOTW's 1024x1024x83 terrain
+			// array took 3.5 s written one subresource after the other on Xbox). bc_array_serial writes them right here
+			if (m_uploadBatchOpen && !D3D12_AbToggle("bc_array_serial"))
+			{
+				const size_t bytes = (size_t)srcRowBytes * numRows;
+				PendingCpuUpload& job = m_pendingCpuUploads.emplace_back();
+				job.tex = tex;
+				job.subresource = sub;
+				job.hash = hash;
+				job.rowBytes = srcRowBytes;
+				job.rows = numRows;
+				job.data.assign((const uint8*)pixelData, (const uint8*)pixelData + bytes);
+				m_pendingCpuUploadBytes += bytes;
+				// bounded memory: a 116 MB array is written in 16 MB chunks
+				if (m_pendingCpuUploadBytes >= 16 * 1024 * 1024)
+					FlushPendingCpuUploads();
+				return;
 			}
 			if (SUCCEEDED(resource->Map(sub, nullptr, nullptr)))
 			{

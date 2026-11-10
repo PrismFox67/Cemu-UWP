@@ -51,6 +51,7 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 	g_textureReloadDecodeUs = 0;
 	g_textureReloadUploadUs = 0;
 	g_textureReloadSkippedSubresources = 0;
+	g_renderer->texture_beginUploadBatch();
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
 	{
 		if(tex->dim == Latte::E_DIM::DIM_2D_ARRAY ||
@@ -80,6 +81,11 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 			// load slice 0
 			LatteTextureLoader_UpdateTextureSliceData(tex, 0, mip, tex->physAddress, tex->physMipAddress, tex->dim, tex->width, tex->height, tex->depth, tex->mipLevels, tex->pitch, tex->tileMode, tex->swizzle, true);
 		}
+	}
+	{
+		const auto flushStart = std::chrono::steady_clock::now();
+		g_renderer->texture_endUploadBatch();
+		g_textureReloadUploadUs += (uint64)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - flushStart).count();
 	}
 	tex->lastUpdateEventCounter = LatteTexture_getNextUpdateEventCounter();
 	const uint64 totalMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
