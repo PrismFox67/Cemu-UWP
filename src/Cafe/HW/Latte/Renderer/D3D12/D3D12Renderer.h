@@ -124,6 +124,8 @@ public:
 
 	void texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex) override;
 	void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) override;
+	void texture_beginUploadBatch() override;
+	void texture_endUploadBatch() override;
 	void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) override;
 	void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) override;
 
@@ -239,6 +241,20 @@ public:
 	void InvalidateDrawState(); // forces all cached command list state to be re-applied
 
 private:
+	// #826: CPU writes into CPU-writable textures (#677) queued during a texture reload and written by several threads
+	struct PendingCpuUpload
+	{
+		class LatteTextureD3D12* tex;
+		uint32 subresource;
+		uint64 hash;
+		uint32 rowBytes;
+		uint32 rows;
+		std::vector<uint8> data;
+	};
+	bool m_uploadBatchOpen = false;
+	std::vector<PendingCpuUpload> m_pendingCpuUploads;
+	size_t m_pendingCpuUploadBytes = 0;
+	void FlushPendingCpuUploads();
 	struct DrawState;
 	struct StageBindings;
 
