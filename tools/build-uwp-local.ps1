@@ -43,7 +43,19 @@ try {
 	if (-not (Test-Path "$repo\build-uwp-local\CemuBin.sln") -and -not (Test-Path "$repo\build-uwp-local\Cemu.sln")) {
 		Step 'cmake configure' { & $cmake -S $repo -B "$repo\build-uwp-local" -G "Visual Studio 18 2026" -A x64 -DCMAKE_SYSTEM_NAME=WindowsStore "-DCMAKE_SYSTEM_VERSION=10.0" }
 	}
-	Step 'build and package' { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m "-p:GenerateAppxPackageOnBuild=true" "-p:AppxBundle=Never" "-p:UapAppxPackageBuildMode=SideloadOnly" "-p:AppxPackageSigningEnabled=true" "-p:PackageCertificateKeyFile=$pfx" "-p:PackageCertificatePassword=cemu" "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages/" } # quoted: Windows PowerShell splits a bare -p:Name=value at the colon
+	$build = { & $cmake --build "$repo\build-uwp-local" --config Release --target CemuBin -- -m "-p:GenerateAppxPackageOnBuild=true" "-p:AppxBundle=Never" "-p:UapAppxPackageBuildMode=SideloadOnly" "-p:AppxPackageSigningEnabled=true" "-p:PackageCertificateKeyFile=$pfx" "-p:PackageCertificatePassword=cemu" "-p:AppxPackageDir=$repo\build-uwp-local\AppPackages/" } # quoted: Windows PowerShell splits a bare -p:Name=value at the colon
+	$logStart = (Get-Item $log).Length
+	try { Step 'build and package' $build }
+	catch {
+		# LNK1103 'debugging information corrupt' that recompiling doesn't fix: the linker's own PDB (bin\Cemu.pdb and the
+		# incremental .ipdb) is broken. Delete it and link once more
+		$fs = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite'); $fs.Seek($logStart, 'Begin') | Out-Null
+		$tail = (New-Object IO.StreamReader($fs)).ReadToEnd(); $fs.Close()
+		if ($tail -notmatch 'LNK1103') { throw }
+		Log "LNK1103: deleting bin\Cemu.pdb and the incremental link files, linking again"
+		Remove-Item -Force -ErrorAction SilentlyContinue "$repo\bin\Cemu.pdb", "$repo\bin\Cemu.ilk", "$repo\build-uwp-local\src\CemuBin.dir\Release\Cemu.ipdb"
+		Step 'build and package (retry)' $build
+	}
 }
 finally { git -C $repo checkout -- src/gui/host/uwp/Package.appxmanifest } # never leave the stamped version for a commit
 Get-ChildItem "$repo\build-uwp-local\AppPackages" -Recurse -Filter *.msix | Sort-Object LastWriteTime | Select-Object -Last 1 | ForEach-Object { Log "package: $($_.FullName)" }
