@@ -332,6 +332,15 @@ namespace
 		}
 
 		_StartVirtualConsoleLogging();
+		{
+			// #829: Sonic Lost World (USA 10128F00, 1012B100, 10135700, the title IDs of its graphic packs) is stable on Xbox
+			// only with Single-Core (bundled gameProfiles/default) and VSync off (VSync on stutters its cutscenes)
+			const uint64 baseId = CafeSystem::GetForegroundTitleId() & ~0xFF00000000ull;
+			const bool sonic = baseId == 0x0005000010128F00ull || baseId == 0x000500001012B100ull || baseId == 0x0005000010135700ull;
+			ActiveSettings::SetVSyncForcedOff(sonic);
+			if (sonic)
+				cemuLog_log(LogType::Force, "Host: Sonic Lost World runs with VSync off for stability (the VSync setting is kept for other games)");
+		}
 
 		// the emulator renders into the same window, the launcher has to give up its swap chain first
 		s_launcher.reset();
@@ -366,6 +375,8 @@ namespace
 		LatteOverlay_setScreenPiP(_LoadOverlaySettings(CafeSystem::GetForegroundTitleId()));
 		HostControllers::LogAllSlots();
 		CafeSystem::LaunchForegroundTitle();
+		if (ActiveSettings::IsVSyncForcedOff())
+			LatteOverlay_pushNotification("Sonic Lost World runs in Single-Core with VSync off for stability", 10000);
 		s_state = State::Running;
 		HostTools::MarkGameStarted(CafeSystem::GetForegroundTitleName());
 		if (!s_menuHintShown)
@@ -894,6 +905,8 @@ namespace
 			_ChangeOverlay(item, direction);
 			break;
 		case kMenuVSync:
+			if (ActiveSettings::IsVSyncForcedOff())
+				break;
 			config.vsync = config.vsync.GetValue() != 0 ? 0 : 1;
 			GetConfigHandle().Save();
 			break;
@@ -1741,7 +1754,7 @@ void HostApp::DrawInGameMenu()
 			pip.corner == LatteScreenPiP::kSideBySide ? std::string("  Overlay opacity: 100% (side by side)") : fmt::format("  Overlay opacity: < {}% >", (int)std::lround(pip.opacity * 100.0f)),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
-			std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
+			ActiveSettings::IsVSyncForcedOff() ? std::string("VSync: Off (Sonic Lost World runs Single-Core with VSync off for stability)") : std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
 			fmt::format("Volume: < {}% >", std::clamp<int>(config.tv_volume, 0, 100)),
 			fmt::format("Stick deadzone (player 1): < {}% >", (int)std::lround(HostControllers::GetPlayer(0).deadzone[0] * 100.0f)),
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),

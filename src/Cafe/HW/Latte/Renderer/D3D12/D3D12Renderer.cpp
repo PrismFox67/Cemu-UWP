@@ -1070,7 +1070,7 @@ void D3D12Renderer::PresentSwapChain(bool mainWindow)
 	D3D12SwapChain* swapChain = GetSwapChainObj(mainWindow);
 	if (!swapChain || !swapChain->IsValid())
 		return;
-	const int vsync = GetConfig().vsync.GetValue();
+	const int vsync = ActiveSettings::IsVSyncForcedOff() ? 0 : GetConfig().vsync.GetValue();
 	const bool interpolationWanted = mainWindow && vsync != 0 && GetConfig().frame_interpolation.GetValue();
 	if (mainWindow)
 		UpdatePresentDiagnostics(swapChain, interpolationWanted);

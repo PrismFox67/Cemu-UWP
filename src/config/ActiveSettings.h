@@ -64,7 +64,13 @@ public:
 	// get mlc path to default cemu root dir/mlc01
 	[[nodiscard]] static fs::path GetDefaultMLCPath();
 
+	// #829: a game that is only stable with VSync off (Sonic Lost World on Xbox) turns it off for its session without
+	// changing the saved setting
+	static void SetVSyncForcedOff(bool forced) { s_vsyncForcedOff = forced; }
+	[[nodiscard]] static bool IsVSyncForcedOff() { return s_vsyncForcedOff; }
+
 private:
+	inline static bool s_vsyncForcedOff{false};
 	inline static bool s_isPortableMode{false};
 	inline static fs::path s_executable_path;
 	inline static fs::path s_user_data_path;
