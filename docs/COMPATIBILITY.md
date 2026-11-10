@@ -9,15 +9,15 @@ Status: **Perfect** (no known issues) · **Playable** (small issues) · **Issues
 | Game | Resolution / FPS | Status | Notes | Reporter | Build |
 |---|---|---|---|---|---|
 | Donkey Kong Country: Tropical Freeze | ? | Issues | Some objects and shadows completely black, speckle on water. | PrismFox67 | 0.1.127 |
-| LEGO Dimensions | ? | Issues | "Unplayable", details pending. | The Primadonna (Discord) | 2026-11-09 |
+| LEGO Dimensions | ? | Broken | Heavy graphical glitches, unplayable (screenshots pending). Toy Pad: in-game menu. | The Primadonna (Discord) | 2026-11-09 |
 | Mario Kart DS (Wii U Virtual Console) | - | Broken | Mario Kart DS crashes at launch; logs being checked. | PrismFox67 | 0.1.127 |
 | Mario Kart 8 | 1440p 60 | Playable | Minor visual bugs ([issue #2](https://github.com/PrismFox67/Cemu-UWP/issues/2)). 4K can run out of memory on the largest tracks. | MagnusBRA | before 39c5467 |
 | Mario Tennis: Ultra Smash | 1440p 60 | Perfect | Same as on PC. | MagnusBRA | before 39c5467 |
-| Minecraft: Wii U Edition | ? | Issues | Runs decently, but crashes on Save and Exit (log pending). | The Primadonna (Discord) | 2026-11-09 |
+| Minecraft: Wii U Edition | ? | Playable | Runs decently. Save and Exit crashed on older builds, fixed by 0.1.214. | The Primadonna (Discord) | 0.1.214 |
 | Need for Speed: Most Wanted U | ? | Broken | Closes right after the intro video, when gameplay starts ([issue #3](https://github.com/PrismFox67/Cemu-UWP/issues/3)). | GuilhermeLCv | 2026-10-21 |
 | New Super Mario Bros. U | 1440p 60 | Perfect | | MagnusBRA | before 39c5467 |
 | Pokkén Tournament | 1440p 60 | Playable | Naming keyboard couldn't be used with a controller; fixed in 0f235bd, retest. | MagnusBRA | before 39c5467 |
-| Skylanders: Spyro's Adventure | ? | Playable | Works decently (English patch). Figures: in-game menu **Skylander**. | The Primadonna (Discord) | 2026-11-09 |
+| Skylanders: Spyro's Adventure | ? | Issues | Works decently (English patch), graphical glitches on character models. Figures: in-game menu **Skylander**. | The Primadonna (Discord) | 2026-11-09 |
 | Sonic Lost World | ? | Issues | Title screen crash fixed in 664e165; crashes during some stages on Series S ([issue #7](https://github.com/PrismFox67/Cemu-UWP/issues/7)). | gabrielvalerio701-lang | ? |
 | Splatoon | ? | Issues | "Doesn't work properly", details pending ([issue #2](https://github.com/PrismFox67/Cemu-UWP/issues/2)). | MagnusBRA | before 39c5467 |
 | Super Mario 3D World | 1080p | Issues | Runs well, graphical bugs ([issue #2](https://github.com/PrismFox67/Cemu-UWP/issues/2)). Mic blowing: map "Blow into mic (hold)". | MagnusBRA | before 39c5467 |
