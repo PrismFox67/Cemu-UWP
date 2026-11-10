@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-10
+### Xbox launcher
+- Skylanders: the figure list in the in-game menu is grouped by game in release order (Spyro's Adventure, Giants, Swap Force, Trap Team, SuperChargers, Imaginators) and alphabetical within each game; the menu shows the figure's game and its place in the list.
+
 ## 2026-11-09
 ### Xbox launcher
 - The "closed unexpectedly" notice above the game list is smaller. Down moves to the game list without dismissing it, so you can start a game right away; up goes back. While its buttons have the focus, left/right only moves between them and no game looks selected.
