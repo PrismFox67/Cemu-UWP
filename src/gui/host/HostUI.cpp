@@ -721,16 +721,133 @@ namespace
 		ImGui::Unindent(40.0f * s_scale);
 	}
 
+	// #824: the games row on top of the Graphic packs tab. Small covers of the same games as the Games tab, the selection is
+	// shared with it (s_selectedGame). While the row has the focus ImGui's navigation is off (like the carousel) and
+	// left/right change the game; down goes to the pack list, up from the top of the list comes back
+	bool s_packsRowFocused = true; // read at the start of the next frame
+	bool s_packsListWantsFocus = false;
+	ImGuiID s_packsTopItem = 0; // the topmost focusable item below the row
+	float s_packsRowScroll = 0.0f;
+	int s_packsLastFrame = -10; // the tab wasn't drawn last frame: it was just opened
+
+	void _DrawPacksGamesRow()
+	{
+		const int count = (int)s_games.size();
+		s_selectedGame = std::clamp(s_selectedGame, 0, count - 1);
+		const bool noPopup = !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+		if (noPopup)
+		{
+			if (s_packsRowFocused)
+			{
+				if (_CarouselKey(ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadLStickLeft, ImGuiKey_LeftArrow) && s_selectedGame > 0)
+					s_selectedGame--;
+				if (_CarouselKey(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight, ImGuiKey_RightArrow) && s_selectedGame < count - 1)
+					s_selectedGame++;
+				if (_CarouselKey(ImGuiKey_GamepadDpadDown, ImGuiKey_GamepadLStickDown, ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false))
+				{
+					s_packsRowFocused = false;
+					s_packsListWantsFocus = true;
+				}
+			}
+			else if (s_packsTopItem != 0 && ImGui::GetCurrentContext()->NavId == s_packsTopItem && _CarouselKey(ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadLStickUp, ImGuiKey_UpArrow))
+				s_packsRowFocused = true;
+		}
+
+		const auto now = std::chrono::steady_clock::now();
+		static std::chrono::steady_clock::time_point s_last = now;
+		const float dt = std::clamp(std::chrono::duration<float>(now - s_last).count(), 0.0f, 0.1f);
+		s_last = now;
+		s_packsRowScroll += ((float)s_selectedGame - s_packsRowScroll) * (1.0f - std::exp(-dt * 12.0f));
+		if (std::abs((float)s_selectedGame - s_packsRowScroll) < 0.001f)
+			s_packsRowScroll = (float)s_selectedGame;
+
+		const float stripH = ImGui::GetIO().DisplaySize.y * 0.15f;
+		const ImVec2 min = ImGui::GetCursorScreenPos();
+		const ImVec2 max(min.x + ImGui::GetContentRegionAvail().x, min.y + stripH);
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		const float r = 8.0f * s_scale;
+		drawList->AddRectFilled(min, max, IM_COL32(0, 0, 0, 40), r);
+		drawList->AddRect(min, max, s_packsRowFocused ? IM_COL32(255, 255, 255, 230) : IM_COL32(255, 255, 255, 70), r, 0, (s_packsRowFocused ? 3.0f : 1.5f) * s_scale);
+
+		// the covers in the left part, the title and "N / M" on the right
+		const float pad = 10.0f * s_scale;
+		const float textW = (max.x - min.x) * 0.32f;
+		const ImVec2 coversMin(min.x + pad, min.y + pad * 0.6f), coversMax(max.x - textW - pad, max.y - pad * 0.6f);
+		const float cardH = (coversMax.y - coversMin.y) * 0.86f;
+		const float cardW = cardH * kCaseAspect;
+		const float spacing = cardW * 0.22f;
+		const float centerX = (coversMin.x + coversMax.x) * 0.5f;
+		const float centerY = (coversMin.y + coversMax.y) * 0.5f;
+		drawList->PushClipRect(coversMin, coversMax, true);
+		for (int i = 0; i < count; i++)
+		{
+			const float offset = (float)i - s_packsRowScroll;
+			const float x = centerX + offset * (cardW + spacing);
+			if (x + cardW < coversMin.x || x - cardW > coversMax.x)
+				continue;
+			const bool selected = i == s_selectedGame;
+			const float width = selected ? cardW * 1.08f : cardW;
+			const float alpha = selected ? 1.0f : (s_packsRowFocused ? 0.75f : 0.5f);
+			const ImVec2 cmin(x - width * 0.5f, centerY - width / kCaseAspect * 0.5f);
+			_DrawCard(drawList, s_games[i], cmin, width, selected, alpha);
+			const ImVec2 cmax(cmin.x + width, cmin.y + width / kCaseAspect);
+			if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsMouseHoveringRect(cmin, cmax) && ImGui::IsWindowHovered())
+			{
+				s_selectedGame = i;
+				s_packsRowFocused = true;
+			}
+		}
+		drawList->PopClipRect();
+
+		{
+			const GameEntry& game = s_games[s_selectedGame];
+			ImFont* font = ImGui::GetFont();
+			const float size = ImGui::GetFontSize();
+			const float textX = max.x - textW;
+			const float wrap = textW - pad * 2.0f;
+			const ImVec2 titleSize = font->CalcTextSizeA(size, FLT_MAX, wrap, game.name.c_str());
+			const std::string counter = fmt::format("{} / {}", s_selectedGame + 1, count);
+			const float small = size * 0.8f;
+			const float blockH = titleSize.y + small * 1.4f;
+			const float y = std::max(min.y + pad, (min.y + max.y - blockH) * 0.5f);
+			drawList->PushClipRect(ImVec2(textX, min.y), max, true);
+			drawList->AddText(font, size, ImVec2(textX, y), HostTheme::PanelText(), game.name.c_str(), nullptr, wrap);
+			drawList->AddText(font, small, ImVec2(textX, y + titleSize.y + small * 0.3f), HostTheme::PanelTextDim(),
+				s_packsRowFocused ? fmt::format("{}   < > game   v packs", counter).c_str() : fmt::format("{}   ^ choose game", counter).c_str());
+			drawList->PopClipRect();
+		}
+		ImGui::Dummy(ImVec2(max.x - min.x, stripH));
+		ImGui::Spacing();
+	}
+
 	void _DrawGraphicPacksTab()
 	{
+		if (ImGui::GetFrameCount() - s_packsLastFrame > 1)
+			s_packsRowFocused = !s_games.empty(); // the row has the focus when the tab opens
+		s_packsLastFrame = ImGui::GetFrameCount();
+		if (s_games.empty())
+			s_packsRowFocused = false;
+		else
+			_DrawPacksGamesRow();
+		// the first focusable item below the row; down from the row moves the focus there (once navigation is on again)
+		const bool wantFocus = s_packsListWantsFocus && !s_packsRowFocused && (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableGamepad);
+		if (wantFocus)
+		{
+			ImGui::SetKeyboardFocusHere();
+			s_packsListWantsFocus = false;
+		}
+
 		const auto status = HostGraphicPacks::GetStatus();
 		const bool busy = HostGraphicPacks::IsBusy();
 		const std::string installed = HostGraphicPacks::GetInstalledVersion();
-		ImGui::TextWrapped("Community graphic packs: %s", installed.empty() ? "not downloaded" : installed.c_str());
 		ImGui::BeginDisabled(busy);
 		if (ImGui::Button(installed.empty() ? "Download community graphic packs" : "Check for updates"))
 			HostGraphicPacks::StartUpdate();
 		ImGui::EndDisabled();
+		s_packsTopItem = ImGui::GetItemID();
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextDisabled("Community graphic packs: %s", installed.empty() ? "not downloaded" : installed.c_str());
 		if (status.state != HostGraphicPacks::State::Idle)
 		{
 			ImGui::SameLine();
@@ -756,7 +873,7 @@ namespace
 		}
 		std::sort(packs.begin(), packs.end(), [](const auto& a, const auto& b) { return boost::algorithm::ilexicographical_compare(a->GetVirtualPath(), b->GetVirtualPath()); });
 
-		ImGui::SeparatorText(fmt::format("{} ({} packs)", game.name, packs.size()).c_str());
+		ImGui::SeparatorText(fmt::format("{} packs ({})", game.name, packs.size()).c_str());
 		if (packs.empty())
 		{
 			ImGui::TextWrapped(installed.empty() ? "Download the community graphic packs to get resolution, FPS and mod packs for this game." : "There are no graphic packs for this game.");
@@ -1739,7 +1856,7 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		// the game carousel reads the D-pad and the arrow keys itself (s_carouselActive is from the last frame)
 		ImGuiIO& io = ImGui::GetIO();
 		const ImGuiConfigFlags nav = ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NavEnableKeyboard;
-		if (s_carouselActive && s_tab == kTabGames && !s_showSetup)
+		if (!s_showSetup && ((s_carouselActive && s_tab == kTabGames) || (s_packsRowFocused && s_tab == kTabGraphicPacks)))
 			io.ConfigFlags &= ~nav;
 		else
 			io.ConfigFlags |= nav;
