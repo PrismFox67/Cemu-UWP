@@ -532,6 +532,26 @@ namespace
 	int s_skyIndex = 0;
 	std::vector<std::pair<fs::path, uint8>> s_skyPlaced; // figures on the portal and their portal slots
 
+	// #825: the game a figure came out with, from the variant ID in the dump's first (unencrypted) block: its top four bits are
+	// the year code, 0 Spyro's Adventure ... 5 Imaginators. -1 if the file is too short
+	int _SkylanderGame(const fs::path& file)
+	{
+		std::unique_ptr<FileStream> stream(FileStream::openFile2(file, false));
+		uint8 header[0x20];
+		if (!stream || stream->readData(header, sizeof(header)) != sizeof(header))
+			return -1;
+		const uint16 variant = (uint16)(header[0x1C] | (header[0x1D] << 8));
+		return variant >> 12;
+	}
+
+	const char* _SkylanderGameName(int game)
+	{
+		static const char* names[] = { "Spyro's Adventure", "Giants", "Swap Force", "Trap Team", "SuperChargers", "Imaginators" };
+		return (game >= 0 && game < 6) ? names[game] : nullptr;
+	}
+
+	std::vector<std::pair<int, fs::path>> s_skyGames; // game code of each listed file (sorted like s_skyFiles)
+
 	std::vector<fs::path> _ListSkylanderFiles()
 	{
 		std::vector<fs::path> files;
@@ -549,10 +569,32 @@ namespace
 		return files;
 	}
 
+	// #825: grouped by game in release order, alphabetical (case-insensitive) within each game; unknown figures last
+	void _SortSkylanderFiles(std::vector<fs::path>& files, std::vector<std::pair<int, fs::path>>& games)
+	{
+		games.clear();
+		for (const fs::path& file : files)
+		{
+			const int game = _SkylanderGame(file);
+			games.emplace_back((game >= 0 && game < 6) ? game : 99, file);
+		}
+		std::sort(games.begin(), games.end(), [](const auto& a, const auto& b) {
+			if (a.first != b.first)
+				return a.first < b.first;
+			return boost::algorithm::ilexicographical_compare(_pathToUtf8(a.second.stem()), _pathToUtf8(b.second.stem()));
+		});
+		files.clear();
+		for (const auto& g : games)
+			files.emplace_back(g.second);
+	}
+
 	void _RefreshSkylanderFiles()
 	{
 		std::vector<fs::path> files = _ListSkylanderFiles();
+		std::vector<std::pair<int, fs::path>> games;
+		_SortSkylanderFiles(files, games);
 		std::scoped_lock lock(s_skyMutex);
+		s_skyGames = std::move(games);
 		s_skyFiles = std::move(files);
 		s_skyIndex = std::clamp(s_skyIndex, 0, std::max(0, (int)s_skyFiles.size() - 1));
 	}
@@ -586,7 +628,9 @@ namespace
 		const fs::path& file = s_skyFiles[s_skyIndex];
 		if (!GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
 			return "Skylander: restart the game to connect the portal";
-		std::string label = fmt::format("Skylander: < {} >", _pathToUtf8(file.stem()));
+		const char* gameName = s_skyIndex < (int)s_skyGames.size() ? _SkylanderGameName(s_skyGames[s_skyIndex].first) : nullptr;
+		std::string label = gameName ? fmt::format("Skylander: < {} >  ({}, {}/{})", _pathToUtf8(file.stem()), gameName, s_skyIndex + 1, s_skyFiles.size())
+									 : fmt::format("Skylander: < {} >  ({}/{})", _pathToUtf8(file.stem()), s_skyIndex + 1, s_skyFiles.size());
 		const bool placed = std::any_of(s_skyPlaced.begin(), s_skyPlaced.end(), [&](const auto& p) { return p.first == file; });
 		if (placed)
 			label += "  (on the portal, A removes)";
