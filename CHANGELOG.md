@@ -48,6 +48,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ### Xbox launcher
 - Graphic packs: a row of your games sits at the top of the tab. Left/right picks the game and its packs are listed right below; down goes to the packs, up from the top of the list goes back to the row. The selected game is the same as on the Games tab.
+- Skylanders: the figure list in the in-game menu is grouped by game in release order (Spyro's Adventure, Giants, Swap Force, Trap Team, SuperChargers, Imaginators) and alphabetical within each game; the menu shows the figure's game and its place in the list.
 
 ## 2026-11-09
 ### Xbox launcher
