@@ -7,6 +7,8 @@
 #include "gui/host/HostMusic.h"
 #include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
+#include "gui/host/HostGraphicPacks.h"
+#include "Cafe/GraphicPack/GraphicPack2.h"
 #include "gui/host/LauncherRenderer.h"
 
 #include "Cafe/CafeSystem.h"
@@ -309,6 +311,62 @@ namespace
 
 	void _StartVirtualConsoleLogging();
 
+	// #850: community workaround packs a game needs to start at all on this setup, turned on once per pack when the game
+	// starts (the user can turn them off again, <user>/auto_enabled_packs.txt remembers they were turned on once).
+	// Minecraft: Wii U Edition crashes at boot without the Mii files (system title 0005001b-10056000, FFLResMiddle.dat),
+	// its 'Workarounds/Mii Crash Fix' pack skips that check (Miis in split screen don't work then)
+	void _AutoEnableWorkaroundPacks(uint64 titleId)
+	{
+		std::error_code ec;
+		struct AutoPack
+		{
+			const char* folder; // folder of rules.txt below graphicPacks/downloadedGraphicPacks
+			bool (*needed)();
+			const char* reason;
+		};
+		static const AutoPack kPacks[] = {
+			{ "MinecraftWiiUEdition_CrashFix", []() {
+				std::error_code fileEc;
+				return !fs::exists(ActiveSettings::GetMlcPath("sys/title/0005001b/10056000/content/FFLResMiddle.dat"), fileEc);
+			}, "the Mii files (system title 0005001b-10056000) are missing, without it the game crashes at boot" },
+		};
+		const fs::path markerPath = ActiveSettings::GetUserDataPath("auto_enabled_packs.txt");
+		std::vector<std::string> done;
+		{
+			std::ifstream marker(markerPath);
+			for (std::string line; std::getline(marker, line);)
+			{
+				if (!line.empty() && line.back() == '\r')
+					line.pop_back();
+				if (!line.empty())
+					done.push_back(line);
+			}
+		}
+		bool changed = false;
+		for (const AutoPack& autoPack : kPacks)
+		{
+			if (std::find(done.begin(), done.end(), autoPack.folder) != done.end())
+				continue;
+			for (const auto& gp : GraphicPack2::GetGraphicPacks())
+			{
+				if (gp->GetRulesPath().parent_path().filename() != autoPack.folder || !gp->ContainsTitleId(titleId))
+					continue;
+				if (!gp->IsEnabled() && autoPack.needed())
+				{
+					gp->SetEnabled(true);
+					changed = true;
+					cemuLog_log(LogType::Force, "Host: turned on the graphic pack '{}' once: {}", gp->GetVirtualPath(), autoPack.reason);
+					HostUI::PushMessage("Workaround pack turned on", fmt::format("'{}' was turned on because {}. You can turn it off under Graphic packs.", gp->GetVirtualPath(), autoPack.reason));
+					done.emplace_back(autoPack.folder);
+					std::ofstream(markerPath, std::ios::app) << autoPack.folder << '\n';
+				}
+				break;
+			}
+		}
+		if (changed)
+			HostGraphicPacks::SaveToConfig();
+	}
+
 	void _LaunchGame(const fs::path& path)
 	{
 		HostIcons::Stop(); // it mounts titles, finish before the game's title is mounted
@@ -341,6 +399,8 @@ namespace
 			if (sonic)
 				cemuLog_log(LogType::Force, "Host: Sonic Lost World runs with VSync off for stability (the VSync setting is kept for other games)");
 		}
+
+		_AutoEnableWorkaroundPacks(CafeSystem::GetForegroundTitleId());
 
 		// the emulator renders into the same window, the launcher has to give up its swap chain first
 		s_launcher.reset();
@@ -1365,6 +1425,23 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	_ApplyHostDefaults(firstStart);
 	GetConfigHandle().Save();
 	HostControllers::SetupDefaults();
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// CEMU_HOST_TEST_AUTO_PACKS=<title id hex>: runs the #850 workaround pack check as if that title was started (PC test
+	// without the game). The packs load asynchronously, wait up to 10 s for them
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_AUTO_PACKS") == 0 && value)
+		{
+			const uint64 titleId = std::stoull(value, nullptr, 16);
+			free(value);
+			for (int i = 0; i < 100 && GraphicPack2::GetGraphicPacks().empty(); i++)
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			_AutoEnableWorkaroundPacks(titleId);
+		}
+	}
+#endif
 
 	auto& windowInfo = _WindowInfo();
 	windowInfo.canvas_main = HostPlatform::GetRenderTarget();
