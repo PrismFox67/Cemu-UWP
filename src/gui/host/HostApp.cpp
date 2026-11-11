@@ -1320,6 +1320,39 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 		}
 	}
 
+	// #849: Cemu data folder (shader caches, graphic packs, theme, figures) on a USB drive, same fallback as the save folder
+	if (const std::string dataFolder = GetConfig().host_data_path.GetValue(); !dataFolder.empty())
+	{
+		const fs::path folder = _utf8ToPath(dataFolder);
+		std::error_code dataEc;
+		if (fs::exists(folder.root_path(), dataEc) && (fs::create_directories(folder, dataEc), fs::is_directory(folder, dataEc)))
+		{
+			ActiveSettings::SetExternalDataPath(folder);
+			cemuLog_log(LogType::Force, "Host: Cemu data folder {} (shader caches, graphic packs, theme, figures)", dataFolder);
+		}
+		else
+		{
+			cemuLog_log(LogType::Force, "Host: Cemu data folder {} not found (drive missing), using {} for this session", dataFolder, _pathToUtf8(ActiveSettings::GetUserDataPath()));
+			HostTools::SetDataFolderMissing();
+			HostUI::PushMessage("Cemu data folder not found", fmt::format("{} isn't there (is the USB drive connected?). Cemu uses its own storage for shader caches, "
+				"graphic packs and figures this time; connect the drive and restart Cemu to use it again.", dataFolder));
+		}
+	}
+
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// CEMU_HOST_TEST_DATA_FOLDER=<folder> (or "-" for Cemu's own storage): as if it was set in Settings (automated PC test)
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_DATA_FOLDER") == 0 && value)
+		{
+			const std::string folder = value;
+			free(value);
+			HostTools::StartSetDataFolder(folder == "-" ? fs::path() : _utf8ToPath(folder));
+		}
+	}
+#endif
+
 	if (!_CreateDefaultMLCFiles(ActiveSettings::GetMlcPath()))
 	{
 		errorOut = "Cemu failed to write to the mlc folder:\n" + _pathToUtf8(ActiveSettings::GetMlcPath());

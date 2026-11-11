@@ -10,6 +10,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Breath of the Wild with many graphic packs: when memory got tight, textures the game uses every few seconds were dropped and loaded again over and over, which showed as repeated half-second hitches (e.g. in the desert). They are now kept while they are in use.
 
 ### Xbox launcher
+- Settings: "Cemu data folder" puts shader caches, graphic packs, the theme, Skylanders/Dimensions/amiibo figures, box art and screenshots on your USB drive (e.g. E:\CemuData), like the save folder. Setting it copies what you have there (with progress); without the drive Cemu falls back to its own storage for that session, and "Use Cemu's own storage" switches back. Settings, keys and logs stay on the console. A slow USB stick can make the first runs of a game stutter more while shader caches are written.
 - Settings > Install updates and DLC: "Find updates / DLC on this console" lists the title, update and DLC folders under D:\DevelopmentFiles, on USB drives (E: to H:) and in your game folders, with their type, title ID and version. Pick one with the controller to install it, no PC or file picker needed.
 
 ## 2026-11-10

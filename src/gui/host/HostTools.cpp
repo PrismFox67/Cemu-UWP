@@ -367,6 +367,117 @@ void HostTools::StartSetSaveFolder(fs::path folder)
 	});
 }
 
+namespace
+{
+	std::atomic_bool s_dataFolderMissing = false;
+}
+
+bool HostTools::IsDataFolderMissing()
+{
+	return s_dataFolderMissing;
+}
+
+void HostTools::SetDataFolderMissing()
+{
+	s_dataFolderMissing = true;
+}
+
+void HostTools::StartSetDataFolder(fs::path folder)
+{
+	if (folder.empty())
+	{
+		GetConfig().host_data_path = std::string();
+		GetConfigHandle().Save();
+		cemuLog_log(LogType::Force, "Host: Cemu data folder reset to the app's own storage");
+		HostUI::PushMessage("Cemu data folder", "Cemu uses its own storage for shader caches, graphic packs and figures again after a restart. "
+			"The copies on the drive stay there; what was added there since (new shader caches, figures) isn't copied back.");
+		return;
+	}
+	_RunTask("Copying Cemu data...", [folder]() {
+		std::error_code ec;
+		fs::create_directories(folder, ec);
+		if (!fs::is_directory(folder, ec))
+		{
+			HostUI::PushMessage("Cemu data folder not set", fmt::format("Cemu couldn't create {}", _pathToUtf8(folder)));
+			return;
+		}
+		std::vector<std::pair<fs::path, fs::path>> trees; // current location -> target
+		trees.emplace_back(ActiveSettings::GetCachePath("shaderCache"), folder / "shaderCache");
+		for (const char* name : ActiveSettings::kExternalDataFolders)
+			trees.emplace_back(ActiveSettings::GetUserDataPath(name), folder / name);
+		// count first, so the progress shows how far it is
+		uint64 totalBytes = 0;
+		size_t totalFiles = 0;
+		for (const auto& [source, target] : trees)
+		{
+			std::error_code canon1, canon2;
+			if (!fs::is_directory(source, ec) || fs::weakly_canonical(source, canon1) == fs::weakly_canonical(target, canon2))
+				continue;
+			for (auto it = fs::recursive_directory_iterator(source, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+			{
+				std::error_code fileEc;
+				if (it->is_regular_file(fileEc))
+				{
+					totalFiles++;
+					totalBytes += it->file_size(fileEc);
+				}
+			}
+			ec.clear();
+		}
+		size_t files = 0, kept = 0, failed = 0, done = 0;
+		uint64 doneBytes = 0;
+		for (const auto& [source, target] : trees)
+		{
+			std::error_code canon1, canon2;
+			if (!fs::is_directory(source, ec) || fs::weakly_canonical(source, canon1) == fs::weakly_canonical(target, canon2))
+				continue;
+			for (auto it = fs::recursive_directory_iterator(source, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+			{
+				std::error_code fileEc;
+				if (!it->is_regular_file(fileEc))
+					continue;
+				const uint64 size = it->file_size(fileEc);
+				const fs::path relative = it->path().lexically_relative(source);
+				const fs::path to = target / relative;
+				done++;
+				doneBytes += size;
+				if (done % 16 == 1)
+				{
+					std::unique_lock _l(s_mutex);
+					s_busyText = fmt::format("Copying Cemu data... {} of {} files, {} of {} MB", done, totalFiles, doneBytes >> 20, totalBytes >> 20);
+				}
+				if (fs::exists(to, fileEc))
+				{
+					kept++;
+					continue;
+				}
+				fs::create_directories(to.parent_path(), fileEc);
+				if (_CopyFile(it->path(), to))
+					files++;
+				else
+					failed++;
+			}
+			if (ec)
+			{
+				failed++;
+				ec.clear();
+			}
+		}
+		if (failed)
+		{
+			cemuLog_log(LogType::Force, "Host: Cemu data folder {} not set, {} file(s) couldn't be copied", _pathToUtf8(folder), failed);
+			HostUI::PushMessage("Cemu data folder not set", fmt::format("{} files couldn't be copied to {} (drive full?). Nothing was changed.", failed, _pathToUtf8(folder)));
+			return;
+		}
+		GetConfig().host_data_path = _pathToUtf8(folder);
+		GetConfigHandle().Save();
+		cemuLog_log(LogType::Force, "Host: Cemu data folder set to {}: copied {} file(s) ({} MB), {} already there", _pathToUtf8(folder), files, doneBytes >> 20, kept);
+		HostUI::PushMessage("Cemu data folder set", fmt::format("Restart Cemu to use {}.\n\nCopied {} files ({} MB), {} were already there and kept. "
+			"The copies in Cemu's own storage stay as they are.\n\nShader caches are written while you play: a slow USB stick can make the first runs of a game stutter more.",
+			_pathToUtf8(folder), files, doneBytes >> 20, kept));
+	});
+}
+
 bool HostTools::IsBusy()
 {
 	return s_busy;

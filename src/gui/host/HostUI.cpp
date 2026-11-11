@@ -1525,6 +1525,51 @@ namespace
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", _TR("The save folder's drive wasn't found at start, this session uses Cemu's own storage."));
 			ImGui::TextWrapped("mlc01 in use: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
 		}
+		{
+			// #849: shader caches, graphic packs, theme and figures on the USB drive too (settings, keys and logs stay)
+			static char s_dataFolderBuffer[512] = {};
+			static bool s_dataFolderLoaded = false;
+			if (!s_dataFolderLoaded)
+			{
+				s_dataFolderLoaded = true;
+				strncpy(s_dataFolderBuffer, config.host_data_path.GetValue().c_str(), sizeof(s_dataFolderBuffer) - 1);
+			}
+			ImGui::TextUnformatted(_TR("Cemu data folder"));
+			ImGui::SameLine();
+			ImGui::TextDisabled(_TR("(shader caches, graphic packs, theme, figures, screenshots; empty = Cemu's own storage)"));
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+			const bool entered = ImGui::InputTextWithHint("##datafolder", _TR("a folder on your USB drive, e.g. E:\\CemuData"), s_dataFolderBuffer, sizeof(s_dataFolderBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			ImGui::SameLine();
+			if ((ImGui::Button(_TR("Set data folder")) || entered) && !HostTools::IsBusy())
+			{
+				const std::string value = s_dataFolderBuffer;
+				s_deferred.emplace_back([value]() { HostTools::StartSetDataFolder(_utf8ToPath(value)); });
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(_TR("Pick folder...##data")) && !HostTools::IsBusy())
+			{
+				HostPlatform::PickFolder([](const fs::path& path) {
+					if (path.empty())
+						return;
+					const std::string utf8 = _pathToUtf8(path);
+					strncpy(s_dataFolderBuffer, utf8.c_str(), sizeof(s_dataFolderBuffer) - 1);
+					s_deferred.emplace_back([path]() { HostTools::StartSetDataFolder(path); });
+				});
+			}
+			if (!config.host_data_path.GetValue().empty())
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(_TR("Use Cemu's own storage##data")) && !HostTools::IsBusy())
+				{
+					s_dataFolderBuffer[0] = 0;
+					s_deferred.emplace_back([]() { HostTools::StartSetDataFolder({}); });
+				}
+			}
+			if (HostTools::IsDataFolderMissing())
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", _TR("The data folder's drive wasn't found at start, this session uses Cemu's own storage."));
+			const fs::path external = ActiveSettings::GetExternalDataPath();
+			ImGui::TextWrapped("Data in use: %s", external.empty() ? "Cemu's own storage" : _pathToUtf8(external).c_str());
+		}
 
 		ImGui::SeparatorText(_TR("Logs and backups"));
 		const fs::path exportRoot = HostTools::GetExportRoot();
