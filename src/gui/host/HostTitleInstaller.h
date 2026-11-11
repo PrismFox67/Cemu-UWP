@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace HostTitleInstaller
 {
@@ -75,7 +76,19 @@ struct Snapshot
 	std::string message;
 };
 
+struct Candidate
+{
+	std::filesystem::path folder; // a folder with code, content and meta in it
+	std::string titleName;
+	ContentType type{ ContentType::Unknown };
+	uint64_t titleId{};
+	uint16_t version{};
+};
+
 std::string_view ContentTypeName(ContentType type);
+// title, update and DLC folders under the roots (searched up to maxDepth folders deep, at most folderLimit folders
+// looked at), sorted by name then type; folders whose meta.xml can't be read are skipped (#831)
+std::vector<Candidate> FindCandidates(const std::vector<std::filesystem::path>& roots, int maxDepth = 4, size_t folderLimit = 20000);
 PlanResult BuildPlan(const std::filesystem::path& selectedFolder, const std::filesystem::path& mlcRoot);
 bool Start(const InstallPlan& plan);
 void RequestCancel();
