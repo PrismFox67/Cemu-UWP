@@ -7,6 +7,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-11
 ### Games
+- Minecraft: Wii U Edition: when the Mii system files are missing (the game crashes at boot without them), Cemu turns on the community pack "Workarounds/Mii Crash Fix" once and says so. You can turn it off under Graphic packs; Miis in split screen don't work while it's on. The pack has to be downloaded (Graphic packs > download).
 - Breath of the Wild with many graphic packs: when memory got tight, textures the game uses every few seconds were dropped and loaded again over and over, which showed as repeated half-second hitches (e.g. in the desert). They are now kept while they are in use.
 
 ### Xbox launcher

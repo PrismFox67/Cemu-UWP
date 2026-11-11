@@ -13,7 +13,7 @@ Status: **Perfect** (no known issues) · **Playable** (small issues) · **Issues
 | Mario Kart DS (Wii U Virtual Console) | - | Broken | Mario Kart DS crashes at launch; logs being checked. | PrismFox67 | 0.1.127 |
 | Mario Kart 8 | 1440p 60 | Playable | Minor visual bugs ([issue #2](https://github.com/PrismFox67/Cemu-UWP/issues/2)). 4K can run out of memory on the largest tracks. | MagnusBRA | before 39c5467 |
 | Mario Tennis: Ultra Smash | 1440p 60 | Perfect | Same as on PC. | MagnusBRA | before 39c5467 |
-| Minecraft: Wii U Edition | ? | Playable | Runs decently. Save and Exit crashed on older builds, fixed by 0.1.214. | The Primadonna (Discord) | 0.1.214 |
+| Minecraft: Wii U Edition | ? | Playable | Runs decently. Save and Exit crashed on older builds, fixed by 0.1.214. Crashes at boot without the Mii system files (0005001b-10056000): the downloaded pack "Workarounds/Mii Crash Fix" fixes it (v688 only, no Miis in split screen); Cemu turns it on once by itself when those files are missing. Runs nicely with it and the Resolution pack (k, Discord, e1060b4). | The Primadonna (Discord) | 0.1.214 |
 | Need for Speed: Most Wanted U | ? | Broken | Closes right after the intro video, when gameplay starts ([issue #3](https://github.com/PrismFox67/Cemu-UWP/issues/3)). | GuilhermeLCv | 2026-10-21 |
 | New Super Mario Bros. U | 1440p 60 | Perfect | | MagnusBRA | before 39c5467 |
 | Pokkén Tournament | 1440p 60 | Playable | Naming keyboard couldn't be used with a controller; fixed in 0f235bd, retest. | MagnusBRA | before 39c5467 |
