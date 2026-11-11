@@ -1446,6 +1446,8 @@ namespace
 		{ "bc_array_write_back", nullptr }, // #783: cached pages for those CPU writes (cache coherent UMA only)
 		{ "bc_array_rewrite_all", nullptr }, // #783: writes every slice on a reload, not only changed ones
 		{ "relgpr_off", nullptr }, // #457: opts out of the relgpr_selects default of UWP builds
+		{ "bc_array_serial", nullptr }, // #826: block compressed array writes one at a time on the GPU thread (was missing here)
+		{ "pressure_idle_3", nullptr }, // #846: soft memory pressure releases textures idle for 3 frames again (not 10 s)
 	};
 	std::mutex s_abMutex;
 	std::atomic<bool> s_abLoaded{ false };
@@ -1485,7 +1487,7 @@ namespace
 		}
 #ifdef CEMU_UWP
 		// #457 tester build: the Xbox driver loses pixel-shader local arrays, so UWP builds lower them by default
-		if ((mask & (1u << 6)) == 0)
+		if ((mask & (1u << 9)) == 0) // relgpr_off (bit 9; it checked bit 6 = bc_array_gpu_copy before)
 			mask |= 1u << 0;
 #endif
 		s_abMask = mask;

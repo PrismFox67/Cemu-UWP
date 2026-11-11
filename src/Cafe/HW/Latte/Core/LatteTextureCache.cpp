@@ -3,6 +3,9 @@
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
+#ifdef ENABLE_D3D12
+bool D3D12_AbToggle(const char* name); // D3D12Renderer.cpp
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -468,6 +471,21 @@ static void LatteTC_ReleaseForMemoryPressure()
 	// danprice142/Cemu-UWP, MPL-2.0)
 	if (s_textureMemoryPressure == 1)
 	{
+		// #846: textures loaded from RAM that were used in the last ~10 s stay too. With only the 3 frame minimum, BOTW's
+		// 512x512x8 / 1024x1024x7 arrays (used every 2-3 s in the desert) were released and uploaded again (80-220 ms each)
+		// every couple of seconds for as long as the soft pressure lasted (yyattalyyy's 0.1.227 log: ~700 ms hitches)
+#ifdef ENABLE_D3D12
+		// A/B word pressure_idle_3: the old 3 frame minimum
+		const bool keepRecent = !D3D12_AbToggle("pressure_idle_3");
+#else
+		const bool keepRecent = true;
+#endif
+		if (keepRecent)
+		{
+			std::erase_if(deletable, [](LatteTexture* tex) {
+				return !tex->isUpdatedOnGPU && LatteGPUState.frameCounter - tex->lastAccessFrameCount < 600;
+			});
+		}
 		static uint32 s_keptLogCount = 0;
 		std::erase_if(deletable, [](LatteTexture* tex) {
 			if (tex->dim != Latte::E_DIM::DIM_2D_ARRAY || tex->depth < 16 || tex->isUpdatedOnGPU || LatteGPUState.frameCounter - tex->lastAccessFrameCount >= 3600)
