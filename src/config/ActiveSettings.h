@@ -46,11 +46,32 @@ public:
 	[[nodiscard]] static fs::path GetExecutablePath() { return s_executable_path; }
 	[[nodiscard]] static fs::path GetExecutableFilename() { return s_executable_filename; }
 	template <typename ...TArgs>
-	[[nodiscard]] static fs::path GetUserDataPath(TArgs&&... args){ return GetPath(s_user_data_path, std::forward<TArgs>(args)...); };
+	[[nodiscard]] static fs::path GetUserDataPath(TArgs&&... args){ return RedirectUserDataPath(GetPath(s_user_data_path, std::forward<TArgs>(args)...)); };
 	template <typename ...TArgs>
 	[[nodiscard]] static fs::path GetConfigPath(TArgs&&... args){ return GetPath(s_config_path, std::forward<TArgs>(args)...); };
 	template <typename ...TArgs>
-	[[nodiscard]] static fs::path GetCachePath(TArgs&&... args){ return GetPath(s_cache_path, std::forward<TArgs>(args)...); };
+	[[nodiscard]] static fs::path GetCachePath(TArgs&&... args){ return GetPath(s_external_data_path.empty() ? s_cache_path : s_external_data_path, std::forward<TArgs>(args)...); };
+	// #849 (Xbox frontend): a 'Cemu data folder' on a USB drive. Set once at start, before anything reads these paths: the
+	// cache path (shaderCache) and the user data folders in kExternalDataFolders then live there; settings.xml, keys, logs
+	// and everything else stay in the user data path. Empty = off
+	static void SetExternalDataPath(const fs::path& path) { s_external_data_path = path; }
+	[[nodiscard]] static fs::path GetExternalDataPath() { return s_external_data_path; }
+	static constexpr const char* kExternalDataFolders[] = { "graphicPacks", "theme", "dimensions", "skylanders", "amiibo", "covers", "screenshots" };
+	[[nodiscard]] static fs::path RedirectUserDataPath(fs::path path)
+	{
+		if (s_external_data_path.empty())
+			return path;
+		const fs::path relative = path.lexically_relative(s_user_data_path);
+		if (relative.empty() || *relative.begin() == "..")
+			return path;
+		const std::string first = relative.begin()->generic_string();
+		for (const char* folder : kExternalDataFolders)
+		{
+			if (first == folder)
+				return s_external_data_path / relative;
+		}
+		return path;
+	}
 	template <typename ...TArgs>
 	[[nodiscard]] static fs::path GetDataPath(TArgs&&... args){ return GetPath(s_data_path, std::forward<TArgs>(args)...); };
 
@@ -74,6 +95,7 @@ private:
 	inline static bool s_isPortableMode{false};
 	inline static fs::path s_executable_path;
 	inline static fs::path s_user_data_path;
+	inline static fs::path s_external_data_path;
 	inline static fs::path s_config_path;
 	inline static fs::path s_cache_path;
 	inline static fs::path s_data_path;

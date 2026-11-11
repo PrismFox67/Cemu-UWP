@@ -662,6 +662,13 @@ bool GraphicPack2::Reload()
 
 std::string GraphicPack2::GetNormalizedPathString() const
 {
+	// #849: packs in a Cemu data folder on a USB drive keep the same name in settings.xml ("graphicPacks/...")
+	if (const fs::path external = ActiveSettings::GetExternalDataPath(); !external.empty())
+	{
+		const fs::path relative = GetRulesPath().lexically_normal().lexically_relative(external.lexically_normal());
+		if (!relative.empty() && *relative.begin() != "..")
+			return _pathToUtf8(relative.lexically_normal());
+	}
 	return _pathToUtf8(MakeRelativePath(ActiveSettings::GetUserDataPath(), GetRulesPath()).lexically_normal());
 }
 

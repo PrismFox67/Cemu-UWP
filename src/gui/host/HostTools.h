@@ -34,6 +34,12 @@ namespace HostTools
 	// set at start when the save folder's drive is missing and the app's own mlc01 is used instead
 	bool IsSaveFolderMissing();
 	void SetSaveFolderMissing();
+	// #849: makes <folder> the Cemu data folder (shaderCache, graphicPacks, theme, dimensions, skylanders, screenshots) from
+	// the next start. Copies the current ones there first, existing files at the target are kept, nothing is deleted.
+	// Empty folder = back to the app's own storage
+	void StartSetDataFolder(fs::path folder);
+	bool IsDataFolderMissing();
+	void SetDataFolderMissing();
 	bool IsBusy();
 	std::string GetBusyText();
 
