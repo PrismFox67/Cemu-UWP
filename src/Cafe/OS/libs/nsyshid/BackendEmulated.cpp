@@ -48,7 +48,7 @@ namespace nsyshid::backend::emulated
 		}
 		if ((GetConfig().emulated_usb_devices.emulate_dimensions_toypad || IsDimensionsTitle(CafeSystem::GetForegroundTitleId())) && !FindDeviceById(0x0E6F, 0x0241))
 		{
-			cemuLog_logDebug(LogType::Force, "Attaching Emulated Toypad");
+			cemuLog_log(LogType::Force, "Toy Pad: emulated LEGO Dimensions Toy Pad attached");
 			// Add Dimensions Toypad
 			auto device = std::make_shared<DimensionsToypadDevice>();
 			AttachDevice(device);
