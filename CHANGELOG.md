@@ -5,6 +5,13 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-11
+### Games
+- Breath of the Wild with many graphic packs: when memory got tight, textures the game uses every few seconds were dropped and loaded again over and over, which showed as repeated half-second hitches (e.g. in the desert). They are now kept while they are in use.
+
+### Xbox launcher
+- Settings > Install updates and DLC: "Find updates / DLC on this console" lists the title, update and DLC folders under D:\DevelopmentFiles, on USB drives (E: to H:) and in your game folders, with their type, title ID and version. Pick one with the controller to install it, no PC or file picker needed.
+
 ## 2026-11-10
 ### Games
 - Sonic Lost World always runs with the Single-Core CPU mode and VSync off, the settings testers found stable on Xbox (no crashes, smooth cutscenes). Your VSync setting is kept for other games; the in-game menu and a notice at start say so.
