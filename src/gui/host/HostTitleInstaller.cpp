@@ -538,6 +538,73 @@ std::string_view ContentTypeName(ContentType type)
 	}
 }
 
+std::vector<Candidate> FindCandidates(const std::vector<fs::path>& roots, int maxDepth, size_t folderLimit)
+{
+	std::vector<Candidate> found;
+	size_t visited = 0;
+	std::vector<std::pair<fs::path, int>> pending;
+	for (auto it = roots.rbegin(); it != roots.rend(); ++it)
+		pending.emplace_back(*it, 0);
+	std::vector<fs::path> seen;
+	while (!pending.empty() && visited < folderLimit)
+	{
+		auto [folder, depth] = pending.back();
+		pending.pop_back();
+		std::error_code ec;
+		if (!fs::is_directory(folder, ec) || ec)
+			continue;
+		const fs::path normalized = NormalizePath(folder);
+		if (std::find(seen.begin(), seen.end(), normalized) != seen.end())
+			continue;
+		seen.push_back(normalized);
+		visited++;
+		if (IsTitleRoot(folder))
+		{
+			try
+			{
+				TitleInfo title(folder);
+				if (title.IsValid() && title.HasValidXmlInfo())
+				{
+					Candidate c;
+					c.folder = folder;
+					c.titleId = title.GetAppTitleId();
+					c.version = title.GetAppTitleVersion();
+					c.type = ToContentType(TitleIdParser(c.titleId).GetType());
+					c.titleName = title.GetMetaTitleName();
+					std::replace(c.titleName.begin(), c.titleName.end(), '\r', ' ');
+					std::replace(c.titleName.begin(), c.titleName.end(), '\n', ' ');
+					if (c.titleName.empty())
+						c.titleName = fmt::format("{:016x}", c.titleId);
+					if (c.type != ContentType::Unknown)
+						found.push_back(std::move(c));
+				}
+			}
+			catch (const std::exception&)
+			{
+			}
+			continue; // nothing installable lives inside a title folder
+		}
+		if (depth >= maxDepth)
+			continue;
+		std::vector<fs::path> children;
+		for (fs::directory_iterator dir(folder, fs::directory_options::skip_permission_denied, ec), end; !ec && dir != end; dir.increment(ec))
+		{
+			std::error_code ec2;
+			if (dir->is_directory(ec2) && !ec2)
+				children.push_back(dir->path());
+		}
+		std::sort(children.begin(), children.end());
+		for (auto it = children.rbegin(); it != children.rend(); ++it)
+			pending.emplace_back(*it, depth + 1);
+	}
+	std::stable_sort(found.begin(), found.end(), [](const Candidate& a, const Candidate& b) {
+		if (a.titleName != b.titleName)
+			return a.titleName < b.titleName;
+		return (int)a.type < (int)b.type;
+	});
+	return found;
+}
+
 PlanResult BuildPlan(const fs::path& selectedFolder, const fs::path& mlcRoot)
 {
 	PlanResult result;

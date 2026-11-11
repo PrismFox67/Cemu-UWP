@@ -28,6 +28,8 @@
 #include <cmath>
 #include <fstream>
 #include <unordered_set>
+#include <thread>
+#include <atomic>
 #include <boost/algorithm/string.hpp>
 
 namespace
@@ -992,6 +994,114 @@ namespace
 	std::string s_installError;
 	bool s_installRefreshPending = false;
 
+	// #831: on the Xbox the folder picker can't reach D:\DevelopmentFiles, so the section can search the usual places
+	// itself: D:/DevelopmentFiles, the roots of USB drives E: to H: and the game folders. CEMU_HOST_INSTALL_ROOTS
+	// (folders separated by ;) replaces that list, for tests on a PC
+	struct InstallBrowse
+	{
+		std::mutex mutex;
+		std::atomic_bool running{ false };
+		bool done = false;
+		std::vector<HostTitleInstaller::Candidate> candidates;
+	};
+	InstallBrowse s_installBrowse;
+
+	std::vector<fs::path> _InstallSearchRoots()
+	{
+		std::vector<fs::path> roots;
+		char* v = nullptr;
+		size_t n = 0;
+		if (_dupenv_s(&v, &n, "CEMU_HOST_INSTALL_ROOTS") == 0 && v)
+		{
+			std::vector<std::string> parts;
+			boost::split(parts, std::string(v), boost::is_any_of(";"));
+			free(v);
+			for (auto& part : parts)
+				if (!part.empty())
+					roots.emplace_back(_utf8ToPath(part));
+			return roots;
+		}
+		roots.emplace_back(L"D:/DevelopmentFiles");
+		for (const wchar_t* drive : { L"E:/", L"F:/", L"G:/", L"H:/" })
+			roots.emplace_back(drive);
+		for (const auto& gamePath : GetConfig().game_paths)
+			roots.emplace_back(_utf8ToPath(gamePath));
+		return roots;
+	}
+
+	void _StartInstallSearch()
+	{
+		if (s_installBrowse.running)
+			return;
+		{
+			std::unique_lock _l(s_installBrowse.mutex);
+			s_installBrowse.done = false;
+			s_installBrowse.candidates.clear();
+		}
+		s_installBrowse.running = true;
+		std::thread([roots = _InstallSearchRoots()]() {
+			auto found = HostTitleInstaller::FindCandidates(roots);
+			cemuLog_log(LogType::Force, "Host: install search found {} title/update/DLC folders in {} places", found.size(), roots.size());
+			for (size_t i = 0; i < found.size() && i < 64; i++)
+				cemuLog_log(LogType::Force, "Host: install search: {} {} {:016x} v{} in {}", HostTitleInstaller::ContentTypeName(found[i].type), found[i].titleName, found[i].titleId, found[i].version, _pathToUtf8(found[i].folder));
+			std::unique_lock _l(s_installBrowse.mutex);
+			s_installBrowse.candidates = std::move(found);
+			s_installBrowse.done = true;
+			s_installBrowse.running = false;
+		}).detach(); // detached: a search still running when Cemu closes must not terminate the process
+	}
+
+	void _PickInstallFolder(const fs::path& path)
+	{
+		using namespace HostTitleInstaller;
+		PlanResult result = BuildPlan(path, ActiveSettings::GetMlcPath());
+		s_installPlan = result.plan;
+		s_installError = result.error;
+	}
+
+	void _DrawInstallBrowser()
+	{
+		using namespace HostTitleInstaller;
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+		// automated PC test: with CEMU_HOST_INSTALL_ROOTS set the search starts by itself once the section is shown
+		static bool s_autoSearch = false;
+		if (!s_autoSearch)
+		{
+			s_autoSearch = true;
+			size_t len = 0;
+			if (getenv_s(&len, nullptr, 0, "CEMU_HOST_INSTALL_ROOTS") == 0 && len)
+				_StartInstallSearch();
+		}
+#endif
+		if (ImGui::Button(s_installBrowse.running ? _TR("Searching...") : _TR("Find updates / DLC on this console")) && !s_installBrowse.running)
+			_StartInstallSearch();
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s", "D:/DevelopmentFiles, USB drives, game folders");
+		std::unique_lock _l(s_installBrowse.mutex);
+		if (!s_installBrowse.done)
+			return;
+		if (s_installBrowse.candidates.empty())
+		{
+			ImGui::TextDisabled("%s", _TR("No folders with code, content and meta found."));
+			return;
+		}
+		std::optional<fs::path> picked;
+		for (size_t i = 0; i < s_installBrowse.candidates.size(); i++)
+		{
+			const Candidate& c = s_installBrowse.candidates[i];
+			ImGui::PushID((int)i);
+			const std::string label = fmt::format("{}  ({}, {:016x} v{})", c.titleName, ContentTypeName(c.type), c.titleId, c.version);
+			if (ImGui::Selectable(label.c_str()))
+				picked = c.folder;
+			if (ImGui::IsItemHovered() || ImGui::IsItemFocused())
+				ImGui::SetTooltip("%s", _pathToUtf8(c.folder).c_str());
+			ImGui::PopID();
+		}
+		_l.unlock();
+		if (picked)
+			_PickInstallFolder(*picked);
+	}
+
 	void _DrawInstallSection()
 	{
 		using namespace HostTitleInstaller;
@@ -1040,11 +1150,10 @@ namespace
 				HostPlatform::PickFolder([](const fs::path& path) {
 					if (path.empty())
 						return;
-					PlanResult result = BuildPlan(path, ActiveSettings::GetMlcPath());
-					s_installPlan = result.plan;
-					s_installError = result.error;
+					_PickInstallFolder(path);
 				});
 			}
+			_DrawInstallBrowser();
 			if (!s_installError.empty())
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", s_installError.c_str());
 			return;
