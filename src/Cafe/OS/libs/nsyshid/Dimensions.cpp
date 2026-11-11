@@ -389,6 +389,7 @@ namespace nsyshid
 	{
 		if (!IsOpened())
 		{
+			cemuLog_log(LogType::Force, "Toy Pad: opened by the game");
 			m_IsOpened = true;
 		}
 		return true;
@@ -504,7 +505,7 @@ namespace nsyshid
 
 	bool DimensionsToypadDevice::SetReport(ReportMessage* message)
 	{
-		cemuLog_log(LogType::Force, "Toypad Report");
+		cemuLog_logOnce(LogType::Force, "Toypad Report");
 		return true;
 	}
 
@@ -527,9 +528,23 @@ namespace nsyshid
 				response = m_figureAddedRemovedResponses.front();
 				m_figureAddedRemovedResponses.pop();
 				responded = true;
+				// #830: a tester log shows whether the game got the figure event
+				static uint32 s_logged = 0;
+				if (s_logged < 64)
+				{
+					s_logged++;
+					cemuLog_log(LogType::Force, "Toy Pad: figure {} pad {} index {} sent to the game", response[5] ? "removal" : "placement", response[2], response[4]);
+				}
 			}
 			else
 			{
+				// #830: figure events wait until the game has woken and seeded the pad (0xB0/0xB1)
+				static bool s_loggedWaiting = false;
+				if (!m_isAwake && !m_figureAddedRemovedResponses.empty() && !s_loggedWaiting)
+				{
+					s_loggedWaiting = true;
+					cemuLog_log(LogType::Force, "Toy Pad: a figure event is waiting, the game hasn't seeded the pad yet (no 0xB1)");
+				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			}
 		}
@@ -541,6 +556,13 @@ namespace nsyshid
 	{
 		const uint8 command = buf[2];
 		const uint8 sequence = buf[3];
+		// #830: the first time the game sends each command, so a tester log shows how far the Toy Pad handshake got
+		static std::array<bool, 256> s_seen{};
+		if (!s_seen[command])
+		{
+			s_seen[command] = true;
+			cemuLog_log(LogType::Force, "Toy Pad: first command {:02x} from the game", command);
+		}
 
 		std::array<uint8, 32> q_result{};
 
