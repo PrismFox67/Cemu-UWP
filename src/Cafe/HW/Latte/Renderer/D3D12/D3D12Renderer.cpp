@@ -87,8 +87,12 @@ D3D12Renderer::D3D12Renderer()
 	std::string err;
 	if (!D3D12ShaderCompiler::Initialize(m_highestShaderModel, err))
 		throw std::runtime_error(err);
-	// #449 D0: does this driver keep a pixel shader's local register array? Logs PASS/LOST per compiler variant
-	D3D12_RunLocalArraySelfTest(m_device.Get(), m_queue.Get());
+	// #449 D0: does this driver keep a pixel shader's local register array? Logs PASS/LOST per compiler variant.
+	// #877: only on request (A/B word local_array_selftest). It ran on every title launch, and 2 of 3 launches on a
+	// Series S died with DXGI_ERROR_DEVICE_RESET right after it; the answer is known (LOST on Xbox, handled by
+	// relgpr_selects) and nothing reads the result
+	if (D3D12_AbToggle("local_array_selftest"))
+		D3D12_RunLocalArraySelfTest(m_device.Get(), m_queue.Get());
 	RendererShaderD3D12::Init();
 
 	// first command list
@@ -1448,6 +1452,7 @@ namespace
 		{ "relgpr_off", nullptr }, // #457: opts out of the relgpr_selects default of UWP builds
 		{ "bc_array_serial", nullptr }, // #826: block compressed array writes one at a time on the GPU thread (was missing here)
 		{ "pressure_idle_3", nullptr }, // #846: soft memory pressure releases textures idle for 3 frames again (not 10 s)
+		{ "local_array_selftest", nullptr }, // #877: runs the PS local-array self-test at renderer startup (was always on)
 	};
 	std::mutex s_abMutex;
 	std::atomic<bool> s_abLoaded{ false };
