@@ -18,6 +18,7 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/OS/libs/gx2/GX2.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/CafeSystem.h"
 
 #ifdef CEMU_D3D12_SPIRV_TO_DXIL
 extern "C"
@@ -25,6 +26,12 @@ extern "C"
 #include "spirv_to_dxil.h"
 }
 #endif
+
+// Splatoon (JP, US, EU, Testfire), IDs from the community graphic packs
+static bool _IsSplatoonTitle(uint64 titleId)
+{
+	return titleId == 0x0005000010162B00 || titleId == 0x0005000010176900 || titleId == 0x0005000010176A00 || titleId == 0x00050002101CE400;
+}
 
 extern bool hasValidFramebufferAttached;
 
@@ -473,9 +480,13 @@ void D3D12Renderer::draw_buildStageBindings(LatteDecompilerShader* shader, Rende
 				if ((s_copyCheck++ % 4096) == 0)
 				{
 					// #449: feedback_copy.txt or the word feedback_copy in magnesis_ab.txt
-					const bool on = D3D12_AbToggle("feedback_copy");
+					// #869: always on for Splatoon. Its ink map shader reads the 1600x1600 ink texture while drawing into it
+					// (~200 times per second); sampled directly the reads don't see the earlier ink on D3D12, so ink didn't
+					// build up on walls and ramps (no climbing). Vulkan tolerates the loop, D3D12 has no defined result
+					const bool splatoon = _IsSplatoonTitle(CafeSystem::GetForegroundTitleId());
+					const bool on = splatoon || D3D12_AbToggle("feedback_copy");
 					if (on != s_copyEnabled || s_copyCheck == 1)
-						cemuLog_log(LogType::Force, "D3D12: feedback copies {}", on ? "on (feedback_copy)" : "off, render targets are sampled directly");
+						cemuLog_log(LogType::Force, "D3D12: feedback copies {}", on ? (splatoon ? "on (Splatoon)" : "on (feedback_copy)") : "off, render targets are sampled directly");
 					s_copyEnabled = on;
 				}
 				tableDesc.srv[reg] = s_copyEnabled ? view->GetFeedbackSRV(word4) : view->GetSRV(word4);
