@@ -408,8 +408,27 @@ namespace
 		auto& windowInfo = _WindowInfo();
 		try
 		{
-			g_renderer = std::make_unique<D3D12Renderer>();
-			D3D12Renderer::GetInstance()->InitializeSurface({ windowInfo.phys_width.load(), windowInfo.phys_height.load() }, true);
+			// #873: on the Series S the device was sometimes already removed (DXGI_ERROR_DEVICE_RESET) right after the swap
+			// chain was created, and the first buffer allocation then killed the app; the next launch was fine. Seen in two
+			// testers' logs, cause unknown (not the local-array self-test, the older one predates it). Start over with a
+			// fresh device, up to two more times
+			for (int attempt = 1;; attempt++)
+			{
+				g_renderer = std::make_unique<D3D12Renderer>();
+				D3D12Renderer::GetInstance()->InitializeSurface({ windowInfo.phys_width.load(), windowInfo.phys_height.load() }, true);
+				ID3D12Device* device = D3D12Renderer::GetInstance()->GetDevice();
+				HRESULT removed = device ? device->GetDeviceRemovedReason() : S_OK;
+				if (attempt == 1 && getenv("CEMU_HOST_TEST_RENDERER_RETRY"))
+					removed = DXGI_ERROR_DEVICE_RESET; // test: takes the retry path once on the Win32 host
+				if (SUCCEEDED(removed))
+					break;
+				if (attempt >= 3)
+					throw std::runtime_error(fmt::format("the graphics device was reset during startup ({:08x}), three times in a row", (uint32)removed));
+				cemuLog_log(LogType::Force, "Host: graphics device removed during renderer startup ({:08x}), creating the renderer again (attempt {})", (uint32)removed, attempt + 1);
+				g_renderer.reset();
+				D3D12_ResetRemovalReport();
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			}
 		}
 		catch (const std::exception& ex)
 		{
