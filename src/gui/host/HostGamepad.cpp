@@ -44,7 +44,25 @@ HostGamepad::State HostGamepad::PollPad(int index)
 	{
 		XINPUT_STATE xs{};
 		if (index < 0 || index >= kMaxPads || XInputGetState((DWORD)index, &xs) != ERROR_SUCCESS)
+		{
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+			// CEMU_HOST_TEST_PAD=1 (PC tests without a controller): the number pad is pad 1. 8/2/4/6 D-pad, 5 A, 0 B, 7 X,
+			// 9 Y, 1 Menu, 3 View
+			static const bool s_testPad = []() { size_t n = 0; return getenv_s(&n, nullptr, 0, "CEMU_HOST_TEST_PAD") == 0 && n > 0; }();
+			if (s_testPad && index == 0)
+			{
+				result.connected = true;
+				const std::pair<int, Button> keys[] = { { VK_NUMPAD8, kUp }, { VK_NUMPAD2, kDown }, { VK_NUMPAD4, kLeft }, { VK_NUMPAD6, kRight },
+					{ VK_NUMPAD5, kA }, { VK_NUMPAD0, kB }, { VK_NUMPAD7, kX }, { VK_NUMPAD9, kY }, { VK_NUMPAD1, kStart }, { VK_NUMPAD3, kBack } };
+				for (const auto& [vk, button] : keys)
+				{
+					if (GetAsyncKeyState(vk) & 0x8000)
+						result.buttons |= button;
+				}
+			}
+#endif
 			return result;
+		}
 		result.connected = true;
 		const WORD b = xs.Gamepad.wButtons;
 		auto map = [&](WORD xinputButton, Button button) {

@@ -896,6 +896,159 @@ namespace
 	}
 
 	// the game folder list with Remove buttons, "Add folder..." and a path field (Settings and the setup screen)
+	// #865: on-screen keyboard for the text fields. With a controller, A on an ImGui text field does nothing (ImGui 1.89
+	// starts text input from a gamepad only with the 'input' button) and the Xbox shows no system keyboard for an ImGui
+	// window, so the path fields couldn't be filled without a USB keyboard. A on a field opens this keyboard instead
+	struct OnScreenKeyboard
+	{
+		bool open = false;
+		bool justOpened = false;
+		bool shift = false;
+		ImGuiID fieldId = 0;
+		ImGuiID committedId = 0; // the field whose text was just confirmed, it reports 'entered' once
+		char* target = nullptr;
+		size_t size = 0;
+		std::string text;
+		std::string title;
+	};
+	OnScreenKeyboard s_osk;
+
+	void _OpenOnScreenKeyboard(ImGuiID fieldId, char* buffer, size_t size, const char* title)
+	{
+		s_osk.open = true;
+		s_osk.justOpened = true;
+		s_osk.shift = false;
+		s_osk.fieldId = fieldId;
+		s_osk.target = buffer;
+		s_osk.size = size;
+		s_osk.text = buffer;
+		s_osk.title = title ? title : "";
+		cemuLog_log(LogType::Force, "Host: on-screen keyboard opened");
+	}
+
+	// a text field that also works with a controller: A opens the on-screen keyboard. Returns true when the text was
+	// confirmed (Enter on a keyboard, or Done on the on-screen keyboard)
+	bool _TextField(const char* id, const char* hint, char* buffer, size_t size)
+	{
+		bool entered = ImGui::InputTextWithHint(id, hint, buffer, size, ImGuiInputTextFlags_EnterReturnsTrue);
+		const ImGuiID itemId = ImGui::GetItemID();
+		ImGuiContext& g = *ImGui::GetCurrentContext();
+		if (!s_osk.open && g.NavActivateId == itemId && g.NavInputSource == ImGuiInputSource_Gamepad)
+		{
+			if (g.ActiveId == itemId)
+				ImGui::ClearActiveID();
+			_OpenOnScreenKeyboard(itemId, buffer, size, hint);
+		}
+		if (s_osk.committedId == itemId)
+		{
+			s_osk.committedId = 0;
+			entered = true;
+		}
+		return entered;
+	}
+
+	// drawn as a modal popup at the end of the frame; A types the key, X deletes, Y is space, Menu is Done,
+	// B cancels
+	void _DrawOnScreenKeyboard()
+	{
+		if (!s_osk.open)
+			return;
+		if (s_osk.justOpened)
+			ImGui::OpenPopup("##osk");
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f, viewport->WorkPos.y + viewport->WorkSize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		if (!ImGui::BeginPopupModal("##osk", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+		{
+			s_osk.open = false;
+			return;
+		}
+		bool done = false, cancel = false;
+		auto type = [](const std::string& s) {
+			if (s_osk.text.size() + s.size() < s_osk.size)
+				s_osk.text += s;
+		};
+		auto backspace = []() {
+			if (s_osk.text.empty())
+				return;
+			// whole UTF-8 sequence
+			size_t n = s_osk.text.size() - 1;
+			while (n > 0 && (s_osk.text[n] & 0xC0) == 0x80)
+				n--;
+			s_osk.text.erase(n);
+		};
+		if (!s_osk.title.empty())
+			ImGui::TextDisabled("%s", s_osk.title.c_str());
+		ImGui::PushFont(s_fontLarge);
+		ImGui::Text("%s_", s_osk.text.c_str());
+		ImGui::PopFont();
+		ImGui::Separator();
+		const float key = std::round(64.0f * s_scale);
+		static const char* const kRows[] = { "1234567890", "qwertyuiop", "asdfghjkl:", "zxcvbnm.\\/", "-_()[]&'+," };
+		for (int row = 0; row < (int)std::size(kRows); row++)
+		{
+			for (const char* c = kRows[row]; *c; c++)
+			{
+				char label[8] = { *c, 0 };
+				if (s_osk.shift && *c >= 'a' && *c <= 'z')
+					label[0] = (char)(*c - 'a' + 'A');
+				ImGui::PushID(row * 64 + (int)(c - kRows[row]));
+				if (ImGui::Button(label, ImVec2(key, key)))
+					type(label);
+				if (s_osk.justOpened && row == 1 && c == kRows[1])
+					ImGui::SetKeyboardFocusHere(-1);
+				ImGui::PopID();
+				if (c[1])
+					ImGui::SameLine();
+			}
+		}
+		const float wide = key * 2.0f + ImGui::GetStyle().ItemSpacing.x;
+		if (ImGui::Button(s_osk.shift ? "abc" : "ABC", ImVec2(wide, key)))
+			s_osk.shift = !s_osk.shift;
+		ImGui::SameLine();
+		if (ImGui::Button(_TR("Space"), ImVec2(wide * 1.5f, key)))
+			type(" ");
+		ImGui::SameLine();
+		if (ImGui::Button(_TR("Delete"), ImVec2(wide, key)))
+			backspace();
+		ImGui::SameLine();
+		if (ImGui::Button(_TR("Clear"), ImVec2(wide, key)))
+			s_osk.text.clear();
+		ImGui::SameLine();
+		if (ImGui::Button(_TR("Done"), ImVec2(wide, key)))
+			done = true;
+		ImGui::SameLine();
+		if (ImGui::Button(_TR("Cancel"), ImVec2(wide, key)))
+			cancel = true;
+		ImGui::TextDisabled("%s", _TR("A: type   X: delete   Y: space   Menu: done   B: cancel"));
+		if (!s_osk.justOpened)
+		{
+			if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceLeft, true))
+				backspace();
+			if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+				type(" ");
+			if (ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false))
+				done = true;
+			if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+				cancel = true;
+		}
+		s_osk.justOpened = false;
+		if (done || cancel)
+		{
+			if (done && s_osk.target)
+			{
+				const size_t n = std::min(s_osk.text.size(), s_osk.size - 1);
+				memcpy(s_osk.target, s_osk.text.data(), n);
+				s_osk.target[n] = 0;
+				s_osk.committedId = s_osk.fieldId;
+			}
+			cemuLog_log(LogType::Force, "Host: on-screen keyboard {}", done ? "done" : "cancelled");
+			s_osk.open = false;
+			s_osk.target = nullptr;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
 	void _DrawGameFolderControls()
 	{
 		auto& config = GetConfig();
@@ -919,7 +1072,7 @@ namespace
 			});
 		}
 		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-		const bool entered = ImGui::InputTextWithHint("##newpath", _TR("or type a path, e.g. E:\\WiiU\\games"), s_newPathBuffer, sizeof(s_newPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+		const bool entered = _TextField("##newpath", _TR("or type a path, e.g. E:\\WiiU\\games"), s_newPathBuffer, sizeof(s_newPathBuffer));
 		if (ImGui::IsItemActivated())
 			HostPlatform::ShowTextInput(true);
 		if (ImGui::IsItemDeactivated())
@@ -1457,7 +1610,7 @@ namespace
 			}
 			ImGui::TextUnformatted(_TR("keys.txt file"));
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-			const bool entered = ImGui::InputTextWithHint("##keyspath", _TR("path to keys.txt or its folder, e.g. E:\\keys.txt"), s_keysPathBuffer, sizeof(s_keysPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			const bool entered = _TextField("##keyspath", _TR("path to keys.txt or its folder, e.g. E:\\keys.txt"), s_keysPathBuffer, sizeof(s_keysPathBuffer));
 			ImGui::SameLine();
 			if (ImGui::Button(_TR("Set and import")) || entered)
 			{
@@ -1493,7 +1646,7 @@ namespace
 			ImGui::SameLine();
 			ImGui::TextDisabled(_TR("(mlc01: saves, installed updates and DLC; empty = Cemu's own storage)"));
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-			const bool entered = ImGui::InputTextWithHint("##savefolder", _TR("a folder on your USB drive, e.g. E:\\CemuSaves"), s_saveFolderBuffer, sizeof(s_saveFolderBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			const bool entered = _TextField("##savefolder", _TR("a folder on your USB drive, e.g. E:\\CemuSaves"), s_saveFolderBuffer, sizeof(s_saveFolderBuffer));
 			ImGui::SameLine();
 			if ((ImGui::Button(_TR("Set save folder")) || entered) && !HostTools::IsBusy())
 			{
@@ -1538,7 +1691,7 @@ namespace
 			ImGui::SameLine();
 			ImGui::TextDisabled(_TR("(shader caches, graphic packs, theme, figures, screenshots; empty = Cemu's own storage)"));
 			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
-			const bool entered = ImGui::InputTextWithHint("##datafolder", _TR("a folder on your USB drive, e.g. E:\\CemuData"), s_dataFolderBuffer, sizeof(s_dataFolderBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
+			const bool entered = _TextField("##datafolder", _TR("a folder on your USB drive, e.g. E:\\CemuData"), s_dataFolderBuffer, sizeof(s_dataFolderBuffer));
 			ImGui::SameLine();
 			if ((ImGui::Button(_TR("Set data folder")) || entered) && !HostTools::IsBusy())
 			{
@@ -1774,7 +1927,7 @@ namespace
 						strncpy(s_motionIp[player], GetMotionServer(player).c_str(), sizeof(s_motionIp[player]) - 1);
 					}
 					ImGui::SetNextItemWidth(columnWidth);
-					const bool entered = ImGui::InputTextWithHint("##motionip", "Phone motion (DSU) IP", s_motionIp[player], sizeof(s_motionIp[player]), ImGuiInputTextFlags_EnterReturnsTrue);
+					const bool entered = _TextField("##motionip", "Phone motion (DSU) IP", s_motionIp[player], sizeof(s_motionIp[player]));
 					if (ImGui::IsItemActivated())
 						HostPlatform::ShowTextInput(true);
 					if (ImGui::IsItemDeactivated())
@@ -2116,11 +2269,11 @@ std::optional<fs::path> HostUI::DrawLauncher()
 		{
 			// LB/RB switch tabs (not while pairing, every button press belongs to the pairing then)
 			const bool pairing = HostControllers::IsPairing();
-			if (!pairing && (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) || ImGui::IsKeyPressed(ImGuiKey_PageUp, false)))
+			if (!pairing && !s_osk.open && (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) || ImGui::IsKeyPressed(ImGuiKey_PageUp, false)))
 				s_tab = (s_tab + kTabCount - 1) % kTabCount;
-			if (!pairing && (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_PageDown, false)))
+			if (!pairing && !s_osk.open && (ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false) || ImGui::IsKeyPressed(ImGuiKey_PageDown, false)))
 				s_tab = (s_tab + 1) % kTabCount;
-			if (!pairing && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
+			if (!pairing && !s_osk.open && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceUp, false))
 				s_tab = kTabSettings;
 			if (pairing)
 				s_tab = kTabControllers;
@@ -2205,6 +2358,8 @@ std::optional<fs::path> HostUI::DrawLauncher()
 				x += widths[i] + 16.0f * unit;
 			}
 		}
+
+		_DrawOnScreenKeyboard();
 
 		// messages
 		{
