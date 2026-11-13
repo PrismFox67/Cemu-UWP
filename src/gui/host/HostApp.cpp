@@ -423,7 +423,11 @@ namespace
 				if (SUCCEEDED(removed))
 					break;
 				if (attempt >= 3)
+				{
+					D3D12Renderer::GetInstance()->LogDeviceRemovedData();
 					throw std::runtime_error(fmt::format("the graphics device was reset during startup ({:08x}), three times in a row", (uint32)removed));
+				}
+				D3D12Renderer::GetInstance()->LogDeviceRemovedData(); // #877: DRED breadcrumbs and page fault, if any
 				cemuLog_log(LogType::Force, "Host: graphics device removed during renderer startup ({:08x}), creating the renderer again (attempt {})", (uint32)removed, attempt + 1);
 				g_renderer.reset();
 				D3D12_ResetRemovalReport();
