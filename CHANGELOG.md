@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-13
+### Games
+- Splatoon: fix attempt for ink not sticking to walls and ramps (the tutorial ramp, no climbing); please report if it still happens. The ink map is read and drawn in the same pass; D3D12 now gives that read a copy of the texture for Splatoon.
+
 ### In-game menu
 - The GamePad touch cursor (right stick) moves slower: about two seconds across the screen at full tilt instead of one, and much slower for small tilts, so menus like Splatoon's can be hit precisely.
 
