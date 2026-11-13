@@ -659,12 +659,44 @@ namespace nsyshid
 		return -1;
 	}
 
+	// #876: HID read timing for the emulated toys (Skylanders portal, Toy Pad, Infinity base). Games report the portal as
+	// disconnected when replies come too late (the Cemu wiki: Swap Force with a low CPU clock override), so every 10 s
+	// of reads log: count, errors, slowest read and the longest gap between two reads the game started
+	void _LogHidReadTiming(std::chrono::steady_clock::time_point start, std::chrono::steady_clock::time_point end, bool error)
+	{
+		static std::mutex s_mutex;
+		static std::chrono::steady_clock::time_point s_windowStart{}, s_lastStart{};
+		static uint32 s_reads = 0, s_errors = 0;
+		static double s_maxReadMs = 0.0, s_maxGapMs = 0.0, s_sumReadMs = 0.0;
+		std::scoped_lock lock(s_mutex);
+		if (s_windowStart == std::chrono::steady_clock::time_point{})
+			s_windowStart = start;
+		const double readMs = std::chrono::duration<double, std::milli>(end - start).count();
+		if (s_lastStart != std::chrono::steady_clock::time_point{})
+			s_maxGapMs = std::max(s_maxGapMs, std::chrono::duration<double, std::milli>(start - s_lastStart).count());
+		s_lastStart = std::max(s_lastStart, start);
+		s_reads++;
+		s_errors += error ? 1 : 0;
+		s_sumReadMs += readMs;
+		s_maxReadMs = std::max(s_maxReadMs, readMs);
+		if (end - s_windowStart >= std::chrono::seconds(10))
+		{
+			cemuLog_log(LogType::Force, "nsyshid: {} HID reads in {:.1f} s, {} errors, read {:.1f} ms avg {:.1f} ms max, longest gap between reads {:.1f} ms",
+				s_reads, std::chrono::duration<double>(end - s_windowStart).count(), s_errors, s_sumReadMs / s_reads, s_maxReadMs, s_maxGapMs);
+			s_windowStart = end;
+			s_reads = s_errors = 0;
+			s_maxReadMs = s_maxGapMs = s_sumReadMs = 0.0;
+		}
+	}
+
 	void _hidReadAsync(std::shared_ptr<Device> device,
 					   uint8* data, sint32 maxLength,
 					   MPTR callbackFuncMPTR,
 					   MPTR callbackParamMPTR)
 	{
+		const auto start = std::chrono::steady_clock::now();
 		sint32 returnCode = _hidReadInternalSync(device, data, maxLength);
+		_LogHidReadTiming(start, std::chrono::steady_clock::now(), returnCode < 0);
 		sint32 errorCode = 0;
 		if (returnCode < 0)
 			errorCode = returnCode; // don't return number of bytes in error code
