@@ -1605,12 +1605,24 @@ D3D12PipelineInfo* D3D12PipelineCache::FindSubstitute(uint64 substituteKey)
 	{
 		if (!candidate->isValid())
 			continue;
-		static uint32 s_logged = 0;
-		if (s_logged < 32)
+		// #868: at most 4 lines per second for the whole session (was 32 lines total, used up during boot, so a later
+		// glitch, e.g. BOTW after fast travel, had no trace in the log); the counter says how many were not logged
+		static auto s_windowStart = std::chrono::steady_clock::now();
+		static uint32 s_lines = 0, s_unlogged = 0;
+		const auto now = std::chrono::steady_clock::now();
+		if (now - s_windowStart >= std::chrono::seconds(1))
 		{
-			s_logged++;
-			cemuLog_log(LogType::Force, "D3D12: substitute pipeline while the exact one is created (Smooth)");
+			s_windowStart = now;
+			s_lines = 0;
 		}
+		if (s_lines < 4)
+		{
+			s_lines++;
+			cemuLog_log(LogType::Force, "D3D12: substitute pipeline while the exact one is created (Smooth), key {:016x}, {} not logged before", substituteKey, s_unlogged);
+			s_unlogged = 0;
+		}
+		else
+			s_unlogged++;
 		return candidate.get();
 	}
 	return nullptr;
