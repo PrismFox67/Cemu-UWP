@@ -530,8 +530,15 @@ namespace
 		const auto now = std::chrono::steady_clock::now();
 		const float dt = std::min(0.1f, std::chrono::duration<float>(now - s_touchLastUpdate).count());
 		s_touchLastUpdate = now;
-		// crosses the screen in about a second at full tilt, slower near the center for precise placement
-		auto speed = [](float v) { return v * std::abs(v) * 1.1f; };
+		// #867: crosses the screen in about two seconds at full tilt (was ~0.9 s, too fast to hit buttons in Splatoon), cubic so
+		// small tilts move it slowly for precise placement; 0.12 deadzone so a resting stick doesn't drift it
+		auto speed = [](float v) {
+			const float a = std::abs(v);
+			if (a < 0.12f)
+				return 0.0f;
+			const float t = (a - 0.12f) / 0.88f;
+			return (v < 0.0f ? -1.0f : 1.0f) * t * t * t * 0.5f;
+		};
 		s_touchX = std::clamp(s_touchX + speed(pad.rightX) * dt, 0.0f, 1.0f);
 		s_touchY = std::clamp(s_touchY - speed(pad.rightY) * dt, 0.0f, 1.0f);
 		_SetTouch(pad.rightTrigger > 0.5f);
