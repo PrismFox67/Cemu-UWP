@@ -7,6 +7,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-13
 ### Stability
+- Skylanders: the emulated portal no longer closes the app when a game sends a portal command or data block it doesn't know (possible cause of Skylanders Giants closing right after its splash screen); it is logged instead.
 - If the console resets the graphics device while a game starts (seen on Series S, the app closed), Cemu now sets up graphics again, up to three tries, instead of closing.
 
 ### Games

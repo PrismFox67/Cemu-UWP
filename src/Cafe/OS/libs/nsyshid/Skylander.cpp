@@ -533,6 +533,7 @@ namespace nsyshid
 		if (!IsOpened())
 		{
 			m_IsOpened = true;
+			cemuLog_log(LogType::Force, "Skylanders portal: opened by the game");
 		}
 		return true;
 	}
@@ -552,23 +553,46 @@ namespace nsyshid
 
 	Device::ReadResult SkylanderPortalDevice::Read(ReadMessage* message)
 	{
-		memcpy(message->data, g_skyportal.GetStatus().data(), message->length);
-		message->bytesRead = message->length;
+		// #873: never copy past the 64 byte status
+		const auto status = g_skyportal.GetStatus();
+		const uint32 length = std::min<uint32>(message->length, (uint32)status.size());
+		memcpy(message->data, status.data(), length);
+		message->bytesRead = length;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		return Device::ReadResult::Success;
 	}
 
 	Device::WriteResult SkylanderPortalDevice::Write(WriteMessage* message)
 	{
-		if (message->length != 64) {
-			cemu_assert_error();
+		// #873: Skylanders Giants closed the app on Xbox right after its splash screen, no log line. A write of another size
+		// hit cemu_assert_error(), which is a __debugbreak() in release builds too (instant exit without a debugger);
+		// log it and drop the data instead. Audio device errors are logged once and audio stays off
+		static uint32 s_writesLogged = 0;
+		if (s_writesLogged < 4)
+		{
+			s_writesLogged++;
+			cemuLog_log(LogType::Force, "Skylanders portal: HID write of {} bytes", message->length);
+		}
+		if (message->length != 64)
+		{
+			message->bytesWritten = message->length;
+			return Device::WriteResult::Success;
 		}
 
-		if (!g_portalAudio)
+		static bool s_audioFailed = false;
+		if (!g_portalAudio && !s_audioFailed)
 		{
 			// Portal audio is mono channel, 16 bit audio.
 			// Audio is unsigned 16 bit, supplied as 64 bytes which is 32 samples per block
-			g_portalAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::Portal, 8000, 32, 16);
+			try
+			{
+				g_portalAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::Portal, 8000, 32, 16);
+			}
+			catch (const std::exception& ex)
+			{
+				cemuLog_log(LogType::Force, "Skylanders portal: no portal audio ({})", ex.what());
+			}
+			s_audioFailed = !g_portalAudio;
 		}
 		std::array<sint16, 32> mono_samples;
 		for (unsigned int i = 0; i < mono_samples.size(); ++i)
@@ -731,8 +755,17 @@ namespace nsyshid
 			break;
 		}
 		default:
-			cemu_assert_error();
+		{
+			// #873: was cemu_assert_error(), a __debugbreak() in release builds that closed the app; the real portal
+			// ignores commands it doesn't know
+			static uint32 s_logged = 0;
+			if (s_logged < 8)
+			{
+				s_logged++;
+				cemuLog_log(LogType::Force, "Skylanders portal: unknown command '{}' (0x{:02x}), {} bytes, ignored", (buf[0] >= 0x20 && buf[0] < 0x7f) ? (char)buf[0] : '?', buf[0], length);
+			}
 			break;
+		}
 		}
 		if (interruptResponse[0] != 0)
 		{
