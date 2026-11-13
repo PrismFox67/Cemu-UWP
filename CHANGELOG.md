@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-12
+### Xbox launcher
+- Text fields (game folder path, keys.txt path, save and data folders, motion server IP) can be filled with the controller: press A on the field and an on-screen keyboard opens (A types, X deletes, Y space, Menu done, B cancel). Before, A did nothing there and only a USB keyboard could type.
+
 ## 2026-11-11
 ### Games
 - Minecraft: Wii U Edition: when the Mii system files are missing (the game crashes at boot without them), Cemu turns on the community pack "Workarounds/Mii Crash Fix" once and says so. You can turn it off under Graphic packs; Miis in split screen don't work while it's on. The pack has to be downloaded (Graphic packs > download).
