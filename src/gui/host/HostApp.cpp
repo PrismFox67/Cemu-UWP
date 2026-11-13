@@ -630,13 +630,15 @@ namespace
 
 	void _EnableSkylanderPortal()
 	{
-		if (_ListSkylanderFiles().empty())
+		const bool skylandersGame = nsyshid::IsSkylandersTitle(CafeSystem::GetForegroundTitleId());
+		if (!skylandersGame && _ListSkylanderFiles().empty())
 			return;
 		auto& portal = GetConfig().emulated_usb_devices.emulate_skylander_portal;
 		if (!portal.GetValue())
 		{
 			portal = true;
-			cemuLog_log(LogType::Force, "Host: skylanders folder has figures, emulating the Skylanders portal");
+			cemuLog_log(LogType::Force, skylandersGame ? "Host: Skylanders game, emulating the Skylanders portal (empty until figures are placed)"
+													   : "Host: skylanders folder has figures, emulating the Skylanders portal");
 		}
 	}
 

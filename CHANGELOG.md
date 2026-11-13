@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-12
+### Games
+- Skylanders games always get the emulated Portal of Power (empty until you place figures from the skylanders folder). Before, with no figure dumps there was no portal at all, and Skylanders Giants hung about 10 s after boot.
+
 ### Xbox launcher
 - Text fields (game folder path, keys.txt path, save and data folders, motion server IP) can be filled with the controller: press A on the field and an on-screen keyboard opens (A types, X deletes, Y space, Menu done, B cancel). Before, A did nothing there and only a USB keyboard could type.
 

@@ -9,6 +9,23 @@
 
 namespace nsyshid
 {
+	// Skylanders games (all regions, IDs from the community graphic packs). On a real console the portal is always plugged in;
+	// without one Giants hangs at boot (#866), so these get an empty emulated portal even without figure dumps
+	constexpr bool IsSkylandersTitle(uint64 titleId)
+	{
+		switch (titleId)
+		{
+		case 0x000500001010D700: case 0x0005000010116000: // Giants
+		case 0x0005000010139200: case 0x0005000010140400: case 0x0005000010142D00: // Swap Force / Spyro's Adventure
+		case 0x000500001017C600: case 0x0005000010181F00: // Trap Team
+		case 0x00050000101B8500: case 0x00050000101BFC00: // SuperChargers
+		case 0x00050000101F4D00: case 0x00050000101FB100: case 0x0005000010205E00: // Imaginators
+			return true;
+		default:
+			return false;
+		}
+	}
+
 	class SkylanderPortalDevice final : public Device {
 	  public:
 		SkylanderPortalDevice();
