@@ -1453,6 +1453,7 @@ namespace
 		{ "bc_array_serial", nullptr }, // #826: block compressed array writes one at a time on the GPU thread (was missing here)
 		{ "pressure_idle_3", nullptr }, // #846: soft memory pressure releases textures idle for 3 frames again (not 10 s)
 		{ "local_array_selftest", nullptr }, // #877: runs the PS local-array self-test at renderer startup (was always on)
+		{ "vertex_align_off", nullptr }, // #887: vertex attributes at unaligned offsets are read at their unaligned offset again
 	};
 	std::mutex s_abMutex;
 	std::atomic<bool> s_abLoaded{ false };

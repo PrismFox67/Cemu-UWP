@@ -26,6 +26,10 @@ struct D3D12PipelineInfo
 	bool usesStencil = false;
 	uint32 stencilRef = 0;
 	std::unique_ptr<RendererShaderD3D12> rectEmulationGS; // generated geometry shader for RECTS primitives
+	// #887: vertex buffers whose attributes start off a 4 byte boundary are bound a second time at input slot 16 + index,
+	// shifted by vbAliasDelta bytes, so the attribute offset in the input layout is aligned (AMD/Xbox fetched them wrong)
+	uint32 vbAliasMask = 0;
+	uint8 vbAliasDelta[16]{};
 	std::atomic<bool> isReady{ false }; // false while the PSO is still being created on a compile thread
 	bool isValid() const { return isReady.load(std::memory_order_acquire) && pso != nullptr; }
 };
