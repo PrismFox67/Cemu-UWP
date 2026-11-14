@@ -202,7 +202,7 @@ public:
 	void RegisterArrayTextureForDump(LatteTextureD3D12* texture) { m_dumpCandidates.insert(texture); }
 	// #316 diagnostic: reads the depth buffer an occlusion query draw tests against back (submits and waits) and logs
 	// what it holds inside the viewport. Rare: only from D3D12Query_LogDrawState
-	void LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp);
+	void LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp, uint32 plane = 0);
 	void NotifyTextureViewRelease(LatteTextureViewD3D12* view);
 	void NotifyFBORelease(CachedFBOD3D12* fbo);
 

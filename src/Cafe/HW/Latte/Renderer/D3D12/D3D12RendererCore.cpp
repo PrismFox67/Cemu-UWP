@@ -624,23 +624,42 @@ static void D3D12Query_LogDrawState(LatteDecompilerShader* vs, LatteDecompilerSh
 		lcr.PA_SU_SC_MODE_CNTL.get_OFFSET_FRONT_ENABLED(), lcr.PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET(), lcr.PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE(), lcr.PA_SU_POLY_OFFSET_CLAMP.get_CLAMP(),
 		lcr.PA_CL_CLIP_CNTL.get_ZCLIP_FAR_DISABLE(), lcr.PA_CL_CLIP_CNTL.get_DX_CLIP_SPACE_DEF(),
 		LatteGPUState.contextRegister[Latte::REGADDR::PA_CL_CLIP_CNTL], LatteGPUState.contextRegister[Latte::REGADDR::PA_CL_VTE_CNTL]);
+	// #889: stencil state of the draw (Splatoon's ink tests are stencil-only query draws)
+	if (depthControl.get_STENCIL_ENABLE())
+	{
+		const auto& rmF = lcr.DB_STENCILREFMASK;
+		const auto& rmB = lcr.DB_STENCILREFMASK_BF;
+		cemuLog_log(LogType::Force, "D3D12: query draw stencil: front ref {:02x} mask {:02x} write {:02x} func {} fail {} zfail {} zpass {}; back {} ref {:02x} mask {:02x} write {:02x} func {} fail {} zfail {} zpass {}; pipeline stencil {}",
+			rmF.get_STENCILREF_F(), rmF.get_STENCILMASK_F(), rmF.get_STENCILWRITEMASK_F(), (uint32)depthControl.get_STENCIL_FUNC_F(), (uint32)depthControl.get_STENCIL_FAIL_F(), (uint32)depthControl.get_STENCIL_ZFAIL_F(), (uint32)depthControl.get_STENCIL_ZPASS_F(),
+			depthControl.get_BACK_STENCIL_ENABLE() ? "on" : "off", rmB.get_STENCILREF_B(), rmB.get_STENCILMASK_B(), rmB.get_STENCILWRITEMASK_B(), (uint32)depthControl.get_STENCIL_FUNC_B(), (uint32)depthControl.get_STENCIL_FAIL_B(), (uint32)depthControl.get_STENCIL_ZFAIL_B(), (uint32)depthControl.get_STENCIL_ZPASS_B(),
+			(fbo->GetDSVFormat() == DXGI_FORMAT_D32_FLOAT || fbo->GetDSVFormat() == DXGI_FORMAT_D16_UNORM) ? "dropped (depth format has no stencil)" : "on");
+	}
 	if (depthView)
+	{
 		static_cast<D3D12Renderer*>(g_renderer.get())->LogDepthContents(depthView, vp);
+		if (depthControl.get_STENCIL_ENABLE())
+			static_cast<D3D12Renderer*>(g_renderer.get())->LogDepthContents(depthView, vp, 1);
+	}
 }
 
-void D3D12Renderer::LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp)
+void D3D12Renderer::LogDepthContents(LatteTextureViewD3D12* depthView, const D3D12_VIEWPORT& vp, uint32 plane)
 {
 	LatteTextureD3D12* tex = depthView->GetBaseTexture();
 	const D3D12_RESOURCE_DESC& desc = tex->GetDesc();
 	if (!tex->GetResource() || desc.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE2D)
 		return;
-	const uint32 sub = tex->GetSubresourceIndex(depthView->firstMip, depthView->firstSlice, 0);
+	if (plane != 0 && desc.Format != DXGI_FORMAT_R24G8_TYPELESS && desc.Format != DXGI_FORMAT_D24_UNORM_S8_UINT && desc.Format != DXGI_FORMAT_R32G8X24_TYPELESS && desc.Format != DXGI_FORMAT_D32_FLOAT_S8X24_UINT)
+	{
+		cemuLog_log(LogType::Force, "D3D12: query stencil: depth resource format {} has no stencil plane", (uint32)desc.Format);
+		return;
+	}
+	const uint32 sub = tex->GetSubresourceIndex(depthView->firstMip, depthView->firstSlice, plane);
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
 	UINT numRows;
 	UINT64 rowSize, totalBytes;
 	m_device->GetCopyableFootprints(&desc, sub, 1, 0, &layout, &numRows, &rowSize, &totalBytes);
 	const uint32 bpp = (uint32)(rowSize / std::max<uint32>(layout.Footprint.Width, 1));
-	if (bpp != 4 && bpp != 2)
+	if (plane != 0 ? bpp != 1 : (bpp != 4 && bpp != 2))
 	{
 		cemuLog_log(LogType::Force, "D3D12: query depth readback: unsupported footprint ({} bytes per texel, format {})", bpp, (uint32)layout.Footprint.Format);
 		return;
@@ -670,6 +689,26 @@ void D3D12Renderer::LogDepthContents(LatteTextureViewD3D12* depthView, const D3D
 	const uint32 x0 = (uint32)std::max(0.0f, vp.TopLeftX), y0 = (uint32)std::max(0.0f, vp.TopLeftY);
 	const uint32 x1 = std::min<uint32>((uint32)(vp.TopLeftX + vp.Width), layout.Footprint.Width);
 	const uint32 y1 = std::min<uint32>((uint32)(vp.TopLeftY + vp.Height), numRows);
+	if (plane != 0)
+	{
+		// #889: stencil values in the viewport, the 6 most common
+		uint32 histogram[256]{};
+		uint64 total = 0;
+		for (uint32 y = y0; y < y1; y++)
+			for (uint32 x = x0; x < x1; x++, total++)
+				histogram[data[(uint64)y * layout.Footprint.RowPitch + x]]++;
+		std::vector<std::pair<uint32, uint32>> values;
+		for (uint32 v = 0; v < 256; v++)
+			if (histogram[v])
+				values.emplace_back(histogram[v], v);
+		std::sort(values.rbegin(), values.rend());
+		std::string top;
+		for (size_t i = 0; i < values.size() && i < 6; i++)
+			top += fmt::format("{}{:02x}: {}", top.empty() ? "" : ", ", values[i].second, values[i].first);
+		cemuLog_log(LogType::Force, "D3D12: query stencil {:08x} slice {}: {} texels in viewport, {} distinct values, most common {}",
+			tex->physAddress, depthView->firstSlice, total, values.size(), top);
+		return;
+	}
 	auto texel = [&](uint32 x, uint32 y) -> float {
 		const uint8* p = data + (uint64)y * layout.Footprint.RowPitch + (uint64)x * bpp;
 		if (bpp == 2)
