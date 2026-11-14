@@ -186,9 +186,21 @@ fs::path HostTools::GetExportRoot()
 	}
 	if (!fallback.empty())
 		return fallback;
+	// #891: the Settings page calls this every frame; the drive probe below writes a file, so scan at most every 5 s and
+	// log only when the answer changes (a tester's log had 9244 'exporting to D:/' lines in 2.5 minutes)
+	static std::mutex s_scanMutex;
+	static std::chrono::steady_clock::time_point s_lastScan{};
+	static fs::path s_lastResult;
+	static bool s_logged = false;
+	std::scoped_lock scanLock(s_scanMutex);
+	const auto now = std::chrono::steady_clock::now();
+	if (s_lastScan != std::chrono::steady_clock::time_point{} && now - s_lastScan < std::chrono::seconds(5))
+		return s_lastResult;
+	s_lastScan = now;
+	fs::path found;
 	// GitHub #12: no game folders (games installed into mlc01) - use the first writable drive D: to Z: that isn't the
 	// app's own, which on the Xbox is the USB drive
-	for (wchar_t letter = L'D'; letter <= L'Z'; letter++)
+	for (wchar_t letter = L'D'; letter <= L'Z' && found.empty(); letter++)
 	{
 		const fs::path root = fs::path(std::wstring{ letter, L':', L'\\' });
 		if (root == ownRoot)
@@ -203,10 +215,16 @@ fs::path HostTools::GetExportRoot()
 				continue;
 		}
 		fs::remove(probe, ec);
-		cemuLog_log(LogType::Force, "Host: no game folder drive, exporting to {}", _pathToUtf8(root));
-		return root;
+		found = root;
 	}
-	return {};
+	if (found != s_lastResult || !s_logged)
+	{
+		if (!found.empty())
+			cemuLog_log(LogType::Force, "Host: no game folder drive, exporting to {}", _pathToUtf8(found));
+		s_logged = true;
+	}
+	s_lastResult = found;
+	return found;
 }
 
 void HostTools::StartSaveLogs()
