@@ -1545,9 +1545,18 @@ uint64 D3D12PipelineCache::CalculateHash(const LatteFetchShader* fetchShader, co
 	return h;
 }
 
+// #890: Splatoon's ink mechanics draw into 1600x1600 R8 / R8G8 targets; a skipped draw loses ink for good (no ink on
+// walls/ramps, can't swim up). Mainline Cemu's Vulkan IsAsyncPipelineAllowed() compiles these synchronously, same here
+static bool IsMustWaitTarget(CachedFBOD3D12* fbo)
+{
+	return fbo && fbo->m_size.x == 1600 && fbo->m_size.y == 1600;
+}
+
 // render targets that are probably drawn once (see GetOrCreate): cube maps, texture arrays, and anything up to 256x256
 static bool IsLikelyOneOffTarget(CachedFBOD3D12* fbo)
 {
+	if (IsMustWaitTarget(fbo))
+		return true;
 	// a draw counted by an occlusion query must not be skipped: the game would read 0 samples and think the object is
 	// hidden (BOTW's Magnesis/Stasis targeting, #71)
 	if (LatteQuery_IsOcclusionQueryActive())
@@ -1721,7 +1730,7 @@ D3D12PipelineInfo* D3D12PipelineCache::GetOrCreate(const LatteFetchShader* fetch
 		const int waitMode = GetConfig().pipeline_wait.GetValue();
 		if (waitMode == 0 && !IsLikelyOneOffTarget(fbo))
 			timeout = std::chrono::milliseconds(0);
-		else if (waitMode == 2)
+		else if (waitMode == 2 || IsMustWaitTarget(fbo))
 			timeout = std::chrono::hours(1);
 		// draws counted by an occlusion query wait outside the budget too, a skipped one reads as hidden
 		if (LatteQuery_IsOcclusionQueryActive())
