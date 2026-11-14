@@ -823,8 +823,10 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 	// pipeline state
 	if (!m_state.rootSignatureBound)
 		BindRootSignatureAndHeaps();
+	bool psoChanged = false;
 	if (m_state.currentPSO != pipeline->pso.Get())
 	{
+		psoChanged = true;
 		m_cmdList->SetPipelineState(pipeline->pso.Get());
 		m_state.currentPSO = pipeline->pso.Get();
 	}
@@ -833,10 +835,27 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		m_cmdList->IASetPrimitiveTopology(pipeline->topology);
 		m_state.currentTopology = pipeline->topology;
 	}
+	const bool vertexBuffersChanged = m_state.vertexBufferDirtyMask != 0;
 	if (m_state.vertexBufferDirtyMask)
 	{
 		m_cmdList->IASetVertexBuffers(0, LATTE_MAX_VERTEX_BUFFERS, m_state.vertexBuffers);
 		m_state.vertexBufferDirtyMask = 0;
+	}
+	if (pipeline->vbAliasMask && (vertexBuffersChanged || psoChanged))
+	{
+		// #887: shifted views for attributes at unaligned offsets (see D3D12PipelineInfo::vbAliasMask)
+		D3D12_VERTEX_BUFFER_VIEW aliases[16]{};
+		for (uint32 i = 0; i < 16 && i < LATTE_MAX_VERTEX_BUFFERS; i++)
+		{
+			const D3D12_VERTEX_BUFFER_VIEW& src = m_state.vertexBuffers[i];
+			const uint32 delta = (pipeline->vbAliasMask >> i) & 1 ? pipeline->vbAliasDelta[i] : 0;
+			if (delta == 0 || src.SizeInBytes <= delta)
+				continue;
+			aliases[i] = src;
+			aliases[i].BufferLocation += delta;
+			aliases[i].SizeInBytes -= delta;
+		}
+		m_cmdList->IASetVertexBuffers(16, 16, aliases);
 	}
 	if (m_state.viewportDirty)
 	{

@@ -1826,6 +1826,17 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 			e.Format = D3D12Format::GetVertexFormat(attr.format);
 			e.InputSlot = attr.attributeBufferIndex;
 			e.AlignedByteOffset = attr.offset;
+			static const bool s_alignOff = D3D12_AbToggle("vertex_align_off");
+			const uint32 delta = attr.offset % 4;
+			const uint32 vb = attr.attributeBufferIndex;
+			if (delta != 0 && !s_alignOff && vb < 16 && (info->vbAliasDelta[vb] == 0 || info->vbAliasDelta[vb] == delta))
+			{
+				// #887: read it through a view of the same buffer that starts delta bytes later, same address in the end
+				info->vbAliasDelta[vb] = (uint8)delta;
+				info->vbAliasMask |= 1u << vb;
+				e.InputSlot = 16 + vb;
+				e.AlignedByteOffset = attr.offset - delta;
+			}
 			if (attr.offset % 4 != 0)
 			{
 				// AMD's vertex fetch (Xbox) handles attributes that don't start on a 4 byte boundary differently from Intel (#79)
@@ -1834,8 +1845,9 @@ bool D3D12PipelineCache::PreparePipeline(const LatteFetchShader* fetchShader, La
 				const uint64 key = ((uint64)attr.offset << 32) | ((uint64)attr.format << 8) | (uint64)attr.attributeBufferIndex;
 				std::lock_guard lock(s_loggedMutex);
 				if (s_logged.insert(key).second)
-					cemuLog_log(LogType::Force, "D3D12: vertex attribute at unaligned offset {} (format {:02x}, buffer {}, location {}, VS {:016x})",
-						attr.offset, (uint32)attr.format, attr.attributeBufferIndex, location, vertexShader->baseHash);
+					cemuLog_log(LogType::Force, "D3D12: vertex attribute at unaligned offset {} (format {:02x}, buffer {}, location {}, VS {:016x}){}",
+						attr.offset, (uint32)attr.format, attr.attributeBufferIndex, location, vertexShader->baseHash,
+						e.InputSlot >= 16 ? fmt::format(", read through slot {} shifted {} bytes", e.InputSlot, delta) : std::string(", left unaligned"));
 			}
 			if (attr.fetchType == LatteConst::VertexFetchType2::INSTANCE_DATA)
 			{

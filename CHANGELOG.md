@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-14
+### Graphics
+- Fix attempt for models that briefly stretch into long spikes or streaks (BOTW after fast travel, Minecraft, Skylanders): vertex data the game stores at offsets D3D12 handles badly on Xbox is now read another way. Please report if it still happens.
+
 ## 2026-11-13
 ### Stability
 - Games start faster and more reliably on Xbox: a graphics self-test that ran at every game start is off (on a Series S two of three starts lost the graphics device right after it and the app closed).
