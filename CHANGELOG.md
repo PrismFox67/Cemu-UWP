@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-14
+### Xbox launcher
+- Without a game folder on a USB drive, the Settings page no longer writes a test file to the USB drive on every frame (and no longer fills the log with 'exporting to D:/' lines).
+
 ### Graphics
 - Splatoon: second fix attempt for ink not sticking to the tutorial ramp. Ink drawing is never skipped while its shaders compile any more (the game may pause for a moment the first time instead), like desktop Cemu does.
 - Fix attempt for models that briefly stretch into long spikes or streaks (BOTW after fast travel, Minecraft, Skylanders): vertex data the game stores at offsets D3D12 handles badly on Xbox is now read another way. Please report if it still happens.
