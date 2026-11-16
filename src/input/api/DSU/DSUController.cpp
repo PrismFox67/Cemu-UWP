@@ -57,8 +57,32 @@ bool DSUController::is_connected()
 	return m_provider->is_connected(m_index);
 }
 
+bool DSUController::PollConnection()
+{
+	// The server only streams after a pad data request and stops a few seconds after the last one; the reader
+	// thread re-requests on every received packet, but nothing retries when the first request got no answer
+	// (phone app started later, packet lost). Desktop Cemu retries from device-change events, the Xbox frontend has none.
+	const bool connected = is_connected();
+	if (m_loggedConnected.exchange(connected) != connected)
+	{
+		cemuLog_log(LogType::Force, "DSU: {}:{} slot {} {}", m_provider->get_settings().ip, m_provider->get_settings().port, m_index,
+			connected ? "connected, motion data arriving" : "no longer connected");
+	}
+	if (!connected)
+	{
+		const uint64 now = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		if (now - m_lastRequestTick >= 1000)
+		{
+			m_lastRequestTick = now;
+			m_provider->request_pad_data(m_index);
+		}
+	}
+	return connected;
+}
+
 MotionSample DSUController::get_motion_sample()
 {
+	PollConnection();
 	return m_provider->get_motion_sample(m_index);
 }
 

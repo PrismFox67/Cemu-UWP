@@ -27,6 +27,9 @@ public:
 
 	bool connect() override;
 	bool is_connected() override;
+	// asks the server again (at most once a second) while no data arrives; logs connect/disconnect
+	bool PollConnection();
+
 	
 	bool has_motion() override { return true; }
 	MotionSample get_motion_sample() override;
@@ -43,5 +46,7 @@ protected:
 
 private:
 	uint32 m_index;
+	std::atomic<uint64> m_lastRequestTick{0}; // polled from the input thread and the settings page
+	std::atomic<bool> m_loggedConnected{false};
 };
 

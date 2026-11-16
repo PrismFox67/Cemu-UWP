@@ -84,7 +84,7 @@ to the game list.
 **Motion controls** (gyro puzzles, e.g. BOTW shrines): in the in-game menu set **Motion: On**. The right stick then tilts
 the GamePad (let go = flat). Turn it off again to get the camera back on the right stick. Real gyro: install a DSU/cemuhook motion app on
 your phone (same Wi-Fi), type the IP it shows under **Controllers → Phone motion (DSU) IP** for the GamePad player and
-press **Use phone motion**.
+press **Use phone motion** (Cemu uses port 26760, the default of these apps). Next to the button it says **phone connected** once motion data arrives, or **waiting for the phone app** (start or wake the app, Cemu keeps asking every second); the log then has a line `DSU: <ip>:26760 slot 0 connected`. Leave **Motion** in the in-game menu **Off** while you use the phone: when it is On, the right stick tilt wins.
 
 **amiibo**: upload amiibo dumps (`.bin`) to `LocalState/amiibo` with the Device Portal. In the in-game menu, pick one on
 **Scan amiibo** with left/right on the D-pad and press A when the game asks for an amiibo.

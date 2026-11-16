@@ -238,7 +238,15 @@ void VPADController::update_touch(VPADStatus_t& status)
 
 void VPADController::update_motion(VPADStatus_t& status)
 {
-	if (has_motion())
+	// a held right mouse button (the Xbox frontend's 'Motion: On' right-stick tilt holds it) wins over a motion source:
+	// with a phone motion (DSU) IP set but no phone sending, the zero sample used to block the stick tilt
+	bool rightMouseHeld;
+	{
+		auto& mouse = InputManager::instance().m_main_mouse;
+		std::scoped_lock lock(mouse.m_mutex);
+		rightMouseHeld = mouse.right_down;
+	}
+	if (has_motion() && !rightMouseHeld)
 	{
 		auto motionSample = get_motion_data();
 
