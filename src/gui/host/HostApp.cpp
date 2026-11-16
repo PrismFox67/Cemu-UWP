@@ -65,6 +65,7 @@ namespace
 		kMenuVolume,
 		kMenuDeadzone,
 		kMenuStickTilt,
+		kMenuTiltSensitivity,
 		kMenuAmiibo,
 		kMenuSkylander,
 		kMenuDimSpace,
@@ -971,8 +972,17 @@ namespace
 		WindowSystem::GetWindowPhysSize(w, h);
 		auto& mouse = InputManager::instance().m_main_mouse;
 		std::scoped_lock lock(mouse.m_mutex);
-		// up to 2/3 of the way to the edge: about 90 degrees forward/back and 120 degrees sideways at full tilt
-		mouse.position = { (sint32)(w * (0.5f + x * 0.33f)), (sint32)(h * (0.5f - y * 0.33f)) };
+		// High (default, unchanged): up to 2/3 of the way to the edge, about 90 degrees forward/back and 120 degrees sideways
+		// at full tilt. #908: gyro aiming (Splatoon) is too fast with that, so Medium/Low tilt less at full deflection and
+		// use a quadratic curve so small stick moves aim finely
+		const int sens = std::clamp<int>(GetConfig().host_motion_sensitivity, 0, 2);
+		static constexpr float kRange[] = { 0.12f, 0.2f, 0.33f };
+		if (sens < 2)
+		{
+			x = x * std::fabs(x);
+			y = y * std::fabs(y);
+		}
+		mouse.position = { (sint32)(w * (0.5f + x * kRange[sens])), (sint32)(h * (0.5f - y * kRange[sens])) };
 		mouse.right_down = active;
 	}
 
@@ -1019,6 +1029,11 @@ namespace
 			config.host_touch_cursor_speed = std::clamp<int>(config.host_touch_cursor_speed + direction, 0, 2);
 			GetConfigHandle().Save();
 			break;
+		case kMenuTiltSensitivity:
+			config.host_motion_sensitivity = std::clamp<int>(config.host_motion_sensitivity + direction, 0, 2);
+			GetConfigHandle().Save();
+			cemuLog_log(LogType::Force, "Host: motion sensitivity {}", config.host_motion_sensitivity.GetValue());
+			break;
 		case kMenuDeadzone:
 		{
 			const auto info = HostControllers::GetPlayer(0);
@@ -1057,6 +1072,11 @@ namespace
 		case kMenuTouchSpeed:
 			config.host_touch_cursor_speed = (std::clamp<int>(config.host_touch_cursor_speed, 0, 2) + 1) % 3;
 			GetConfigHandle().Save();
+			break;
+		case kMenuTiltSensitivity:
+			config.host_motion_sensitivity = (std::clamp<int>(config.host_motion_sensitivity, 0, 2) + 1) % 3;
+			GetConfigHandle().Save();
+			cemuLog_log(LogType::Force, "Host: motion sensitivity {}", config.host_motion_sensitivity.GetValue());
 			break;
 		case kMenuTouchCursor:
 			s_touchCursor = !s_touchCursor;
@@ -1899,6 +1919,7 @@ void HostApp::DrawInGameMenu()
 		static const char* const kCorners[] = { "Top left", "Top right", "Bottom left", "Bottom right", "Center", "Side by side" };
 		static const char* const kSizes[] = { "Small", "Medium", "Large" };
 		static const char* const kTouchSpeeds[] = { "Slow", "Normal", "Fast" };
+		static const char* const kTiltSens[] = { "Low", "Medium", "High" };
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
 			"Resume",
@@ -1915,6 +1936,7 @@ void HostApp::DrawInGameMenu()
 			fmt::format("Volume: < {}% >", std::clamp<int>(config.tv_volume, 0, 100)),
 			fmt::format("Stick deadzone (player 1): < {}% >", (int)std::lround(HostControllers::GetPlayer(0).deadzone[0] * 100.0f)),
 			std::string("Motion: ") + (s_stickTilt ? "On (right stick tilts the GamePad)" : "Off"),
+			fmt::format("  Motion sensitivity: < {} >", kTiltSens[std::clamp<int>(config.host_motion_sensitivity, 0, 2)]),
 			_AmiiboLabel(),
 			_SkylanderLabel(),
 			_DimSpaceLabel(),
