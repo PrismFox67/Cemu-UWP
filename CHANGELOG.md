@@ -8,6 +8,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 ## 2026-11-16
 ### Graphics
 - Settings > Graphics: new **Sharpening: Off / AMD CAS** with a **Sharpness** slider (default Off = picture unchanged). AMD FidelityFX Contrast Adaptive Sharpening makes a game rendered below your screen resolution look crisper; it replaces the upscale filter while on. Graphic packs with their own output shader still take priority.
+- Settings > Graphics: new **Anisotropic filtering** (Game default / 2x / 4x / 8x / 16x) for sharper textures at an angle; it never lowers what the game asks for, and a graphic pack's value still wins. New **Anti-aliasing: Off / FXAA** smooths jagged edges in the final picture (it takes the place of Sharpening while on).
 
 ### Controllers
 - In-game menu: new **Motion sensitivity** (Low / Medium / High) under Motion. With Motion: On the right stick tilts the GamePad; High (the default) is unchanged, Medium and Low tilt less and react gently to small stick moves, for gyro aiming in Splatoon.

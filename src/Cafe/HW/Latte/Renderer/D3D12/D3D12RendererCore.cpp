@@ -4,6 +4,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12ShaderCompiler.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCache.h"
+#include "config/CemuConfig.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureD3D12.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
@@ -235,6 +236,8 @@ void D3D12Renderer::draw_buildSamplerDesc(LatteDecompilerShader* shader, uint32 
 	sint32 maxAniso = samplerWords->WORD0.get_MAX_ANISO_RATIO();
 	if (baseTexture && baseTexture->overwriteInfo.anisotropicLevel >= 0)
 		maxAniso = baseTexture->overwriteInfo.anisotropicLevel;
+	else if (const sint32 forced = std::clamp<sint32>(GetConfig().anisotropic_filtering, 0, 4); forced > 0)
+		maxAniso = std::max(maxAniso, forced); // #910 Settings override (log2: 1 = 2x .. 4 = 16x), never lowers the game's, a graphic pack's value wins
 	desc.MaxLOD = std::max(desc.MaxLOD, desc.MinLOD); // MinLOD > MaxLOD is undefined in D3D12
 	desc.MipLODBias = std::clamp((float)iLodBias / 64.0f, -16.0f, 15.99f);
 

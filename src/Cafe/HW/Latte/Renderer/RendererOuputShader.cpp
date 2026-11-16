@@ -280,6 +280,38 @@ void outputShader(){
 }
 )";
 
+// #910 FXAA (fast approximate anti-aliasing, after Timothy Lottes' FXAA 3 console variant; own implementation): finds
+// the local luma edge direction and blends two/four bilinear taps along it. Runs in source texel space so it also scales
+const std::string RendererOutputShader::s_fxaa_shader_source =
+R"(
+float fxLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void outputShader(){
+	vec2 t = 1.0 / textureSrcResolution;
+	vec2 uv = passUV;
+	vec3 rgbM = texture(textureSrc, uv).rgb;
+	float lNW = fxLuma(texture(textureSrc, uv + vec2(-0.5, -0.5) * t).rgb);
+	float lNE = fxLuma(texture(textureSrc, uv + vec2( 0.5, -0.5) * t).rgb);
+	float lSW = fxLuma(texture(textureSrc, uv + vec2(-0.5,  0.5) * t).rgb);
+	float lSE = fxLuma(texture(textureSrc, uv + vec2( 0.5,  0.5) * t).rgb);
+	float lM = fxLuma(rgbM);
+	float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
+	float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+	if (lMax - lMin < max(0.0312, lMax * 0.125))
+	{
+		colorOut0 = vec4(rgbM, 1.0);
+		return;
+	}
+	vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+	float dirReduce = max((lNW + lNE + lSW + lSE) * (0.25 * 0.125), 1.0 / 128.0);
+	float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+	dir = clamp(dir * rcpDirMin, vec2(-8.0), vec2(8.0)) * t;
+	vec3 rgbA = 0.5 * (texture(textureSrc, uv + dir * (1.0 / 3.0 - 0.5)).rgb + texture(textureSrc, uv + dir * (2.0 / 3.0 - 0.5)).rgb);
+	vec3 rgbB = rgbA * 0.5 + 0.25 * (texture(textureSrc, uv - dir * 0.5).rgb + texture(textureSrc, uv + dir * 0.5).rgb);
+	float lB = fxLuma(rgbB);
+	colorOut0 = vec4((lB < lMin || lB > lMax) ? rgbA : rgbB, 1.0);
+}
+)";
+
 RendererOutputShader::RendererOutputShader(const std::string& vertex_source, const std::string& fragment_source)
 {
     std::string finalFragmentSrc;
@@ -339,6 +371,8 @@ RendererOutputShader* RendererOutputShader::s_hermit_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_cas_shader;
 RendererOutputShader* RendererOutputShader::s_cas_shader_ud;
+RendererOutputShader* RendererOutputShader::s_fxaa_shader;
+RendererOutputShader* RendererOutputShader::s_fxaa_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -594,6 +628,9 @@ void RendererOutputShader::InitializeStatic()
 
     	s_cas_shader = new RendererOutputShader(vertex_source, s_cas_shader_source);
     	s_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_cas_shader_source);
+
+    	s_fxaa_shader = new RendererOutputShader(vertex_source, s_fxaa_shader_source);
+    	s_fxaa_shader_ud = new RendererOutputShader(vertex_source_ud, s_fxaa_shader_source);
 		break;
     }
 #endif
@@ -614,4 +651,7 @@ void RendererOutputShader::ShutdownStatic()
 	delete s_cas_shader;
 	delete s_cas_shader_ud;
 	s_cas_shader = s_cas_shader_ud = nullptr;
+	delete s_fxaa_shader;
+	delete s_fxaa_shader_ud;
+	s_fxaa_shader = s_fxaa_shader_ud = nullptr;
 }

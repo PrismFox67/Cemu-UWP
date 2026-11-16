@@ -155,6 +155,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	upscale_filter = graphic.get("UpscaleFilter", kBicubicHermiteFilter);
 	output_sharpening = graphic.get("OutputSharpening", 0);
 	output_sharpness = graphic.get("OutputSharpness", 50);
+	anisotropic_filtering = graphic.get("AnisotropicFiltering", 0);
+	output_antialiasing = graphic.get("OutputAntiAliasing", 0);
 	downscale_filter = graphic.get("DownscaleFilter", kLinearFilter);
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
@@ -413,6 +415,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("UpscaleFilter", upscale_filter);
 	graphic.set("OutputSharpening", output_sharpening);
 	graphic.set("OutputSharpness", output_sharpness);
+	graphic.set("AnisotropicFiltering", anisotropic_filtering);
+	graphic.set("OutputAntiAliasing", output_antialiasing);
 	graphic.set("DownscaleFilter", downscale_filter);
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
