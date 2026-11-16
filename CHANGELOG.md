@@ -7,8 +7,12 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-16
 ### Controllers
+- In-game menu: new **Touch cursor speed** (Slow / Normal / Fast) under Touch cursor. Slow takes about 4 seconds to cross the screen at full tilt, Normal (the default) about 2.
 - Phone motion (DSU): Cemu now keeps asking the phone app for motion data every second until it answers. Before, it asked only once (when you pressed Use phone motion or at launch), so a phone app started later, or one lost network packet, meant no motion at all.
 - The in-game menu's Motion: On (right stick tilts the GamePad) works again while a phone motion IP is set.
+
+### Graphic packs
+- Turning a mod or graphic pack off (or picking another one) in the launcher now applies at the next game start. Before, files a pack replaced (for example New Super Mario Bros. U mods) stayed replaced until Cemu was restarted.
 
 ## 2026-11-14
 ### Xbox launcher
