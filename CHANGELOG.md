@@ -7,6 +7,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-16
 ### Controllers
+- In-game menu: new **Motion sensitivity** (Low / Medium / High) under Motion. With Motion: On the right stick tilts the GamePad; High (the default) is unchanged, Medium and Low tilt less and react gently to small stick moves, for gyro aiming in Splatoon.
 - In-game menu: new **Touch cursor speed** (Slow / Normal / Fast) under Touch cursor. Slow takes about 4 seconds to cross the screen at full tilt, Normal (the default) about 2.
 - Phone motion (DSU): Cemu now keeps asking the phone app for motion data every second until it answers. Before, it asked only once (when you pressed Use phone motion or at launch), so a phone app started later, or one lost network packet, meant no motion at all.
 - The in-game menu's Motion: On (right stick tilts the GamePad) works again while a phone motion IP is set.

@@ -42,6 +42,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	host_menu_sounds = parser.get("host_menu_sounds", true);
 	host_menu_sounds_volume = parser.get("host_menu_sounds_volume", 50);
 	host_touch_cursor_speed = parser.get("host_touch_cursor_speed", 1);
+	host_motion_sensitivity = parser.get("host_motion_sensitivity", 2);
 
 	game_paths.clear();
 	auto game_path_parser = parser.get("GamePaths");
@@ -339,6 +340,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set<bool>("host_menu_sounds", host_menu_sounds);
 	config.set<int>("host_menu_sounds_volume", host_menu_sounds_volume);
 	config.set<int>("host_touch_cursor_speed", host_touch_cursor_speed);
+	config.set<int>("host_motion_sensitivity", host_motion_sensitivity);
 	config.set("console_language", console_language.GetValue());
 
 	// game paths
