@@ -299,6 +299,7 @@ void GraphicPack2::Reset()
 	for (const auto& gp : s_active_graphic_packs)
 		gp->Deactivate();
 	s_active_graphic_packs.clear();
+	fscDeviceRedirect_reset(); // replaced files of the packs (#906)
 	{
 		// the title's modules are unloaded by now, none of them may receive patches of the next launch (#289)
 		std::lock_guard<std::recursive_mutex> lock(mtx_patches);
