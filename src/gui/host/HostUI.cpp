@@ -1585,6 +1585,23 @@ namespace
 			config.upscale_filter = upscale;
 			changed = true;
 		}
+		// #910 anisotropic filtering override (at least this level, graphic packs win) and FXAA in the output pass
+		const char* anisos[] = { _TR("Game default"), "2x", "4x", "8x", "16x" };
+		int aniso = std::clamp<int>(config.anisotropic_filtering.GetValue(), 0, 4);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo(_TR("Anisotropic filtering"), &aniso, anisos, 5))
+		{
+			config.anisotropic_filtering = aniso;
+			changed = true;
+		}
+		const char* aas[] = { _TR("Off"), "FXAA" };
+		int aa = std::clamp<int>(config.output_antialiasing.GetValue(), 0, 1);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo(_TR("Anti-aliasing (replaces sharpening)"), &aa, aas, 2))
+		{
+			config.output_antialiasing = aa;
+			changed = true;
+		}
 		// #909 AMD FidelityFX CAS sharpening in the output pass, applies immediately
 		const char* sharpenings[] = { _TR("Off"), _TR("AMD CAS") };
 		int sharpening = std::clamp<int>(config.output_sharpening.GetValue(), 0, 1);

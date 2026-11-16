@@ -1057,6 +1057,12 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	}
 
 	// #909 CAS sharpening replaces the built-in up/downscale filters (graphic pack output shaders still win)
+	// #910 FXAA takes the place of sharpening (one output pass)
+	if (shader == nullptr && GetConfig().output_antialiasing == 1 && RendererOutputShader::s_fxaa_shader)
+	{
+		shader = renderUpsideDown ? RendererOutputShader::s_fxaa_shader_ud : RendererOutputShader::s_fxaa_shader;
+		filter = LatteTextureView::MagFilter::kLinear;
+	}
 	if (shader == nullptr && GetConfig().output_sharpening == 1 && RendererOutputShader::s_cas_shader)
 	{
 		shader = renderUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
