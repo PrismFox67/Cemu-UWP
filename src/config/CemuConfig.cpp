@@ -153,6 +153,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		userDisplayGamma = 2.2f;
 	gx2drawdone_sync = graphic.get("GX2DrawdoneSync", true);
 	upscale_filter = graphic.get("UpscaleFilter", kBicubicHermiteFilter);
+	output_sharpening = graphic.get("OutputSharpening", 0);
+	output_sharpness = graphic.get("OutputSharpness", 50);
 	downscale_filter = graphic.get("DownscaleFilter", kLinearFilter);
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
@@ -409,6 +411,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 #endif
 	//graphic.set("PrecompiledShaders", precompiled_shaders.GetValue());
 	graphic.set("UpscaleFilter", upscale_filter);
+	graphic.set("OutputSharpening", output_sharpening);
+	graphic.set("OutputSharpness", output_sharpness);
 	graphic.set("DownscaleFilter", downscale_filter);
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());

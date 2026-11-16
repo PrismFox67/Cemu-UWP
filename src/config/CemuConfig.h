@@ -510,6 +510,8 @@ struct CemuConfig
 
 	ConfigValue<sint32> upscale_filter{kBicubicFilter};
 	ConfigValue<sint32> downscale_filter{kLinearFilter};
+	ConfigValue<sint32> output_sharpening{0}; // #909: 0 off, 1 AMD CAS (Vulkan/D3D12 output pass)
+	ConfigValue<sint32> output_sharpness{50}; // #909: CAS strength 0..100
 	ConfigValue<sint32> fullscreen_scaling{kKeepAspectRatio};
 
 	// audio

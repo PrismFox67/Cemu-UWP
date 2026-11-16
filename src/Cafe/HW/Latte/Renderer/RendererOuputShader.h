@@ -16,6 +16,7 @@ public:
 		uint32 applySRGBEncoding;
 		float targetGamma;
 		float displayGamma;
+		float sharpness; // #909 CAS output sharpening, 0..1 (only read by s_cas_shader)
 	};
 	enum Shader
 	{
@@ -50,6 +51,10 @@ public:
 	static RendererOutputShader* s_hermit_shader;
 	static RendererOutputShader* s_hermit_shader_ud;
 
+	// #909 AMD FidelityFX CAS style sharpening (Vulkan/D3D12 only, nullptr elsewhere)
+	static RendererOutputShader* s_cas_shader;
+	static RendererOutputShader* s_cas_shader_ud;
+
 	static std::string GetOpenGlVertexSource(bool render_upside_down);
 	static std::string GetVulkanVertexSource(bool render_upside_down);
 	static std::string GetMetalVertexSource(bool render_upside_down);
@@ -65,6 +70,7 @@ private:
 	static const std::string s_copy_shader_source;
 	static const std::string s_bicubic_shader_source;
 	static const std::string s_hermite_shader_source;
+	static const std::string s_cas_shader_source;
 
 	static const std::string s_bicubic_shader_source_vk;
 	static const std::string s_hermite_shader_source_vk;

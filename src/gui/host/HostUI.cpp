@@ -1557,6 +1557,25 @@ namespace
 			config.upscale_filter = upscale;
 			changed = true;
 		}
+		// #909 AMD FidelityFX CAS sharpening in the output pass, applies immediately
+		const char* sharpenings[] = { _TR("Off"), _TR("AMD CAS") };
+		int sharpening = std::clamp<int>(config.output_sharpening.GetValue(), 0, 1);
+		ImGui::SetNextItemWidth(400.0f * s_scale);
+		if (ImGui::Combo(_TR("Sharpening"), &sharpening, sharpenings, 2))
+		{
+			config.output_sharpening = sharpening;
+			changed = true;
+		}
+		if (sharpening == 1)
+		{
+			int sharpness = std::clamp<int>(config.output_sharpness.GetValue(), 0, 100);
+			ImGui::SetNextItemWidth(400.0f * s_scale);
+			if (ImGui::SliderInt(_TR("Sharpness"), &sharpness, 0, 100, "%d%%"))
+			{
+				config.output_sharpness = sharpness;
+				changed = true;
+			}
+		}
 		const char* scalings[] = { _TR("Keep aspect ratio"), _TR("Stretch") };
 		int scaling = std::clamp<int>(config.fullscreen_scaling.GetValue(), 0, 1);
 		ImGui::SetNextItemWidth(400.0f * s_scale);

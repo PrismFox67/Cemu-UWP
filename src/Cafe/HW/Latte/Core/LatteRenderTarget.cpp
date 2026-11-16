@@ -1056,6 +1056,12 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 		}
 	}
 
+	// #909 CAS sharpening replaces the built-in up/downscale filters (graphic pack output shaders still win)
+	if (shader == nullptr && GetConfig().output_sharpening == 1 && RendererOutputShader::s_cas_shader)
+	{
+		shader = renderUpsideDown ? RendererOutputShader::s_cas_shader_ud : RendererOutputShader::s_cas_shader;
+		filter = LatteTextureView::MagFilter::kLinear;
+	}
 	if (shader == nullptr)
 	{
 		sint32 scaling_filter = downscaling ? GetConfig().downscale_filter : GetConfig().upscale_filter;
