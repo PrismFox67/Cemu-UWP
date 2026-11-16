@@ -27,6 +27,9 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Freeze watch no longer reports a false 'no frame' freeze while the next game is still loading after Exit to game list.
 
 ## 2026-11-16
+### Graphics
+- Settings > Graphics: new **Sharpening: Off / AMD CAS** with a **Sharpness** slider (default Off = picture unchanged). AMD FidelityFX Contrast Adaptive Sharpening makes a game rendered below your screen resolution look crisper; it replaces the upscale filter while on. Graphic packs with their own output shader still take priority.
+
 ### Controllers
 - In-game menu: new **Motion sensitivity** (Low / Medium / High) under Motion. With Motion: On the right stick tilts the GamePad; High (the default) is unchanged, Medium and Low tilt less and react gently to small stick moves, for gyro aiming in Splatoon.
 - In-game menu: new **Touch cursor speed** (Slow / Normal / Fast) under Touch cursor. Slow takes about 4 seconds to cross the screen at full tilt, Normal (the default) about 2.

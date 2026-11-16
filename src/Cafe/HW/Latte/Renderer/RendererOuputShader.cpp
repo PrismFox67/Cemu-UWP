@@ -244,6 +244,42 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
 }
 )";
 
+// #909 Contrast Adaptive Sharpening, after AMD FidelityFX CAS (ffx_cas.h).
+// Copyright (c) 2019-2021 Advanced Micro Devices, Inc. MIT licence: permission is hereby granted, free of charge, to any
+// person obtaining a copy of this software, to deal in it without restriction, provided the copyright notice and this
+// permission notice are included; the software is provided "as is", without warranty of any kind.
+// Scaling variant: the 3x3 neighbourhood is read bilinearly one source texel apart around the output pixel, so it also
+// upscales (like CAS's own scaling mode, with fewer taps). Sharpness 0..1 maps to CAS's peak -1/8 .. -1/5
+const std::string RendererOutputShader::s_cas_shader_source =
+R"(
+void outputShader(){
+	vec2 t = 1.0 / textureSrcResolution;
+	vec2 uv = passUV;
+	vec3 a = texture(textureSrc, uv + vec2(-t.x, -t.y)).rgb;
+	vec3 b = texture(textureSrc, uv + vec2( 0.0, -t.y)).rgb;
+	vec3 c = texture(textureSrc, uv + vec2( t.x, -t.y)).rgb;
+	vec3 d = texture(textureSrc, uv + vec2(-t.x,  0.0)).rgb;
+	vec3 e = texture(textureSrc, uv).rgb;
+	vec3 f = texture(textureSrc, uv + vec2( t.x,  0.0)).rgb;
+	vec3 g = texture(textureSrc, uv + vec2(-t.x,  t.y)).rgb;
+	vec3 h = texture(textureSrc, uv + vec2( 0.0,  t.y)).rgb;
+	vec3 i = texture(textureSrc, uv + vec2( t.x,  t.y)).rgb;
+	// soft min/max: cross plus the whole 3x3, averaged (as ffx_cas.h)
+	vec3 mnRGB = min(min(min(d, e), min(f, b)), h);
+	vec3 mnRGB2 = min(mnRGB, min(min(a, c), min(g, i)));
+	mnRGB += mnRGB2;
+	vec3 mxRGB = max(max(max(d, e), max(f, b)), h);
+	vec3 mxRGB2 = max(mxRGB, max(max(a, c), max(g, i)));
+	mxRGB += mxRGB2;
+	vec3 ampRGB = clamp(min(mnRGB, 2.0 - mxRGB) / max(mxRGB, vec3(1.0e-5)), 0.0, 1.0);
+	ampRGB = sqrt(ampRGB);
+	float peak = -1.0 / mix(8.0, 5.0, clamp(sharpness, 0.0, 1.0));
+	vec3 wRGB = ampRGB * peak;
+	vec3 rcpW = 1.0 / (1.0 + 4.0 * wRGB);
+	colorOut0 = vec4(clamp((b * wRGB + d * wRGB + f * wRGB + h * wRGB + e) * rcpW, 0.0, 1.0), 1.0);
+}
+)";
+
 RendererOutputShader::RendererOutputShader(const std::string& vertex_source, const std::string& fragment_source)
 {
     std::string finalFragmentSrc;
@@ -287,6 +323,7 @@ RendererOutputShader::OutputUniformVariables RendererOutputShader::FillUniformBl
 	vars.applySRGBEncoding = padView ? LatteGPUState.drcBufferUsesSRGB : LatteGPUState.tvBufferUsesSRGB;
 	vars.targetGamma = padView ? ActiveSettings::GetDRCGamma() : ActiveSettings::GetTVGamma();
 	vars.displayGamma = GetConfig().userDisplayGamma;
+	vars.sharpness = std::clamp<sint32>(GetConfig().output_sharpness, 0, 100) / 100.0f;
 
 	return vars;
 }
@@ -299,6 +336,9 @@ RendererOutputShader* RendererOutputShader::s_bicubic_shader_ud;
 
 RendererOutputShader* RendererOutputShader::s_hermit_shader;
 RendererOutputShader* RendererOutputShader::s_hermit_shader_ud;
+
+RendererOutputShader* RendererOutputShader::s_cas_shader;
+RendererOutputShader* RendererOutputShader::s_cas_shader_ud;
 
 std::string RendererOutputShader::GetOpenGlVertexSource(bool render_upside_down)
 {
@@ -457,6 +497,7 @@ uniform vec2 outputResolution;
 uniform bool applySRGBEncoding;
 uniform float targetGamma;
 uniform float displayGamma;
+uniform float sharpness;
 };
 
 float sRGBEncode(float linear)
@@ -550,6 +591,9 @@ void RendererOutputShader::InitializeStatic()
 
     	s_hermit_shader = new RendererOutputShader(vertex_source, s_hermite_shader_source);
     	s_hermit_shader_ud = new RendererOutputShader(vertex_source_ud, s_hermite_shader_source);
+
+    	s_cas_shader = new RendererOutputShader(vertex_source, s_cas_shader_source);
+    	s_cas_shader_ud = new RendererOutputShader(vertex_source_ud, s_cas_shader_source);
 		break;
     }
 #endif
@@ -566,4 +610,8 @@ void RendererOutputShader::ShutdownStatic()
 
 	delete s_hermit_shader;
 	delete s_hermit_shader_ud;
+
+	delete s_cas_shader;
+	delete s_cas_shader_ud;
+	s_cas_shader = s_cas_shader_ud = nullptr;
 }
