@@ -564,6 +564,17 @@ void LatteOverlay_render(bool pad_view)
 }
 
 static std::atomic<void (*)()> s_hostOverlayCallback{ nullptr };
+static std::atomic<bool> s_hostMenuOpen{ false };
+
+void LatteOverlay_setHostMenuOpen(bool open)
+{
+	s_hostMenuOpen = open;
+}
+
+bool LatteOverlay_isHostMenuOpen()
+{
+	return s_hostMenuOpen;
+}
 
 void LatteOverlay_setHostOverlayCallback(void (*callback)())
 {

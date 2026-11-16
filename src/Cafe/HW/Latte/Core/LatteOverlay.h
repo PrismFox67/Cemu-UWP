@@ -7,6 +7,9 @@ void LatteOverlay_render(bool pad_view);
 // GPU thread with the main window's ImGui context current, after the regular overlays
 void LatteOverlay_setHostOverlayCallback(void (*callback)());
 void LatteOverlay_renderHostOverlay(bool pad_view);
+// #907: the host menu state, so the GPU thread can present the menu while the game sends no frames
+void LatteOverlay_setHostMenuOpen(bool open);
+bool LatteOverlay_isHostMenuOpen();
 // picture-in-picture: the screen that isn't shown full screen (GamePad when the TV is shown, TV when swapped) drawn small
 // in a corner of the main window, e.g. MK8's minimap only exists on the GamePad. Set by the frontend
 struct LatteScreenPiP

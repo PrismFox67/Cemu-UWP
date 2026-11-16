@@ -1399,6 +1399,7 @@ namespace
 			}
 		}
 
+		LatteOverlay_setHostMenuOpen(s_menuOpen); // #907
 		if (!s_menuOpen)
 		{
 			if (s_touchCursor)

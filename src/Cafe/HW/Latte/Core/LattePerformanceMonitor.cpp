@@ -45,6 +45,26 @@ namespace
 				running += fmt::format(" {:08x}/{:08x}", thread->context.srr0, _swapEndianU32(thread->context.lr)); // #789: srr0 is stored host-endian, lr big-endian
 			}
 			cemuLog_log(LogType::Force, "Freeze watch: no frame for {} ms, GPU thread in '{}', running guest threads IP/LR:{}", stalled, g_gpuThreadPhase.load(), running);
+			// #907: with no guest thread running (Minecraft Save & Exit hang: all threads waiting), list every thread and
+			// what it waits on, at the first such line and at ~10 s, so a tester log names the stuck wait
+			if (running.empty() && (logs == 1 || stalled / 1000 == 10))
+			{
+				for (sint32 i = 0; i < activeThreadCount; i++)
+				{
+					MPTR addr = activeThread[i];
+					OSThread_t* t = (OSThread_t*)memory_getPointerFromVirtualOffset(addr);
+					const char* name = t->threadName ? t->threadName.GetPtr() : "";
+					std::string mutexInfo;
+					if (t->waitingForMutex)
+					{
+						const coreinit::OSMutex* m = t->waitingForMutex.GetPtr();
+						mutexInfo = fmt::format(" mutex {:08x} owner {:08x} count {}", t->waitingForMutex.GetMPTR(), m->owner.GetMPTR(), (sint32)m->lockCount);
+					}
+					cemuLog_log(LogType::Force, "Freeze watch thread {:08x} '{:.40}': state {} suspend {} prio {} waitQueue {:08x}{} waitAlarm {:08x} IP/LR {:08x}/{:08x} wakeups {}",
+						addr, name, (uint32)(uint8)t->state.value(), (sint32)t->suspendCounter, (sint32)t->effectivePriority,
+						t->currentWaitQueue.GetMPTR(), mutexInfo, t->waitAlarm.GetMPTR(), t->context.srr0, _swapEndianU32(t->context.lr), (uint64)t->wakeUpCount);
+				}
+			}
 		}
 	}
 
@@ -78,6 +98,11 @@ namespace
 
 performanceMonitor_t performanceMonitor{};
 std::atomic<uint64> g_pipelineDriverCreateMs{ 0 }; // D3D12 pipelines created by the driver since the last frame, in ms
+
+sint64 LattePerformanceMonitor_msSinceLastFrame()
+{
+	return FreezeWatchNowMs() - s_lastFrameMs.load();
+}
 
 void LattePerformanceMonitor_frameEnd()
 {

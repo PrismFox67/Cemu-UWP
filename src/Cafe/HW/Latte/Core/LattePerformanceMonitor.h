@@ -153,6 +153,7 @@ typedef struct
 extern performanceMonitor_t performanceMonitor;
 
 void LattePerformanceMonitor_frameEnd();
+sint64 LattePerformanceMonitor_msSinceLastFrame(); // #907, large before the first frame
 void LattePerformanceMonitor_frameBegin();
 
 #define beginPerfMonProfiling(__obj) if( THasProfiling ) __obj.beginMeasuring()
