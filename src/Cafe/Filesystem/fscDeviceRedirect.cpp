@@ -10,6 +10,7 @@ struct RedirectEntry
 };
 
 FSAFileTree<RedirectEntry> redirectTree;
+std::vector<std::string> redirectPaths; // every path added, so fscDeviceRedirect_reset can remove them
 
 void fscDeviceRedirect_add(std::string_view virtualSourcePath, size_t fileSize, const fs::path& targetFilePath, sint32 priority)
 {
@@ -25,6 +26,7 @@ void fscDeviceRedirect_add(std::string_view virtualSourcePath, size_t fileSize, 
 	}
 	RedirectEntry* entry = new RedirectEntry(targetFilePath, priority);
 	redirectTree.addFile(virtualSourcePath, fileSize, entry);
+	redirectPaths.emplace_back(virtualSourcePath);
 }
 
 class fscDeviceTypeRedirect : public fscDeviceC
@@ -60,4 +62,24 @@ void fscDeviceRedirect_map()
 		return;
 	fsc_mount("/", "/", &fscDeviceTypeRedirect::instance(), nullptr, FSC_PRIORITY_REDIRECT);
 	_redirectMapped = true;
+}
+
+// Graphic pack replacement files are added when a pack is activated. The Xbox frontend starts titles again in the
+// same process, so the redirections of the previous launch must go or a pack turned off in the launcher keeps
+// replacing files until Cemu is restarted (#906). Empty directory nodes stay; they only list as empty folders.
+void fscDeviceRedirect_reset()
+{
+	size_t removed = 0;
+	for (const auto& path : redirectPaths)
+	{
+		RedirectEntry* entry;
+		if (!redirectTree.getFile(path, entry))
+			continue;
+		redirectTree.removeFile(path);
+		delete entry;
+		++removed;
+	}
+	redirectPaths.clear();
+	if (removed)
+		cemuLog_log(LogType::Force, "Graphic packs: {} replaced files of the previous launch removed", removed);
 }
