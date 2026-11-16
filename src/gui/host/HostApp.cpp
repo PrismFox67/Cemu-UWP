@@ -59,6 +59,7 @@ namespace
 		kMenuOverlaySize,
 		kMenuOverlayOpacity,
 		kMenuTouchCursor,
+		kMenuTouchSpeed,
 		kMenuShowFPS,
 		kMenuVSync,
 		kMenuVolume,
@@ -555,12 +556,15 @@ namespace
 		s_touchLastUpdate = now;
 		// #867: crosses the screen in about two seconds at full tilt (was ~0.9 s, too fast to hit buttons in Splatoon), cubic so
 		// small tilts move it slowly for precise placement; 0.12 deadzone so a resting stick doesn't drift it
-		auto speed = [](float v) {
+		// #905: Touch cursor speed in the in-game menu, Slow ~4 s / Normal ~2 s / Fast ~1 s across
+		static constexpr float kMaxSpeed[] = { 0.25f, 0.5f, 1.0f };
+		const float maxSpeed = kMaxSpeed[std::clamp<int>(GetConfig().host_touch_cursor_speed, 0, 2)];
+		auto speed = [maxSpeed](float v) {
 			const float a = std::abs(v);
 			if (a < 0.12f)
 				return 0.0f;
 			const float t = (a - 0.12f) / 0.88f;
-			return (v < 0.0f ? -1.0f : 1.0f) * t * t * t * 0.5f;
+			return (v < 0.0f ? -1.0f : 1.0f) * t * t * t * maxSpeed;
 		};
 		s_touchX = std::clamp(s_touchX + speed(pad.rightX) * dt, 0.0f, 1.0f);
 		s_touchY = std::clamp(s_touchY - speed(pad.rightY) * dt, 0.0f, 1.0f);
@@ -1011,6 +1015,10 @@ namespace
 			GetConfigHandle().Save();
 			break;
 		}
+		case kMenuTouchSpeed:
+			config.host_touch_cursor_speed = std::clamp<int>(config.host_touch_cursor_speed + direction, 0, 2);
+			GetConfigHandle().Save();
+			break;
 		case kMenuDeadzone:
 		{
 			const auto info = HostControllers::GetPlayer(0);
@@ -1045,6 +1053,10 @@ namespace
 		case kMenuOverlaySize:
 		case kMenuOverlayOpacity:
 			_ChangeOverlay(item, 1);
+			break;
+		case kMenuTouchSpeed:
+			config.host_touch_cursor_speed = (std::clamp<int>(config.host_touch_cursor_speed, 0, 2) + 1) % 3;
+			GetConfigHandle().Save();
 			break;
 		case kMenuTouchCursor:
 			s_touchCursor = !s_touchCursor;
@@ -1885,6 +1897,7 @@ void HostApp::DrawInGameMenu()
 		const LatteScreenPiP pip = LatteOverlay_getScreenPiP();
 		static const char* const kCorners[] = { "Top left", "Top right", "Bottom left", "Bottom right", "Center", "Side by side" };
 		static const char* const kSizes[] = { "Small", "Medium", "Large" };
+		static const char* const kTouchSpeeds[] = { "Slow", "Normal", "Fast" };
 		const bool fps = config.overlay.position != ScreenPosition::kDisabled && config.overlay.fps;
 		const std::string labels[kMenuCount] = {
 			"Resume",
@@ -1895,6 +1908,7 @@ void HostApp::DrawInGameMenu()
 			fmt::format("  Overlay size: < {} >", kSizes[std::clamp(pip.size, 0, 2)]),
 			pip.corner == LatteScreenPiP::kSideBySide ? std::string("  Overlay opacity: 100% (side by side)") : fmt::format("  Overlay opacity: < {}% >", (int)std::lround(pip.opacity * 100.0f)),
 			std::string("Touch cursor: ") + (s_touchCursor ? "On (right stick, RT touches)" : "Off"),
+			fmt::format("  Touch cursor speed: < {} >", kTouchSpeeds[std::clamp<int>(config.host_touch_cursor_speed, 0, 2)]),
 			std::string("FPS counter: ") + (fps ? "On" : "Off"),
 			ActiveSettings::IsVSyncForcedOff() ? std::string("VSync: Off (Sonic Lost World runs Single-Core with VSync off for stability)") : std::string("VSync: ") + (config.vsync.GetValue() != 0 ? "On" : "Off"),
 			fmt::format("Volume: < {}% >", std::clamp<int>(config.tv_volume, 0, 100)),
