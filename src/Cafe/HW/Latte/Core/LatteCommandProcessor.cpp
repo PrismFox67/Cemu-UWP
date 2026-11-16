@@ -6,6 +6,7 @@
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteAsyncCommands.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
@@ -161,6 +162,38 @@ void LatteCP_signalEnterWait()
 	LatteIndices_invalidateAll();
 }
 
+// #907: the host menu is drawn on top of the game's frames, so while the game sends none (a guest deadlock, e.g. the
+// Minecraft Save & Exit hang) it could not be opened and the player could not get back to the launcher. With the menu
+// open and no game frame for half a second, present it here on a cleared screen (about 20 times a second), plus one
+// more present after it closes
+static void LatteCP_PresentHostMenuWhileNoFrames()
+{
+	static bool s_presented = false;
+	static std::chrono::steady_clock::time_point s_lastPresent{};
+	const bool open = LatteOverlay_isHostMenuOpen();
+	if (!open && !s_presented)
+		return;
+	if (LattePerformanceMonitor_msSinceLastFrame() < 500)
+	{
+		s_presented = false;
+		return;
+	}
+	const auto now = std::chrono::steady_clock::now();
+	if (now - s_lastPresent < std::chrono::milliseconds(50))
+		return;
+	s_lastPresent = now;
+	if (!s_presented && open)
+		cemuLog_log(LogType::Force, "Host menu opened while the game sends no frames, presenting it from the GPU thread");
+	s_presented = open;
+	g_renderer->BeginFrame(true);
+	if (g_renderer->ImguiBegin(true))
+	{
+		LatteOverlay_renderHostOverlay(false);
+		g_renderer->ImguiEnd();
+	}
+	g_renderer->SwapBuffers(true, false);
+}
+
 /*
 * Read a U32 from the command buffer
 * If no data is available then wait in a busy loop
@@ -183,6 +216,7 @@ uint32 LatteCP_readU32Deprc()
 			_mm_pause();
 		}
 		LatteThread_HandleOSScreen(); // check if new frame was presented via OSScreen API
+		LatteCP_PresentHostMenuWhileNoFrames();
 
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
 			return cmdWord;
