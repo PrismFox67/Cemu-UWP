@@ -5,6 +5,11 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-16
+### Controllers
+- Phone motion (DSU): Cemu now keeps asking the phone app for motion data every second until it answers. Before, it asked only once (when you pressed Use phone motion or at launch), so a phone app started later, or one lost network packet, meant no motion at all.
+- The in-game menu's Motion: On (right stick tilts the GamePad) works again while a phone motion IP is set.
+
 ## 2026-11-14
 ### Xbox launcher
 - Without a game folder on a USB drive, the Settings page no longer writes a test file to the USB drive on every frame (and no longer fills the log with 'exporting to D:/' lines).

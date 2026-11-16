@@ -534,7 +534,7 @@ bool HostControllers::IsMotionServerConnected(int player)
 {
 	const auto emulated = InputManager::instance().get_controller(player);
 	const auto dsu = emulated ? _GetDSU(emulated) : nullptr;
-	return dsu && dsu->is_connected();
+	return dsu && dsu->PollConnection(); // also retries while the settings page shows the status
 }
 
 void HostControllers::SetMotionServer(int player, const std::string& ip)
