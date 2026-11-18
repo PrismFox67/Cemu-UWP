@@ -104,6 +104,13 @@ sint64 LattePerformanceMonitor_msSinceLastFrame()
 	return FreezeWatchNowMs() - s_lastFrameMs.load();
 }
 
+// #922 at each title start: the watch stays silent until the new title's first frame (a relaunch used to report the
+// previous title's last frame as 'no frame for 12408 ms' while the next one was still loading)
+void LattePerformanceMonitor_titleStarted()
+{
+	s_lastFrameMs = 0;
+}
+
 void LattePerformanceMonitor_frameEnd()
 {
 	// per-frame stats

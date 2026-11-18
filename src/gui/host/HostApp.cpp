@@ -81,6 +81,11 @@ namespace
 	std::unique_ptr<LauncherRenderer> s_launcher;
 	bool s_launcherFailed = false;
 	std::optional<fs::path> s_pendingLaunch;
+	// #922 test: CEMU_HOST_TEST_RELAUNCH=<n> exits to the game list 45 s after each start and starts the same game again,
+	// n times (PC check that repeated launches in one run don't leak)
+	std::optional<fs::path> s_testRelaunchPath;
+	sint32 s_testRelaunchLeft = -1;
+	std::chrono::steady_clock::time_point s_testRelaunchExitAt{};
 
 	void _EnableSkylanderPortal(); // in-game menu section below
 	void _EnableDimensionsToypad(); // in-game menu section below
@@ -1601,10 +1606,30 @@ bool HostApp::RunFrame()
 			_RenderLauncherFrame();
 			break;
 		}
+		if (!s_pendingLaunch && s_testRelaunchPath && s_testRelaunchLeft > 0 && !CafeTitleList::IsScanning())
+		{
+			cemuLog_log(LogType::Force, "Host test: relaunch, {} left", s_testRelaunchLeft);
+			s_testRelaunchLeft--;
+			s_pendingLaunch = s_testRelaunchPath;
+		}
 		if (s_pendingLaunch)
 		{
 			const fs::path path = *s_pendingLaunch;
 			s_pendingLaunch.reset();
+			if (s_testRelaunchLeft < 0)
+			{
+				size_t n = 0;
+				char value[16]{};
+				if (getenv_s(&n, value, sizeof(value), "CEMU_HOST_TEST_RELAUNCH") == 0 && n > 0)
+				{
+					s_testRelaunchLeft = std::atoi(value);
+					s_testRelaunchPath = path;
+				}
+				else
+					s_testRelaunchLeft = 0;
+			}
+			if (s_testRelaunchPath)
+				s_testRelaunchExitAt = std::chrono::steady_clock::now() + std::chrono::seconds(45);
 			_LaunchGame(path);
 			break;
 		}
@@ -1635,6 +1660,11 @@ bool HostApp::RunFrame()
 			else
 				std::this_thread::sleep_for(std::chrono::milliseconds(4));
 			break;
+		}
+		if (s_testRelaunchPath && s_testRelaunchLeft > 0 && std::chrono::steady_clock::now() >= s_testRelaunchExitAt)
+		{
+			s_testRelaunchExitAt = std::chrono::steady_clock::time_point::max();
+			s_exitGameRequested = true;
 		}
 		if (s_exitGameRequested)
 		{

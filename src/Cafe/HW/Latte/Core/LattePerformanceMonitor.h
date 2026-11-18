@@ -155,6 +155,7 @@ extern performanceMonitor_t performanceMonitor;
 void LattePerformanceMonitor_frameEnd();
 sint64 LattePerformanceMonitor_msSinceLastFrame(); // #907, large before the first frame
 void LattePerformanceMonitor_frameBegin();
+void LattePerformanceMonitor_titleStarted(); // #922
 
 #define beginPerfMonProfiling(__obj) if( THasProfiling ) __obj.beginMeasuring()
 #define endPerfMonProfiling(__obj) if( THasProfiling ) __obj.endMeasuring()

@@ -148,7 +148,7 @@ namespace GX2
 		// init shared area
 		if (LatteGPUState.sharedAreaAddr == MPTR_NULL)
 		{
-			LatteGPUState.sharedAreaAddr = coreinit_allocFromSysArea(sizeof(gx2GPUSharedArea_t), 0x20);
+			LatteGPUState.sharedAreaAddr = coreinit_allocFromSysAreaPersistent(sizeof(gx2GPUSharedArea_t), 0x20);
 			LatteGPUState.sharedArea = (gx2GPUSharedArea_t*)memory_getPointerFromVirtualOffset(LatteGPUState.sharedAreaAddr);
 		}
 		// init shared variables
