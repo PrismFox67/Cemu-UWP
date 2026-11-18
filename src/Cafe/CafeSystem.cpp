@@ -16,6 +16,7 @@
 #include "Common/cpu_features.h"
 #include "input/InputManager.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
@@ -432,6 +433,7 @@ void cemu_initForGame()
 	IAudioInputAPI::PrintLogging();
 	// everything initialized
 	cemuLog_log(LogType::Force, "------- Run title -------");
+	LattePerformanceMonitor_titleStarted(); // #922 Freeze watch counts from this title's first frame
 	// wait till GPU thread is initialized
 	while (g_isGPUInitFinished == false) std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	// run coreinit rpl_entry
@@ -641,6 +643,7 @@ namespace CafeSystem
 		// allocate memory for all SysAllocators
 		// must happen before COS module init, but also before iosu::kernel::Initialize()
 		SysAllocatorContainer::GetInstance().Initialize();
+		coreinit_markSysAreaTitleStart(); // #922 per-title system area allocations start here at every launch
 		// init IOSU modules
 		for(auto& module : s_iosuModules)
 			module->SystemLaunch();
@@ -838,6 +841,7 @@ namespace CafeSystem
     void SetupMemorySpace()
     {
         memory_mapForCurrentTitle();
+        coreinit_resetSysAreaForTitle(); // #922
         LoadSharedData();
     }
 
@@ -933,6 +937,7 @@ namespace CafeSystem
 	{
 		PPCTimer_waitForInit();
 		// start system
+		LattePerformanceMonitor_titleStarted(); // #922 before the title counts as running
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
 		std::thread t(_LaunchTitleThread);
@@ -1083,6 +1088,7 @@ namespace CafeSystem
 	{
 		if(!sSystemRunning)
 			return;
+		LattePerformanceMonitor_titleStarted(); // #922 no Freeze watch lines while the title shuts down
 		coreinit::OSSchedulerEnd();
 		Latte_Stop();
 		// reset Cafe OS userspace modules

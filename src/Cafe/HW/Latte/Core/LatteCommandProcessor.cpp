@@ -801,7 +801,7 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 	uint32 ukn1 = LatteReadCMD();
 	// reserve array for index data	
 	if (_tempIndexArrayMPTR == MPTR_NULL)
-		_tempIndexArrayMPTR = coreinit_allocFromSysArea(0x4000 * sizeof(uint32), 0x4);
+		_tempIndexArrayMPTR = coreinit_allocFromSysAreaPersistent(0x4000 * sizeof(uint32), 0x4);
 
 	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// calculate size of index data in packet and read indices

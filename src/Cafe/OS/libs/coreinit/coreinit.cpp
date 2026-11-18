@@ -170,7 +170,7 @@ void coreinitExport_OSGetSharedData(PPCInterpreter_t* hCPU)
 	{
 		// load and then return placeholder font
 		uint8* placeholderFontPtr = extractCafeDefaultFont(&placeholderFontSize);
-		placeholderFont = coreinit_allocFromSysArea(placeholderFontSize, 256);
+		placeholderFont = coreinit_allocFromSysAreaPersistent(placeholderFontSize, 256);
 		if (placeholderFont == MPTR_NULL)
 			cemuLog_log(LogType::Force, "Failed to alloc placeholder font sys memory");
 		memcpy(memory_getPointerFromVirtualOffset(placeholderFont), placeholderFontPtr, placeholderFontSize);

@@ -94,7 +94,7 @@ void SwkbdCreate(uint8* workMemory, uint32 regionType, uint32 unk, coreinit::FSC
 {
 	if( swkbdInternalState == nullptr )
 	{
-		MPTR swkbdInternalStateMPTR = coreinit_allocFromSysArea(sizeof(swkbdInternalState_t), 4);
+		MPTR swkbdInternalStateMPTR = coreinit_allocFromSysAreaPersistent(sizeof(swkbdInternalState_t), 4);
 		swkbdInternalState = (swkbdInternalState_t*)memory_getPointerFromVirtualOffset(swkbdInternalStateMPTR);
 		memset(swkbdInternalState, 0x00, sizeof(swkbdInternalState_t));
 	}

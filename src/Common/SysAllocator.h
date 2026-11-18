@@ -5,6 +5,9 @@
 #include <vector>
 
 uint32 coreinit_allocFromSysArea(uint32 size, uint32 alignment);
+uint32 coreinit_allocFromSysAreaPersistent(uint32 size, uint32 alignment); // #922 cached across titles, never released
+void coreinit_markSysAreaTitleStart();
+void coreinit_resetSysAreaForTitle();
 class SysAllocatorBase;
 
 #define SYSALLOCATOR_GUARDS		0	// if 1, create a magic constant at the top of each memory allocation which is used to check for memory corruption

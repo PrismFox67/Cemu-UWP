@@ -11,23 +11,67 @@
 // this partially overlaps with the system heap from coreinit_SysHeap.cpp -> Use SysHeap for everything
 MPTR sysAreaAllocatorOffset = 0;
 
+// #922 the CEMU_AREA stays mapped for the whole process, but titles can be stopped and started again in one run (Xbox
+// frontend). Per-title allocations grow upwards and go back to s_sysAreaTitleStart (end of the SysAllocators, which live
+// for the process) at each title start; allocations that are cached in process-lifetime statics (allocated once, reused by
+// later titles) come from the top downwards and are never released. Before, every launch leaked its share and about the
+// 4th launch in one run died with 'Ran out of system memory'
+static std::mutex s_sysAreaMutex;
+static MPTR s_sysAreaTitleStart = 0;
+static MPTR s_sysAreaPersistentTop = 0; // offset of the lowest persistent allocation, 0 = none yet
+
+static uint32 _SysAreaLimit()
+{
+	return s_sysAreaPersistentTop != 0 ? s_sysAreaPersistentTop : mmuRange_CEMU_AREA.getSize();
+}
+
 MPTR coreinit_allocFromSysArea(uint32 size, uint32 alignment)
 {
 	cemu_assert_debug(mmuRange_CEMU_AREA.isMapped());
 	// deprecated, use OSAllocFromSystem instead (for everything but SysAllocator which probably should use its own allocator?)
-	static std::mutex s_allocator_mutex;
-	s_allocator_mutex.lock();
+	std::unique_lock lock(s_sysAreaMutex);
 	sysAreaAllocatorOffset = (sysAreaAllocatorOffset+alignment-1);
 	sysAreaAllocatorOffset -= (sysAreaAllocatorOffset%alignment);
 	uint32 newMemOffset =  mmuRange_CEMU_AREA.getBase() + sysAreaAllocatorOffset;
 	sysAreaAllocatorOffset += (size+3)&~3;
-	if( sysAreaAllocatorOffset >= mmuRange_CEMU_AREA.getSize() )
+	if( sysAreaAllocatorOffset >= _SysAreaLimit() )
 	{
 		cemuLog_log(LogType::Force, "Ran out of system memory");
 		cemu_assert(false); // out of bounds
 	}
-	s_allocator_mutex.unlock();
 	return newMemOffset;
+}
+
+MPTR coreinit_allocFromSysAreaPersistent(uint32 size, uint32 alignment)
+{
+	cemu_assert_debug(mmuRange_CEMU_AREA.isMapped());
+	std::unique_lock lock(s_sysAreaMutex);
+	uint32 top = _SysAreaLimit();
+	uint32 offset = (top - ((size + 3) & ~3));
+	offset -= offset % alignment;
+	if (offset > top || offset <= sysAreaAllocatorOffset)
+	{
+		cemuLog_log(LogType::Force, "Ran out of system memory (persistent)");
+		cemu_assert(false);
+	}
+	s_sysAreaPersistentTop = offset;
+	return mmuRange_CEMU_AREA.getBase() + offset;
+}
+
+void coreinit_markSysAreaTitleStart()
+{
+	std::unique_lock lock(s_sysAreaMutex);
+	s_sysAreaTitleStart = sysAreaAllocatorOffset;
+}
+
+void coreinit_resetSysAreaForTitle()
+{
+	std::unique_lock lock(s_sysAreaMutex);
+	if (sysAreaAllocatorOffset != s_sysAreaTitleStart)
+		cemuLog_log(LogType::Force, "System area: {} KB of the previous title released (process part {} KB, persistent {} KB)",
+			(sysAreaAllocatorOffset - s_sysAreaTitleStart) / 1024, s_sysAreaTitleStart / 1024,
+			s_sysAreaPersistentTop ? (mmuRange_CEMU_AREA.getSize() - s_sysAreaPersistentTop) / 1024 : 0);
+	sysAreaAllocatorOffset = s_sysAreaTitleStart;
 }
 
 void coreinit_freeToSysArea(MPTR mem)
