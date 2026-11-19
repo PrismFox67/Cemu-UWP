@@ -386,6 +386,7 @@ namespace
 		{
 			// launch log for tester reports: which title, and which update and DLC the title list found for it
 			const TitleId titleId = CafeSystem::GetForegroundTitleId();
+			HostTools::BackupTitleSave(titleId); // #925
 			uint16 baseVersion = 0, updateVersion = 0, dlcVersion = 0;
 			const bool hasBase = CafeTitleList::HasTitle(titleId, baseVersion);
 			const bool hasUpdate = CafeTitleList::HasTitle((titleId & ~0xFF00000000ull) | 0x0E00000000ull, updateVersion);
@@ -1487,9 +1488,27 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	if (const std::string saveFolder = GetConfig().mlc_path.GetValue(); !saveFolder.empty() && !LaunchSettings::GetMLCPath())
 	{
 		const fs::path folder = _utf8ToPath(saveFolder);
-		if (!fs::exists(folder.root_path(), ec))
+		// #925: check the folder itself and give a drive that is still being mounted a few seconds; an access error is not
+		// 'missing' (falling back then made the session's saves land in Cemu's own storage while the real ones stayed put)
+		bool found = false;
+		std::error_code folderEc;
+		for (int attempt = 0; attempt < 10 && !found; attempt++)
 		{
-			cemuLog_log(LogType::Force, "Host: save folder {} not found (drive missing), using {} for this session", saveFolder, _pathToUtf8(ActiveSettings::GetDefaultMLCPath()));
+			folderEc.clear();
+			std::error_code rootEc;
+			found = fs::is_directory(folder, folderEc) || fs::is_directory(folder.root_path(), rootEc); // the folder itself is created on use
+			if (found || (folderEc && folderEc != std::errc::no_such_file_or_directory && folderEc.value() != 3 /* ERROR_PATH_NOT_FOUND */ && folderEc.value() != 21 /* ERROR_NOT_READY */))
+				break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(300));
+		}
+		if (!found && folderEc && folderEc != std::errc::no_such_file_or_directory && folderEc.value() != 2 && folderEc.value() != 3 && folderEc.value() != 21)
+		{
+			cemuLog_log(LogType::Force, "Host: save folder {} can't be checked ({}), using it anyway", saveFolder, folderEc.message());
+			found = true;
+		}
+		if (!found)
+		{
+			cemuLog_log(LogType::Force, "Host: save folder {} not found ({}), using {} for this session", saveFolder, folderEc ? folderEc.message() : std::string("not a folder"), _pathToUtf8(ActiveSettings::GetDefaultMLCPath()));
 			LaunchSettings::SetMLCPath(ActiveSettings::GetDefaultMLCPath());
 			HostTools::SetSaveFolderMissing();
 			HostUI::PushMessage("Save folder not found", fmt::format("{} isn't there (is the USB drive connected?). Cemu uses its own storage for saves this time; "
@@ -1526,6 +1545,28 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 			const std::string folder = value;
 			free(value);
 			HostTools::StartSetDataFolder(folder == "-" ? fs::path() : _utf8ToPath(folder));
+		}
+	}
+	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_RESTORE_SAVE") == 0 && value)
+		{
+			const uint64 titleId = std::strtoull(value, nullptr, 16);
+			free(value);
+			HostTools::StartRestoreSaveBackup(titleId);
+		}
+	}
+	// CEMU_HOST_TEST_SAVE_FOLDER=<folder>: as if 'Set save folder' was used (automated PC test of #925's per-game copy)
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_SAVE_FOLDER") == 0 && value)
+		{
+			const std::string folder = value;
+			free(value);
+			HostTools::StartSetSaveFolder(_utf8ToPath(folder));
 		}
 	}
 #endif

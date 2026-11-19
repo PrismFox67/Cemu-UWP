@@ -344,32 +344,56 @@ void HostTools::StartSetSaveFolder(fs::path folder)
 		const bool sameFolder = fs::weakly_canonical(source, canonEc1) == fs::weakly_canonical(targetSave, canonEc2);
 		if (fs::is_directory(source, ec) && !sameFolder)
 		{
+			// #925: a game's save folder (usr/save/<high>/<low>) is copied as a whole or not at all. Mixing files of two
+			// different saves of one game (the old one at the target, newer ones from a session that used Cemu's own
+			// storage) can make the game call its save corrupted; a game whose save is already at the target keeps that one
+			auto copyTitle = [&](const fs::path& titleDir, const fs::path& targetTitle) {
+				std::error_code walkEc;
+				for (auto it = fs::recursive_directory_iterator(titleDir, walkEc); !walkEc && it != fs::recursive_directory_iterator(); it.increment(walkEc))
+				{
+					std::error_code fileEc;
+					if (!it->is_regular_file(fileEc))
+						continue;
+					const fs::path relative = it->path().lexically_relative(titleDir);
+					if (fileEc || relative.empty())
+					{
+						failed++;
+						continue;
+					}
+					const fs::path target = targetTitle / relative;
+					fs::create_directories(target.parent_path(), fileEc);
+					if (_CopyFile(it->path(), target))
+						files++;
+					else
+						failed++;
+				}
+				if (walkEc)
+					failed++; // the listing stopped early, not every save was copied
+			};
 			ec.clear();
-			for (auto it = fs::recursive_directory_iterator(source, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+			for (auto hi = fs::directory_iterator(source, ec); !ec && hi != fs::directory_iterator(); hi.increment(ec))
 			{
-				std::error_code fileEc;
-				if (!it->is_regular_file(fileEc))
+				std::error_code dirEc;
+				if (!hi->is_directory(dirEc))
 					continue;
-				const fs::path relative = it->path().lexically_relative(source);
-				if (fileEc || relative.empty())
+				for (auto lo = fs::directory_iterator(hi->path(), dirEc); !dirEc && lo != fs::directory_iterator(); lo.increment(dirEc))
 				{
-					failed++;
-					continue;
+					std::error_code loEc;
+					if (!lo->is_directory(loEc))
+						continue;
+					const fs::path targetTitle = targetSave / hi->path().filename() / lo->path().filename();
+					if (fs::exists(targetTitle, loEc))
+					{
+						kept++;
+						continue;
+					}
+					copyTitle(lo->path(), targetTitle);
 				}
-				const fs::path target = targetSave / relative;
-				if (fs::exists(target, fileEc))
-				{
-					kept++; // never overwrite saves that are already there (another profile's, or an earlier copy)
-					continue;
-				}
-				fs::create_directories(target.parent_path(), fileEc);
-				if (_CopyFile(it->path(), target))
-					files++;
-				else
+				if (dirEc)
 					failed++;
 			}
 			if (ec)
-				failed++; // the listing stopped early, not every save was copied
+				failed++;
 		}
 		if (failed)
 		{
@@ -379,8 +403,8 @@ void HostTools::StartSetSaveFolder(fs::path folder)
 		}
 		GetConfig().mlc_path = _pathToUtf8(folder);
 		GetConfigHandle().Save();
-		cemuLog_log(LogType::Force, "Host: save folder set to {}: copied {} save file(s) from {}, {} already there", _pathToUtf8(folder), files, _pathToUtf8(source), kept);
-		HostUI::PushMessage("Save folder set", fmt::format("Restart Cemu to use {}.\n\nCopied {} save files there ({} were already there and kept). Your saves in Cemu's own storage stay as they are.\n\n"
+		cemuLog_log(LogType::Force, "Host: save folder set to {}: copied {} save file(s) from {}, {} game(s) already had a save there (kept as is)", _pathToUtf8(folder), files, _pathToUtf8(source), kept);
+		HostUI::PushMessage("Save folder set", fmt::format("Restart Cemu to use {}.\n\nCopied {} save files there. {} games already had a save there, those were kept as they are. Your saves in Cemu's own storage stay as they are.\n\n"
 			"Updates and DLC installed into Cemu's own storage aren't copied: keep them as folders next to the game, or install them again.", _pathToUtf8(folder), files, kept));
 	});
 }
@@ -559,4 +583,161 @@ std::string HostTools::GetNewerBuild()
 const char* HostTools::GetDownloadUrl()
 {
 	return kDownloadUrl;
+}
+
+// #925 save backups
+namespace
+{
+	fs::path _SaveBackupRoot()
+	{
+		return ActiveSettings::GetMlcPath().parent_path() / "CemuBackups" / "auto";
+	}
+
+	fs::path _TitleSavePath(uint64 titleId)
+	{
+		return ActiveSettings::GetMlcPath(fmt::format("usr/save/{:08x}/{:08x}", (uint32)(titleId >> 32), (uint32)titleId));
+	}
+
+	// copies a folder tree, false if any file failed
+	bool _CopyTree(const fs::path& from, const fs::path& to, uint64* bytes = nullptr)
+	{
+		std::error_code ec;
+		bool ok = true;
+		for (auto it = fs::recursive_directory_iterator(from, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+		{
+			std::error_code fileEc;
+			if (!it->is_regular_file(fileEc))
+				continue;
+			const fs::path target = to / it->path().lexically_relative(from);
+			fs::create_directories(target.parent_path(), fileEc);
+			if (!_CopyFile(it->path(), target))
+				ok = false;
+			else if (bytes)
+				*bytes += it->file_size(fileEc);
+		}
+		return ok && !ec;
+	}
+
+	uint64 _TreeSize(const fs::path& dir)
+	{
+		std::error_code ec;
+		uint64 size = 0;
+		for (auto it = fs::recursive_directory_iterator(dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+		{
+			std::error_code fileEc;
+			if (it->is_regular_file(fileEc))
+				size += it->file_size(fileEc);
+		}
+		return size;
+	}
+
+	// kind 0: the backups made at game start (names start with the time), 1: saves replaced by a restore ('replaced-...')
+	std::vector<fs::path> _BackupsOf(uint64 titleId, int kind = 0)
+	{
+		std::vector<fs::path> list;
+		std::error_code ec;
+		const fs::path dir = _SaveBackupRoot() / fmt::format("{:016x}", titleId);
+		for (auto it = fs::directory_iterator(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+		{
+			std::error_code dirEc;
+			const std::string name = _pathToUtf8(it->path().filename());
+			const bool replaced = name.rfind("replaced-", 0) == 0;
+			if (it->is_directory(dirEc) && replaced == (kind == 1))
+				list.push_back(it->path());
+		}
+		std::sort(list.begin(), list.end()); // names are [replaced-]yyyymmdd-hhmmss
+		return list;
+	}
+
+	std::string _BackupStamp()
+	{
+		const std::time_t t = std::time(nullptr);
+		std::tm tm{};
+		localtime_s(&tm, &t);
+		return fmt::format("{:04}{:02}{:02}-{:02}{:02}{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	}
+
+	// copies the current save into a new backup and keeps the newest 'keep'
+	bool _MakeBackup(uint64 titleId, int kind, size_t keep)
+	{
+		const fs::path save = _TitleSavePath(titleId);
+		std::error_code ec;
+		if (!fs::is_directory(save, ec))
+			return false;
+		const uint64 size = _TreeSize(save);
+		if (size > 64ull * 1024 * 1024)
+		{
+			cemuLog_log(LogType::Force, "Host: save backup of {:016x} skipped ({} MB is over 64 MB)", titleId, size / (1024 * 1024));
+			return false;
+		}
+		const fs::path target = _SaveBackupRoot() / fmt::format("{:016x}", titleId) / ((kind == 1 ? "replaced-" : "") + _BackupStamp());
+		if (!_CopyTree(save, target))
+		{
+			cemuLog_log(LogType::Force, "Host: save backup of {:016x} to {} failed", titleId, _pathToUtf8(target));
+			fs::remove_all(target, ec);
+			return false;
+		}
+		std::vector<fs::path> list = _BackupsOf(titleId, kind);
+		while (list.size() > keep)
+		{
+			fs::remove_all(list.front(), ec);
+			list.erase(list.begin());
+		}
+		cemuLog_log(LogType::Force, "Host: save of {:016x} backed up to {} ({} KB, {} kept)", titleId, _pathToUtf8(target), size / 1024, list.size());
+		return true;
+	}
+}
+
+void HostTools::BackupTitleSave(uint64 titleId)
+{
+	_MakeBackup(titleId, 0, 3);
+}
+
+std::vector<HostTools::SaveBackup> HostTools::ListSaveBackups()
+{
+	std::vector<SaveBackup> result;
+	std::error_code ec;
+	for (auto it = fs::directory_iterator(_SaveBackupRoot(), ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+	{
+		uint64 titleId = 0;
+		const std::string name = _pathToUtf8(it->path().filename());
+		if (name.size() != 16 || std::sscanf(name.c_str(), "%llx", &titleId) != 1)
+			continue;
+		const std::vector<fs::path> list = _BackupsOf(titleId);
+		if (!list.empty())
+			result.push_back({ titleId, _pathToUtf8(list.back().filename()), list.size() });
+	}
+	return result;
+}
+
+void HostTools::StartRestoreSaveBackup(uint64 titleId)
+{
+	_RunTask("Restoring save...", [titleId]() {
+		const std::vector<fs::path> list = _BackupsOf(titleId);
+		if (list.empty())
+			return;
+		const fs::path newest = list.back();
+		const fs::path save = _TitleSavePath(titleId);
+		std::error_code ec;
+		// keep the save being replaced apart from the start backups (the last 2), so restoring again still picks the start backup
+		_MakeBackup(titleId, 1, 2);
+		const fs::path temp = save.parent_path() / (_pathToUtf8(save.filename()) + ".restore");
+		fs::remove_all(temp, ec);
+		if (!_CopyTree(newest, temp))
+		{
+			fs::remove_all(temp, ec);
+			HostUI::PushMessage("Save not restored", "The backup couldn't be copied. Your current save was not changed.");
+			return;
+		}
+		fs::remove_all(save, ec);
+		fs::rename(temp, save, ec);
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "Host: restoring save of {:016x} failed: {}", titleId, ec.message());
+			HostUI::PushMessage("Save not restored", fmt::format("Moving the backup into place failed ({}). The previous save is in CemuBackups/auto.", ec.message()));
+			return;
+		}
+		cemuLog_log(LogType::Force, "Host: save of {:016x} restored from {}", titleId, _pathToUtf8(newest));
+		HostUI::PushMessage("Save restored", fmt::format("The save from {} is back. The save you had before is kept as a backup too.", _pathToUtf8(newest.filename())));
+	});
 }
