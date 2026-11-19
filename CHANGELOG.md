@@ -5,8 +5,14 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-18
+### Xbox launcher
+- Fixed a crash when starting games several times without closing Cemu (often the 4th start, for example while switching mods): each start used up part of a fixed 32 MB block of emulator memory and never gave it back, until Cemu ran out ('Ran out of system memory'). Now each game start reuses it.
+- Freeze watch no longer reports a false 'no frame' freeze while the next game is still loading after Exit to game list.
+
 ## 2026-11-16
 ### Controllers
+- In-game menu: new **Motion sensitivity** (Low / Medium / High) under Motion. With Motion: On the right stick tilts the GamePad; High (the default) is unchanged, Medium and Low tilt less and react gently to small stick moves, for gyro aiming in Splatoon.
 - In-game menu: new **Touch cursor speed** (Slow / Normal / Fast) under Touch cursor. Slow takes about 4 seconds to cross the screen at full tilt, Normal (the default) about 2.
 - Phone motion (DSU): Cemu now keeps asking the phone app for motion data every second until it answers. Before, it asked only once (when you pressed Use phone motion or at launch), so a phone app started later, or one lost network packet, meant no motion at all.
 - The in-game menu's Motion: On (right stick tilts the GamePad) works again while a phone motion IP is set.
