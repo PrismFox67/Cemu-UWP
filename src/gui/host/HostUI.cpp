@@ -1677,6 +1677,37 @@ namespace
 			if (HostTools::IsSaveFolderMissing())
 				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.45f, 1.0f), "%s", _TR("The save folder's drive wasn't found at start, this session uses Cemu's own storage."));
 			ImGui::TextWrapped("mlc01 in use: %s", _pathToUtf8(ActiveSettings::GetMlcPath()).c_str());
+			// #925: each game start backs up that game's save (last 3 kept, next to the save folder in CemuBackups/auto)
+			static std::vector<HostTools::SaveBackup> s_backups;
+			static auto s_backupsListed = std::chrono::steady_clock::time_point{};
+			if (std::chrono::steady_clock::now() - s_backupsListed > std::chrono::seconds(5))
+			{
+				s_backupsListed = std::chrono::steady_clock::now();
+				s_backups = HostTools::ListSaveBackups();
+			}
+			if (!s_backups.empty() && ImGui::TreeNode(_TR("Save backups (made at each game start)")))
+			{
+				for (const HostTools::SaveBackup& b : s_backups)
+				{
+					std::string name = fmt::format("{:016x}", b.titleId);
+					for (const GameEntry& g : s_games)
+						if (g.titleId == b.titleId)
+							name = g.name;
+					ImGui::PushID((int)(b.titleId & 0x7fffffff));
+					ImGui::BeginDisabled(HostTools::IsBusy());
+					if (ImGui::Button(_TR("Restore last save backup")))
+					{
+						const uint64 titleId = b.titleId;
+						s_deferred.emplace_back([titleId]() { HostTools::StartRestoreSaveBackup(titleId); });
+						s_backupsListed = {};
+					}
+					ImGui::EndDisabled();
+					ImGui::SameLine();
+					ImGui::Text("%s  (%s, %d backups)", name.c_str(), b.newest.c_str(), (int)b.count);
+					ImGui::PopID();
+				}
+				ImGui::TreePop();
+			}
 		}
 		{
 			// #849: shader caches, graphic packs, theme and figures on the USB drive too (settings, keys and logs stay)

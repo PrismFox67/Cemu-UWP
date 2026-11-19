@@ -40,6 +40,18 @@ namespace HostTools
 	void StartSetDataFolder(fs::path folder);
 	bool IsDataFolderMissing();
 	void SetDataFolderMissing();
+	// #925 save safety net: before each launch the game's save (usr/save/<high>/<low>) is copied to
+	// <save folder>/../CemuBackups/auto/<title id>/<time>, the last 3 are kept, saves over 64 MB are skipped
+	void BackupTitleSave(uint64 titleId);
+	struct SaveBackup
+	{
+		uint64 titleId;
+		std::string newest; // folder name (time) of the newest backup
+		size_t count;
+	};
+	std::vector<SaveBackup> ListSaveBackups();
+	// replaces the game's save with its newest backup (the current save is kept as another backup first)
+	void StartRestoreSaveBackup(uint64 titleId);
 	bool IsBusy();
 	std::string GetBusyText();
 
