@@ -656,6 +656,24 @@ namespace
 		return variant >> 12;
 	}
 
+	// #927: what kind of piece a dump is, from its figure ID (block 0, bytes 0x10/0x11; IDs as in nsyshid's figure list):
+	// Trap Team traps 210-220, Swap Force Swapper halves 1000-1015 (bottom) and 2000-2015 (top). nullptr for normal figures
+	const char* _SkylanderKind(const fs::path& file)
+	{
+		std::unique_ptr<FileStream> stream(FileStream::openFile2(file, false));
+		uint8 header[0x20];
+		if (!stream || stream->readData(header, sizeof(header)) != sizeof(header))
+			return nullptr;
+		const uint16 id = (uint16)(header[0x10] | (header[0x11] << 8));
+		if (id >= 210 && id <= 220)
+			return "trap";
+		if (id >= 1000 && id <= 1015)
+			return "Swapper bottom half";
+		if (id >= 2000 && id <= 2015)
+			return "Swapper top half";
+		return nullptr;
+	}
+
 	const char* _SkylanderGameName(int game)
 	{
 		static const char* names[] = { "Spyro's Adventure", "Giants", "Swap Force", "Trap Team", "SuperChargers", "Imaginators" };
@@ -663,6 +681,7 @@ namespace
 	}
 
 	std::vector<std::pair<int, fs::path>> s_skyGames; // game code of each listed file (sorted like s_skyFiles)
+	std::vector<const char*> s_skyKinds; // #927 trap / Swapper half label of each listed file (sorted like s_skyFiles)
 
 	std::vector<fs::path> _ListSkylanderFiles()
 	{
@@ -705,7 +724,11 @@ namespace
 		std::vector<fs::path> files = _ListSkylanderFiles();
 		std::vector<std::pair<int, fs::path>> games;
 		_SortSkylanderFiles(files, games);
+		std::vector<const char*> kinds;
+		for (const fs::path& file : files)
+			kinds.push_back(_SkylanderKind(file));
 		std::scoped_lock lock(s_skyMutex);
+		s_skyKinds = std::move(kinds);
 		s_skyGames = std::move(games);
 		s_skyFiles = std::move(files);
 		s_skyIndex = std::clamp(s_skyIndex, 0, std::max(0, (int)s_skyFiles.size() - 1));
@@ -745,6 +768,8 @@ namespace
 		const char* gameName = s_skyIndex < (int)s_skyGames.size() ? _SkylanderGameName(s_skyGames[s_skyIndex].first) : nullptr;
 		std::string label = gameName ? fmt::format("Skylander: < {} >  ({}, {}/{})", _pathToUtf8(file.stem()), gameName, s_skyIndex + 1, s_skyFiles.size())
 									 : fmt::format("Skylander: < {} >  ({}/{})", _pathToUtf8(file.stem()), s_skyIndex + 1, s_skyFiles.size());
+		if (const char* kind = s_skyIndex < (int)s_skyKinds.size() ? s_skyKinds[s_skyIndex] : nullptr)
+			label += fmt::format("  [{}]", kind);
 		const bool placed = std::any_of(s_skyPlaced.begin(), s_skyPlaced.end(), [&](const auto& p) { return p.first == file; });
 		if (placed)
 			label += "  (on the portal, A removes)";
