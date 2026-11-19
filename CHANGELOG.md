@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-19
+### Skylanders
+- In-game menu Skylander list: Trap Team traps and Swap Force Swapper halves are now labelled ([trap], [Swapper top half] / [Swapper bottom half]). Put both halves of a Swapper on the portal one after the other (A on each); figures already on the portal stay when you add or remove another one.
+
 ### Saves
 - Every game start now backs up that game's save first (next to your save folder in CemuBackups/auto, the last 3 per game; saves over 64 MB are skipped). Settings > Save backups has **Restore last save backup** per game; the save it replaces is kept as a backup too.
 - Set save folder now copies each game's save as a whole: if the target already has a save of that game, that one is kept untouched. Before, files of an old and a newer save of the same game could end up mixed, which a game can report as corrupted save data.
