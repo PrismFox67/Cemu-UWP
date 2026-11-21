@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cemu UWP: Wii U emulator for Xbox Series X|S</title>
+<meta name="description" content="Cemu UWP is an unofficial Cemu fork with a Direct3D 12 renderer and an Xbox app for Dev Mode. Play your Wii U games on Xbox Series X|S at up to 4K 60 FPS.">
+<link rel="canonical" href="https://prismfox67.github.io/Cemu-UWP/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Cemu UWP: Wii U emulator for Xbox Series X|S">
+<meta property="og:description" content="Cemu with a Direct3D 12 renderer and a controller-friendly Xbox app. Mario Kart 8 at 4K 60 FPS on Series X.">
+<meta property="og:url" content="https://prismfox67.github.io/Cemu-UWP/">
+<meta name="theme-color" content="#107c10">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Cemu UWP",
+  "alternateName": ["Cemu for Xbox", "Cemu Xbox Series X", "Cemu UWP Xbox"],
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Xbox Series X|S (Dev Mode), Windows",
+  "description": "Unofficial Cemu fork with a Direct3D 12 renderer and an Xbox app for Dev Mode. Wii U games at up to 4K 60 FPS on Xbox Series X.",
+  "url": "https://prismfox67.github.io/Cemu-UWP/",
+  "downloadUrl": "https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest",
+  "license": "https://www.mozilla.org/en-US/MPL/2.0/",
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+  "sameAs": ["https://github.com/PrismFox67/Cemu-UWP"]
+}
+</script>
+<style>
+:root{--bg:#0e1110;--panel:#171c1a;--line:#26302c;--text:#e8ece9;--muted:#9fb0a7;--accent:#107c10;--accent2:#3fbf3f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif}
+a{color:var(--accent2)}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+header{padding:64px 0 40px;border-bottom:1px solid var(--line);background:radial-gradient(ellipse at top,#163a16 0%,var(--bg) 70%)}
+h1{font-size:clamp(2rem,5vw,3.2rem);line-height:1.1;margin:0 0 12px}
+h1 span{color:var(--accent2)}
+.lead{font-size:1.15rem;color:var(--muted);max-width:680px;margin:0 0 28px}
+.btns{display:flex;flex-wrap:wrap;gap:12px}
+.btn{display:inline-block;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.ghost{border:1px solid var(--line);color:var(--text)}
+.note{font-size:.9rem;color:var(--muted);margin-top:16px}
+section{padding:40px 0;border-bottom:1px solid var(--line)}
+h2{font-size:1.6rem;margin:0 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+.card h3{margin:0 0 6px;font-size:1.05rem}
+.card p{margin:0;color:var(--muted)}
+ol li,ul li{margin:6px 0}
+.tag{display:inline-block;font-size:.8rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:6px}
+.ok{background:#174d17}.play{background:#3d4d17}.iss{background:#5a4512}.bad{background:#5a1a1a}
+table{width:100%;border-collapse:collapse}
+td{padding:8px 6px;border-top:1px solid var(--line);vertical-align:top}
+footer{padding:32px 0;color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Cemu UWP: <span>Wii U games on Xbox Series X|S</span></h1>
+    <p class="lead">An unofficial fork of the Cemu Wii U emulator with a native Direct3D 12 renderer and an Xbox app made for Dev Mode.
+      Mario Kart 8 runs at 1440p or 4K, locked at 60 FPS, with 4 local players on a Series X.</p>
+    <div class="btns">
+      <a class="btn primary" href="https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest">Download the latest build</a>
+      <a class="btn ghost" href="https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/XBOX_TESTERS.md">Xbox setup guide</a>
+      <a class="btn ghost" href="https://github.com/PrismFox67/Cemu-UWP">Source on GitHub</a>
+    </div>
+    <p class="note">Free and open source (MPL-2.0). Not affiliated with the Cemu team, Microsoft or Nintendo. Bring your own legally dumped games.</p>
+  </div>
+</header>
+
+<main>
+<section>
+  <div class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="card"><h3>Direct3D 12 renderer</h3><p>A complete D3D12 backend next to Cemu's Vulkan and OpenGL, so it runs as an Xbox app. Also available in a regular Windows build.</p></div>
+      <div class="card"><h3>Less stutter</h3><p>Asynchronous shader compiles, background pipelines, and each level's pipelines are rebuilt on its loading screen the next time you play.</p></div>
+      <div class="card"><h3>Controller-first launcher</h3><p>Wii U box art, graphic packs per game, settings and controller pairing, all with a gamepad. LB/RB to switch tabs, A to play.</p></div>
+      <div class="card"><h3>Up to 4 players</h3><p>GamePad plus Pro Controllers, Nintendo button layout, remapping, deadzones and controller profiles per player.</p></div>
+      <div class="card"><h3>GamePad screen</h3><p>Switch TV and GamePad screens or show the GamePad as an overlay in a corner. Touch cursor for touch-screen games.</p></div>
+      <div class="card"><h3>Motion, amiibo, Skylanders</h3><p>Tilt with the right stick or your phone's gyro, amiibo dumps, and a Skylanders portal with several figures at once.</p></div>
+      <div class="card"><h3>USB drives</h3><p>Games, saves, shader caches and graphic packs can live on a USB drive, so they survive reinstalls and Dev Mode resets.</p></div>
+      <div class="card"><h3>Graphic packs and mods</h3><p>Download the community packs in the app: resolution, FPS, enhancements, mods and translations.</p></div>
+      <div class="card"><h3>Mario Kart 8 first person</h3><p>A bundled first person camera pack: cockpit view with Mario's hands on the wheel. Right stick switches views.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How to install on Xbox</h2>
+    <ol>
+      <li>Put your Xbox Series X|S in <strong>Developer Mode</strong> (Microsoft's Dev Mode Activation app).</li>
+      <li>Download <code>cemu-uwp-x64.zip</code> from the <a href="https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest">latest build</a>.</li>
+      <li>Install it through the <strong>Xbox Device Portal</strong> in your PC's browser.</li>
+      <li>Copy your dumped Wii U games (and <code>keys.txt</code> if needed) to a USB drive, plug it in and start Cemu.</li>
+    </ol>
+    <p>Full steps and recommended settings: <a href="https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/XBOX_TESTERS.md">Xbox setup guide</a>.
+      New builds install as updates over the old one.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Game compatibility</h2>
+    <table>
+      <tr><td><span class="tag ok">Perfect</span></td><td>Mario Tennis: Ultra Smash, New Super Mario Bros. U</td></tr>
+      <tr><td><span class="tag play">Playable</span></td><td>Mario Kart 8, Pokkén Tournament, Super Smash Bros. for Wii U, The Legend of Zelda: Breath of the Wild, The Legend of Zelda: Wind Waker HD, Splatoon</td></tr>
+      <tr><td><span class="tag iss">Issues</span></td><td>Donkey Kong Country: Tropical Freeze, Twilight Princess HD, Sonic Lost World, Super Mario 3D World</td></tr>
+      <tr><td><span class="tag bad">Broken</span></td><td>Need for Speed: Most Wanted U, Mario Kart DS (Wii U Virtual Console)</td></tr>
+    </table>
+    <p>Resolution, FPS and notes for each game: <a href="https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md">full compatibility list</a>.
+      Tried another game? <a href="https://github.com/PrismFox67/Cemu-UWP/issues">Report it</a>, "it runs fine" reports help too.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <p><strong>Does it work in Retail mode?</strong> No. Emulators need Xbox Developer Mode.</p>
+    <p><strong>Series S or Series X?</strong> Both. The Series X has more headroom for 4K; the Series S runs most games well at lower resolutions.</p>
+    <p><strong>Where do I get games?</strong> Dump your own Wii U discs and digital games with your Wii U. No games or keys are included.</p>
+    <p><strong>What changed in the latest build?</strong> See the <a href="https://github.com/PrismFox67/Cemu-UWP/blob/main/CHANGELOG.md">changelog</a>.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    Cemu UWP is based on <a href="https://github.com/cemu-project/Cemu">Cemu</a> (MPL-2.0) and is not affiliated with the Cemu project, Microsoft or Nintendo.
+    Wii U is a trademark of Nintendo. Xbox is a trademark of Microsoft.
+  </div>
+</footer>
+</body>
+</html>
