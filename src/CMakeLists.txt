@@ -136,6 +136,11 @@ if(CEMU_UWP)
 	target_sources(CemuBin PRIVATE ${UWP_LAUNCHER_SFX})
 	set_property(SOURCE ${UWP_LAUNCHER_SFX} PROPERTY VS_DEPLOYMENT_CONTENT 1)
 	set_property(SOURCE ${UWP_LAUNCHER_SFX} PROPERTY VS_DEPLOYMENT_LOCATION "resources/sfx")
+	# #937 'Use recommended' graphic pack table
+	set(UWP_RECOMMENDED_PACKS "${CMAKE_SOURCE_DIR}/src/gui/host/assets/recommended_packs.json")
+	target_sources(CemuBin PRIVATE "${UWP_RECOMMENDED_PACKS}")
+	set_property(SOURCE "${UWP_RECOMMENDED_PACKS}" PROPERTY VS_DEPLOYMENT_CONTENT 1)
+	set_property(SOURCE "${UWP_RECOMMENDED_PACKS}" PROPERTY VS_DEPLOYMENT_LOCATION "resources")
 elseif(WIN32)
 	target_sources(CemuBin PRIVATE
 	resource/cemu.rc
@@ -147,6 +152,7 @@ elseif(WIN32)
 			COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/bin/resources/fonts"
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/dependencies/imgui/misc/fonts/Roboto-Medium.ttf" "${CMAKE_SOURCE_DIR}/bin/resources/fonts/launcher.ttf"
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/src/gui/host/assets/launcher_logo.png" "${CMAKE_SOURCE_DIR}/bin/resources/launcher_logo.png"
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/src/gui/host/assets/recommended_packs.json" "${CMAKE_SOURCE_DIR}/bin/resources/recommended_packs.json"
 			COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/src/gui/host/assets/sfx" "${CMAKE_SOURCE_DIR}/bin/resources/sfx")
 	endif()
 endif()

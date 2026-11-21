@@ -6,6 +6,7 @@
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "util/helpers/helpers.h"
+#include "Common/cpu_features.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -248,4 +249,168 @@ void HostGraphicPacks::SaveToConfig()
 		}
 	}
 	GetConfigHandle().Save();
+}
+
+// #937 'Use recommended': resources/recommended_packs.json (src/gui/host/assets) lists per game which packs to turn on
+// with which presets (per console) and which to turn off. The state before is kept in memory for Undo
+namespace
+{
+	struct PackState
+	{
+		std::shared_ptr<GraphicPack2> pack;
+		bool enabled;
+		std::vector<std::pair<std::string, std::string>> presets; // category, name
+	};
+	std::map<uint64, std::vector<PackState>> s_recommendUndo;
+
+	std::string _ConsoleKey()
+	{
+		const std::string cpu = g_CPUFeatures.GetCPUName();
+		if (cpu.find("Series S") != std::string::npos)
+			return "seriesS";
+		if (cpu.find("Series X") != std::string::npos)
+			return "seriesX";
+		return "pc";
+	}
+
+	std::vector<std::shared_ptr<GraphicPack2>> _PacksOf(uint64 titleId)
+	{
+		std::vector<std::shared_ptr<GraphicPack2>> packs;
+		for (const auto& pack : GraphicPack2::GetGraphicPacks())
+			if (pack->ContainsTitleId(titleId))
+				packs.emplace_back(pack);
+		return packs;
+	}
+
+	// the game's entry in the json (null if there is none), doc keeps the parsed file alive
+	const rapidjson::Value* _FindEntry(rapidjson::Document& doc, const std::vector<std::shared_ptr<GraphicPack2>>& packs)
+	{
+		std::ifstream file(ActiveSettings::GetDataPath("resources/recommended_packs.json"), std::ios::binary);
+		const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+		if (text.empty() || doc.Parse(text.c_str()).HasParseError() || !doc.IsObject() || !doc.HasMember("games") || !doc["games"].IsArray())
+			return nullptr;
+		for (const auto& game : doc["games"].GetArray())
+		{
+			if (!game.HasMember("enable") || !game["enable"].IsArray())
+				continue;
+			for (const auto& entry : game["enable"].GetArray())
+			{
+				if (!entry.HasMember("pack") || !entry["pack"].IsString())
+					continue;
+				const std::string path = entry["pack"].GetString();
+				if (std::any_of(packs.begin(), packs.end(), [&](const auto& p) { return p->GetVirtualPath() == path; }))
+					return &game;
+			}
+		}
+		return nullptr;
+	}
+}
+
+bool HostGraphicPacks::HasRecommended(uint64 titleId)
+{
+	rapidjson::Document doc;
+	return _FindEntry(doc, _PacksOf(titleId)) != nullptr;
+}
+
+std::vector<std::string> HostGraphicPacks::ApplyRecommended(uint64 titleId)
+{
+	std::vector<std::string> changes;
+	const auto packs = _PacksOf(titleId);
+	rapidjson::Document doc;
+	const rapidjson::Value* game = _FindEntry(doc, packs);
+	if (!game)
+	{
+		cemuLog_log(LogType::Force, "Recommended packs: nothing for {:016x} ({} packs of the game)", titleId, packs.size());
+		return changes;
+	}
+	std::vector<PackState> before;
+	for (const auto& pack : packs)
+	{
+		PackState state{ pack, pack->IsEnabled(), {} };
+		for (const auto& preset : pack->GetActivePresets())
+			state.presets.emplace_back(preset->category, preset->name);
+		before.emplace_back(std::move(state));
+	}
+	const std::string console = _ConsoleKey();
+	auto findPack = [&](const std::string& path) -> std::shared_ptr<GraphicPack2> {
+		for (const auto& p : packs)
+			if (p->GetVirtualPath() == path)
+				return p;
+		return nullptr;
+	};
+	for (const auto& entry : (*game)["enable"].GetArray())
+	{
+		if (!entry.HasMember("pack") || !entry["pack"].IsString())
+			continue;
+		auto pack = findPack(entry["pack"].GetString());
+		if (!pack)
+			continue;
+		if (!pack->IsEnabled())
+		{
+			pack->SetEnabled(true);
+			changes.emplace_back(fmt::format("On: {}", pack->GetVirtualPath()));
+		}
+		if (!entry.HasMember("presets") || !entry["presets"].IsObject())
+			continue;
+		const rapidjson::Value& presets = entry["presets"];
+		for (auto preset = presets.MemberBegin(); preset != presets.MemberEnd(); ++preset)
+		{
+			const std::string category = preset->name.GetString();
+			std::string name;
+			if (preset->value.IsString())
+				name = preset->value.GetString();
+			else if (preset->value.IsObject() && preset->value.HasMember(console.c_str()) && preset->value[console.c_str()].IsString())
+				name = preset->value[console.c_str()].GetString();
+			if (name.empty() || pack->GetActivePreset(category) == name)
+				continue;
+			if (pack->SetActivePreset(category, name))
+				changes.emplace_back(fmt::format("{}: {} = {}", pack->GetVirtualPath(), category.empty() ? "Preset" : category, name));
+			else
+				cemuLog_log(LogType::Force, "Recommended packs: '{}' has no preset '{}' in '{}'", pack->GetVirtualPath(), name, category);
+		}
+	}
+	if (game->HasMember("disable") && (*game)["disable"].IsArray())
+	{
+		for (const auto& path : (*game)["disable"].GetArray())
+		{
+			if (!path.IsString())
+				continue;
+			auto pack = findPack(path.GetString());
+			if (pack && pack->IsEnabled())
+			{
+				pack->SetEnabled(false);
+				changes.emplace_back(fmt::format("Off: {}", pack->GetVirtualPath()));
+			}
+		}
+	}
+	if (!changes.empty())
+	{
+		s_recommendUndo[titleId] = std::move(before);
+		SaveToConfig();
+	}
+	cemuLog_log(LogType::Force, "Recommended packs ({}) for {:016x}: {} changes", console, titleId, changes.size());
+	for (const std::string& change : changes)
+		cemuLog_log(LogType::Force, "  {}", change);
+	return changes;
+}
+
+bool HostGraphicPacks::CanUndoRecommended(uint64 titleId)
+{
+	return s_recommendUndo.contains(titleId);
+}
+
+void HostGraphicPacks::UndoRecommended(uint64 titleId)
+{
+	auto it = s_recommendUndo.find(titleId);
+	if (it == s_recommendUndo.end())
+		return;
+	for (const PackState& state : it->second)
+	{
+		state.pack->SetEnabled(state.enabled);
+		for (const auto& [category, name] : state.presets)
+			state.pack->SetActivePreset(category, name);
+	}
+	s_recommendUndo.erase(it);
+	SaveToConfig();
+	cemuLog_log(LogType::Force, "Recommended packs for {:016x} undone", titleId);
 }

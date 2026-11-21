@@ -1572,6 +1572,26 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 			HostTools::StartSetDataFolder(folder == "-" ? fs::path() : _utf8ToPath(folder));
 		}
 	}
+	// CEMU_HOST_TEST_RECOMMENDED=<title id hex>[,undo]: as if 'Use recommended' (and then Undo) was clicked (#937 PC test)
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_RECOMMENDED") == 0 && value)
+		{
+			const std::string text = value;
+			free(value);
+			const uint64 titleId = std::strtoull(text.c_str(), nullptr, 16);
+			std::thread([titleId, undo = text.find(",undo") != std::string::npos]() {
+				// the packs are loaded after this point, asynchronously
+				for (int i = 0; i < 300 && GraphicPack2::GetGraphicPacks().empty(); i++)
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+				HostGraphicPacks::ApplyRecommended(titleId);
+				if (undo)
+					HostGraphicPacks::UndoRecommended(titleId);
+			}).detach();
+		}
+	}
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;
