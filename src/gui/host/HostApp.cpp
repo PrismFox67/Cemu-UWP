@@ -7,6 +7,7 @@
 #include "gui/host/HostMusic.h"
 #include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
+#include "gui/host/HostRemote.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "gui/host/LauncherRenderer.h"
@@ -1615,6 +1616,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 				HostTools::StartImportSave(titleId, list.front().path);
 		}
 	}
+	// CEMU_HOST_TEST_REMOTE=1: turn the phone remote on at start and log its address (#936 PC test)
+	if (std::getenv("CEMU_HOST_TEST_REMOTE") && HostRemote::Start())
+		cemuLog_log(LogType::Force, "Phone remote test: {}", HostRemote::GetUrl());
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;
@@ -1803,6 +1807,7 @@ void HostApp::Shutdown()
 	}
 	HostTools::MarkGameStopped();
 	HostIcons::Stop();
+	HostRemote::Stop();
 	HostMusic::Shutdown();
 	HostSounds::Shutdown();
 	s_launcher.reset();
