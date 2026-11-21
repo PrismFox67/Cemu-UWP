@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-21
+### Phone remote
+- Settings > 'Phone remote': turn it on and scan the QR code with a phone on the same network. The page shows the running game and changes VSync, Show FPS, anisotropic filtering, anti-aliasing, sharpening, scaling and the shader compile options live, so the TV isn't covered by a menu. Off by default and off again after every start of Cemu; the address has a random key that changes every time it is turned on. Graphic pack presets aren't on the page yet (they only apply when a game starts).
+
 ## 2026-11-19
 ### Skylanders
 - In-game menu Skylander list: Trap Team traps and Swap Force Swapper halves are now labelled ([trap], [Swapper top half] / [Swapper bottom half]). Put both halves of a Swapper on the portal one after the other (A on each); figures already on the portal stay when you add or remove another one.

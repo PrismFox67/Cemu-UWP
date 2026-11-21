@@ -9,6 +9,8 @@
 #include "gui/host/HostMusic.h"
 #include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
+#include "gui/host/HostRemote.h"
+#include "gui/host/thirdparty/qrcodegen.hpp"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
 #include "gui/host/HostTranslation.h"
@@ -1607,6 +1609,50 @@ namespace
 			config.overlay.position = showFPS ? ScreenPosition::kTopLeft : ScreenPosition::kDisabled;
 			config.overlay.fps = showFPS;
 			changed = true;
+		}
+
+		ImGui::SeparatorText(_TR("Phone remote"));
+		{
+			// #936: change these display settings from a phone on the same network while the game runs
+			bool remote = HostRemote::IsRunning();
+			if (ImGui::Checkbox(_TR("Phone remote (scan the code with a phone on the same network)"), &remote))
+			{
+				if (remote)
+					HostRemote::Start();
+				else
+					HostRemote::Stop();
+			}
+			const std::string error = HostRemote::GetError();
+			if (!remote && !error.empty())
+				ImGui::TextWrapped("%s", error.c_str());
+			const std::string url = HostRemote::GetUrl();
+			if (remote && !url.empty())
+			{
+				static std::string s_qrUrl;
+				static std::optional<qrcodegen::QrCode> s_qr;
+				if (s_qrUrl != url)
+				{
+					s_qrUrl = url;
+					s_qr = qrcodegen::QrCode::encodeText(url.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+				}
+				const int size = s_qr->getSize();
+				const float module = 6.0f * s_scale;
+				const float quiet = 4 * module;
+				const ImVec2 origin = ImGui::GetCursorScreenPos();
+				ImDrawList* draw = ImGui::GetWindowDrawList();
+				const float total = size * module + 2 * quiet;
+				draw->AddRectFilled(origin, ImVec2(origin.x + total, origin.y + total), IM_COL32_WHITE);
+				for (int y = 0; y < size; y++)
+					for (int x = 0; x < size; x++)
+						if (s_qr->getModule(x, y))
+						{
+							const ImVec2 a(origin.x + quiet + x * module, origin.y + quiet + y * module);
+							draw->AddRectFilled(a, ImVec2(a.x + module, a.y + module), IM_COL32_BLACK);
+						}
+				ImGui::Dummy(ImVec2(total, total));
+				ImGui::TextUnformatted(url.c_str());
+				ImGui::TextWrapped("%s", _TR("Anyone on your network with this address can change these settings. Turn it off when you're done; the address changes every time."));
+			}
 		}
 
 		ImGui::SeparatorText(_TR("Audio"));

@@ -19,6 +19,10 @@ add_library(CemuHostFrontend
 	HostSounds.cpp
 	HostSounds.h
 	HostPlatform.h
+	HostRemote.cpp
+	HostRemote.h
+	thirdparty/qrcodegen.cpp
+	thirdparty/qrcodegen.hpp
 	HostTitleInstaller.cpp
 	HostTitleInstaller.h
 	HostTheme.cpp
@@ -54,7 +58,7 @@ set_property(TARGET CemuHostFrontend PROPERTY MSVC_RUNTIME_LIBRARY "${CEMU_MSVC_
 
 cemu_use_precompiled_header(CemuHostFrontend)
 # the vendored C decoders (thirdparty/) are compiled in this file and don't build with the shared precompiled header
-set_source_files_properties(HostMusicDecoder.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+set_source_files_properties(HostMusicDecoder.cpp thirdparty/qrcodegen.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 # MSVC 14.50: when one file of this library is recompiled on its own, the link-time code generation link fails with
 # "LNK1103: debugging information corrupt" for that object (/Z7 + the shared PCH) until everything is rebuilt. The
 # frontend doesn't need /GL (C4652: the PCH was built with it)
