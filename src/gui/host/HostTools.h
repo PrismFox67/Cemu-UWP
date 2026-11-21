@@ -52,6 +52,19 @@ namespace HostTools
 	std::vector<SaveBackup> ListSaveBackups();
 	// replaces the game's save with its newest backup (the current save is kept as another backup first)
 	void StartRestoreSaveBackup(uint64 titleId);
+	// #938 save manager. Export copies the game's save to <USB>/CemuSaves/<game name> (<title id>)/ (an earlier export
+	// there is kept as '... previous'). Import lists those folders, mlc01-style usr/save/<high>/<low> folders on the drive
+	// (desktop Cemu, Save backups to USB) and replaces the save with one of them; the current save is backed up first
+	// (CemuBackups/auto, 'replaced-'), the import is refused if that backup fails
+	bool HasTitleSave(uint64 titleId);
+	void StartExportSave(uint64 titleId, std::string gameName);
+	struct ImportableSave
+	{
+		std::string label; // for the UI, relative to the drive
+		fs::path path; // the folder with user/ and meta/
+	};
+	std::vector<ImportableSave> ListImportableSaves(uint64 titleId);
+	void StartImportSave(uint64 titleId, fs::path from);
 	bool IsBusy();
 	std::string GetBusyText();
 

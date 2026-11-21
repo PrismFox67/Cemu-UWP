@@ -1818,6 +1818,67 @@ namespace
 				}
 				ImGui::TreePop();
 			}
+			// #938 save manager: export a game's save to the USB drive, import one from it (exports, desktop Cemu mlc01 folders)
+			if (!s_games.empty() && ImGui::TreeNode(_TR("Save manager (export / import a game's save on the USB drive)")))
+			{
+				static uint64 s_importTitle = 0;
+				static std::vector<HostTools::ImportableSave> s_importList;
+				static int s_importConfirm = -1;
+				for (const GameEntry& g : s_games)
+				{
+					const uint64 titleId = g.titleId;
+					ImGui::PushID((int)(titleId & 0x7fffffff));
+					ImGui::BeginDisabled(HostTools::IsBusy());
+					ImGui::BeginDisabled(!HostTools::HasTitleSave(titleId));
+					if (ImGui::Button(_TR("Export save to USB")))
+					{
+						const std::string name = g.name;
+						s_deferred.emplace_back([titleId, name]() { HostTools::StartExportSave(titleId, name); });
+					}
+					ImGui::EndDisabled();
+					ImGui::SameLine();
+					if (ImGui::Button(_TR("Import save from USB")))
+					{
+						s_importTitle = titleId;
+						s_importList = HostTools::ListImportableSaves(titleId);
+						s_importConfirm = -1;
+					}
+					ImGui::EndDisabled();
+					ImGui::SameLine();
+					ImGui::TextUnformatted(g.name.c_str());
+					if (s_importTitle == titleId)
+					{
+						ImGui::Indent(40.0f * s_scale);
+						if (s_importList.empty())
+							ImGui::TextWrapped("%s", _TR("No save of this game on the USB drive (CemuSaves/<game> (<title id>), mlc01/usr/save/... or Cemu/mlc01/usr/save/...)."));
+						for (int i = 0; i < (int)s_importList.size(); i++)
+						{
+							ImGui::PushID(i);
+							const bool confirm = s_importConfirm == i;
+							if (ImGui::Button(confirm ? _TR("Press again to replace the current save") : _TR("Import")))
+							{
+								if (!confirm)
+									s_importConfirm = i;
+								else
+								{
+									const fs::path from = s_importList[i].path;
+									s_deferred.emplace_back([titleId, from]() { HostTools::StartImportSave(titleId, from); });
+									s_importTitle = 0;
+									s_backupsListed = {};
+								}
+							}
+							ImGui::SameLine();
+							ImGui::TextUnformatted(s_importList[i].label.c_str());
+							ImGui::PopID();
+						}
+						if (ImGui::Button(_TR("Cancel")))
+							s_importTitle = 0;
+						ImGui::Unindent(40.0f * s_scale);
+					}
+					ImGui::PopID();
+				}
+				ImGui::TreePop();
+			}
 		}
 		{
 			// #849: shader caches, graphic packs, theme and figures on the USB drive too (settings, keys and logs stay)
