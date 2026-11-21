@@ -1592,6 +1592,29 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 			}).detach();
 		}
 	}
+	// CEMU_HOST_TEST_EXPORT_SAVE=<title id hex> / CEMU_HOST_TEST_IMPORT_SAVE=<title id hex>: as if 'Export save to USB' or
+	// 'Import save from USB' with the first listed save was used (#938 PC test)
+	{
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_EXPORT_SAVE") == 0 && value)
+		{
+			const uint64 titleId = std::strtoull(value, nullptr, 16);
+			free(value);
+			HostTools::StartExportSave(titleId, "Test game");
+		}
+		value = nullptr;
+		if (_dupenv_s(&value, &length, "CEMU_HOST_TEST_IMPORT_SAVE") == 0 && value)
+		{
+			const uint64 titleId = std::strtoull(value, nullptr, 16);
+			free(value);
+			const auto list = HostTools::ListImportableSaves(titleId);
+			for (const auto& entry : list)
+				cemuLog_log(LogType::Force, "Save import test: found {}", entry.label);
+			if (!list.empty())
+				HostTools::StartImportSave(titleId, list.front().path);
+		}
+	}
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;

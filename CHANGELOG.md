@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-21
+### Saves
+- Settings > Save manager: 'Export save to USB' copies a game's save to CemuSaves/<game> (<title id>) on the USB drive (the export before it is kept as '... previous'). 'Import save from USB' lists those exports, saves from desktop Cemu (mlc01/usr/save/... or Cemu/mlc01/usr/save/... on the drive) and the 'Back up saves' folders; pick one and press again to confirm. The current save is always backed up first (CemuBackups/auto, 'replaced-<time>'); if that backup isn't possible the import stops and nothing changes.
+
 ### Graphic packs
 - Graphic packs tab: 'Use recommended' for Mario Kart 8, Breath of the Wild, Wind Waker HD, New Super Mario Bros. U, Super Mario 3D World, Splatoon, Xenoblade Chronicles X and Sonic Lost World. It picks a resolution for your console (Series X 1440p, 4K for NSMBU; Series S 1080p, 1440p for NSMBU), turns on helpful workaround packs and turns off packs known to cause trouble on Xbox (BOTW: FPS++, Reshade Compatibility). It lists what it changed; 'Undo' puts everything back (until Cemu is closed).
 

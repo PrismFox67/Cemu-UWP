@@ -172,6 +172,11 @@ std::optional<HostTools::LastSessionProblem> HostTools::CheckLastSession()
 
 fs::path HostTools::GetExportRoot()
 {
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+	// PC tests (#938): a folder that stands in for the USB drive
+	if (const char* testRoot = std::getenv("CEMU_HOST_TEST_EXPORT_ROOT"))
+		return _utf8ToPath(testRoot);
+#endif
 	const fs::path ownRoot = ActiveSettings::GetUserDataPath().root_path();
 	fs::path fallback;
 	for (const auto& gamePath : GetConfig().game_paths)
@@ -686,6 +691,34 @@ namespace
 		cemuLog_log(LogType::Force, "Host: save of {:016x} backed up to {} ({} KB, {} kept)", titleId, _pathToUtf8(target), size / 1024, list.size());
 		return true;
 	}
+
+	// copies 'from' next to the game's save and swaps it in; the caller backs the current save up first
+	bool _ReplaceSave(uint64 titleId, const fs::path& from, const char* failTitle)
+	{
+		const fs::path save = _TitleSavePath(titleId);
+		std::error_code ec;
+		const fs::path temp = save.parent_path() / (_pathToUtf8(save.filename()) + ".restore");
+		fs::remove_all(temp, ec);
+		fs::create_directories(save.parent_path(), ec);
+		if (!_CopyTree(from, temp))
+		{
+			fs::remove_all(temp, ec);
+			cemuLog_log(LogType::Force, "Host: copying save {} for {:016x} failed", _pathToUtf8(from), titleId);
+			HostUI::PushMessage(failTitle, "The save couldn't be copied. Your current save was not changed.");
+			return false;
+		}
+		ec.clear();
+		fs::remove_all(save, ec);
+		ec.clear();
+		fs::rename(temp, save, ec);
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "Host: putting the save of {:016x} in place failed: {}", titleId, ec.message());
+			HostUI::PushMessage(failTitle, fmt::format("Moving the save into place failed ({}). The previous save is in CemuBackups/auto.", ec.message()));
+			return false;
+		}
+		return true;
+	}
 }
 
 void HostTools::BackupTitleSave(uint64 titleId)
@@ -717,27 +750,138 @@ void HostTools::StartRestoreSaveBackup(uint64 titleId)
 		if (list.empty())
 			return;
 		const fs::path newest = list.back();
-		const fs::path save = _TitleSavePath(titleId);
-		std::error_code ec;
 		// keep the save being replaced apart from the start backups (the last 2), so restoring again still picks the start backup
 		_MakeBackup(titleId, 1, 2);
-		const fs::path temp = save.parent_path() / (_pathToUtf8(save.filename()) + ".restore");
-		fs::remove_all(temp, ec);
-		if (!_CopyTree(newest, temp))
-		{
-			fs::remove_all(temp, ec);
-			HostUI::PushMessage("Save not restored", "The backup couldn't be copied. Your current save was not changed.");
+		if (!_ReplaceSave(titleId, newest, "Save not restored"))
 			return;
-		}
-		fs::remove_all(save, ec);
-		fs::rename(temp, save, ec);
-		if (ec)
-		{
-			cemuLog_log(LogType::Force, "Host: restoring save of {:016x} failed: {}", titleId, ec.message());
-			HostUI::PushMessage("Save not restored", fmt::format("Moving the backup into place failed ({}). The previous save is in CemuBackups/auto.", ec.message()));
-			return;
-		}
 		cemuLog_log(LogType::Force, "Host: save of {:016x} restored from {}", titleId, _pathToUtf8(newest));
 		HostUI::PushMessage("Save restored", fmt::format("The save from {} is back. The save you had before is kept as a backup too.", _pathToUtf8(newest.filename())));
+	});
+}
+
+// #938 save manager
+namespace
+{
+	std::string _SafeFolderName(std::string name)
+	{
+		for (char& ch : name)
+			if (std::strchr("<>:\"/\\|?*", ch) || (unsigned char)ch < 0x20)
+				ch = '_';
+		while (!name.empty() && (name.back() == '.' || name.back() == ' '))
+			name.pop_back();
+		return name.empty() ? std::string("Game") : name;
+	}
+
+	// a usable save folder: has user/ or meta/
+	bool _LooksLikeSave(const fs::path& dir)
+	{
+		std::error_code ec;
+		return fs::is_directory(dir / "user", ec) || fs::is_directory(dir / "meta", ec);
+	}
+}
+
+bool HostTools::HasTitleSave(uint64 titleId)
+{
+	std::error_code ec;
+	return fs::is_directory(_TitleSavePath(titleId), ec);
+}
+
+void HostTools::StartExportSave(uint64 titleId, std::string gameName)
+{
+	const fs::path root = GetExportRoot();
+	if (root.empty())
+	{
+		HostUI::PushMessage("No USB drive", "Plug in a USB drive (formatted NTFS or exFAT), the save is copied to it.");
+		return;
+	}
+	_RunTask("Exporting save...", [root, titleId, gameName]() {
+		const fs::path save = _TitleSavePath(titleId);
+		std::error_code ec;
+		if (!fs::is_directory(save, ec))
+		{
+			HostUI::PushMessage("No save", "This game has no save data yet.");
+			return;
+		}
+		const std::string folderName = fmt::format("{} ({:016x})", _SafeFolderName(gameName), titleId);
+		const fs::path target = root / "CemuSaves" / folderName;
+		const fs::path temp = root / "CemuSaves" / (folderName + " new");
+		const fs::path previous = root / "CemuSaves" / (folderName + " previous");
+		fs::remove_all(temp, ec);
+		if (!_CopyTree(save, temp))
+		{
+			fs::remove_all(temp, ec);
+			cemuLog_log(LogType::Force, "Host: exporting the save of {:016x} to {} failed", titleId, _pathToUtf8(temp));
+			HostUI::PushMessage("Save not exported", fmt::format("Cemu couldn't write to {}", _pathToUtf8(root / "CemuSaves")));
+			return;
+		}
+		// the export before this one stays as '... previous'
+		if (fs::exists(target, ec))
+		{
+			fs::remove_all(previous, ec);
+			fs::rename(target, previous, ec);
+		}
+		ec.clear();
+		fs::rename(temp, target, ec);
+		if (ec)
+		{
+			HostUI::PushMessage("Save not exported", fmt::format("Renaming the copy failed ({}). It is in {}", ec.message(), _pathToUtf8(temp)));
+			return;
+		}
+		cemuLog_log(LogType::Force, "Host: save of {:016x} exported to {}", titleId, _pathToUtf8(target));
+		HostUI::PushMessage("Save exported", fmt::format("Copied to {}\n\nImport it under Settings on another console, or for desktop Cemu copy the folder's contents to mlc01/usr/save/{:08x}/{:08x}.",
+			_pathToUtf8(target), (uint32)(titleId >> 32), (uint32)titleId));
+	});
+}
+
+std::vector<HostTools::ImportableSave> HostTools::ListImportableSaves(uint64 titleId)
+{
+	std::vector<ImportableSave> result;
+	const fs::path root = GetExportRoot();
+	if (root.empty())
+		return result;
+	std::error_code ec;
+	auto add = [&](const fs::path& dir) {
+		std::error_code dirEc;
+		if (_LooksLikeSave(dir) && std::none_of(result.begin(), result.end(), [&](const ImportableSave& s) { return fs::equivalent(s.path, dir, dirEc); }))
+			result.push_back({ _pathToUtf8(dir.lexically_relative(root)), dir });
+	};
+	// exports: CemuSaves/<name> (<title id>)[ previous]
+	const std::string idText = fmt::format("({:016x})", titleId);
+	for (auto it = fs::directory_iterator(root / "CemuSaves", ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+	{
+		const std::string name = _pathToUtf8(it->path().filename());
+		if (name.find(idText) != std::string::npos && !name.ends_with(" new"))
+			add(it->path());
+	}
+	// mlc01-style folders: <drive>/mlc01, <drive>/Cemu/mlc01 (desktop Cemu) and the 'Back up saves' folders CemuBackups/saves_*/mlc01
+	const fs::path saveRel = fs::path("usr") / "save" / fmt::format("{:08x}", (uint32)(titleId >> 32)) / fmt::format("{:08x}", (uint32)titleId);
+	std::vector<fs::path> mlcs = { root / "mlc01", root / "Cemu" / "mlc01" };
+	ec.clear();
+	for (auto it = fs::directory_iterator(root / "CemuBackups", ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+		if (_pathToUtf8(it->path().filename()).rfind("saves_", 0) == 0)
+			mlcs.push_back(it->path() / "mlc01");
+	for (const fs::path& mlc : mlcs)
+		add(mlc / saveRel);
+	return result;
+}
+
+void HostTools::StartImportSave(uint64 titleId, fs::path from)
+{
+	_RunTask("Importing save...", [titleId, from]() {
+		if (!_LooksLikeSave(from))
+		{
+			HostUI::PushMessage("Save not imported", "That folder has no save data (no user or meta folder).");
+			return;
+		}
+		// never replace a save without a copy of it
+		if (HostTools::HasTitleSave(titleId) && !_MakeBackup(titleId, 1, 2))
+		{
+			HostUI::PushMessage("Save not imported", "Your current save couldn't be backed up first (over 64 MB or no space), so it was left as it is.");
+			return;
+		}
+		if (!_ReplaceSave(titleId, from, "Save not imported"))
+			return;
+		cemuLog_log(LogType::Force, "Host: save of {:016x} imported from {}", titleId, _pathToUtf8(from));
+		HostUI::PushMessage("Save imported", "Done. The save you had before is kept in CemuBackups/auto as 'replaced-<time>'.");
 	});
 }
