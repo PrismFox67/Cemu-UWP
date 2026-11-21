@@ -1,0 +1,69 @@
+{
+  "_comment": "#937 'Use recommended' on the Graphic packs tab. A game entry applies when one of its packs belongs to the selected game. 'enable': packs to turn on, with presets per category; a preset is either one name or {seriesX, seriesS, pc}. 'disable': packs to turn off. Paths are the pack's path= in rules.txt (community graphic packs). Resolutions: Series X 1440p (4K where it holds the frame rate), Series S 1080p, PC like Series X.",
+  "games": [
+    {
+      "name": "Mario Kart 8",
+      "enable": [
+        { "pack": "Mario Kart 8/Graphics", "presets": { "TV Resolution": { "seriesX": "2560x1440 (2K)", "seriesS": "1920x1080 (Full HD)", "pc": "2560x1440 (2K)" } } }
+      ],
+      "disable": [],
+      "note": "4K can run out of memory on the largest tracks"
+    },
+    {
+      "name": "The Legend of Zelda: Breath of the Wild",
+      "enable": [
+        { "pack": "The Legend of Zelda: Breath of the Wild/Graphics", "presets": { "Resolution": { "seriesX": "2560x1440 (2K)", "seriesS": "1920x1080 (Full HD)", "pc": "2560x1440 (2K)" } } }
+      ],
+      "disable": [
+        "The Legend of Zelda: Breath of the Wild/Mods/FPS++",
+        "The Legend of Zelda: Breath of the Wild/Workarounds/Reshade Compatibility (Enable Only When Using Reshade)"
+      ],
+      "note": "FPS++ off: distant trees flickered with it on Xbox (GitHub #17, gone with packs off)"
+    },
+    {
+      "name": "The Legend of Zelda: The Wind Waker HD",
+      "enable": [
+        { "pack": "The Legend of Zelda: The Wind Waker HD/Graphics/Resolution", "presets": { "": { "seriesX": "2560x1440", "seriesS": "1920x1080 (Default)", "pc": "2560x1440" } } }
+      ],
+      "disable": []
+    },
+    {
+      "name": "New Super Mario Bros. U",
+      "enable": [
+        { "pack": "New Super Mario Bros. U/Graphics", "presets": { "TV Resolution": { "seriesX": "3840x2160", "seriesS": "2560x1440", "pc": "3840x2160" } } }
+      ],
+      "disable": []
+    },
+    {
+      "name": "Super Mario 3D World",
+      "enable": [
+        { "pack": "Super Mario 3D World/Graphics/Resolution", "presets": { "": { "seriesX": "2560x1440", "seriesS": "1920x1080", "pc": "2560x1440" } } }
+      ],
+      "disable": []
+    },
+    {
+      "name": "Splatoon",
+      "enable": [
+        { "pack": "Splatoon/Graphics", "presets": { "TV Resolution": { "seriesX": "2560x1440 (2K)", "seriesS": "1920x1080 (Full HD)", "pc": "2560x1440 (2K)" } } }
+      ],
+      "disable": []
+    },
+    {
+      "name": "Xenoblade Chronicles X",
+      "enable": [
+        { "pack": "Xenoblade Chronicles X/Graphics", "presets": { "Resolution": { "seriesX": "2560x1440 (2k)", "seriesS": "1920x1080", "pc": "2560x1440 (2k)" } } },
+        { "pack": "Xenoblade Chronicles X/Workarounds/Brightness", "presets": {} }
+      ],
+      "disable": [ "Xenoblade Chronicles X/Workarounds/Brightness OLD" ]
+    },
+    {
+      "name": "Sonic Lost World",
+      "enable": [
+        { "pack": "Sonic Lost World/Graphics", "presets": { "TV Resolution": { "seriesX": "2560x1440", "seriesS": "1920x1080", "pc": "2560x1440" } } },
+        { "pack": "Sonic Lost World/Workarounds/Darkness", "presets": {} },
+        { "pack": "Sonic Lost World/Workarounds/Disable Light Scattering", "presets": {} }
+      ],
+      "disable": []
+    }
+  ]
+}

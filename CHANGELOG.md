@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-21
+### Graphic packs
+- Graphic packs tab: 'Use recommended' for Mario Kart 8, Breath of the Wild, Wind Waker HD, New Super Mario Bros. U, Super Mario 3D World, Splatoon, Xenoblade Chronicles X and Sonic Lost World. It picks a resolution for your console (Series X 1440p, 4K for NSMBU; Series S 1080p, 1440p for NSMBU), turns on helpful workaround packs and turns off packs known to cause trouble on Xbox (BOTW: FPS++, Reshade Compatibility). It lists what it changed; 'Undo' puts everything back (until Cemu is closed).
+
 ### Phone remote
 - Settings > 'Phone remote': turn it on and scan the QR code with a phone on the same network. The page shows the running game and changes VSync, Show FPS, anisotropic filtering, anti-aliasing, sharpening, scaling and the shader compile options live, so the TV isn't covered by a menu. Off by default and off again after every start of Cemu; the address has a random key that changes every time it is turned on. Graphic pack presets aren't on the page yet (they only apply when a game starts).
 

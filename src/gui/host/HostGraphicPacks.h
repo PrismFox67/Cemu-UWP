@@ -38,4 +38,12 @@ namespace HostGraphicPacks
 
 	// stores the enabled state and active presets of all packs in settings.xml
 	void SaveToConfig();
+
+	// #937 'Use recommended' (resources/recommended_packs.json): true if the json has an entry for one of the game's packs
+	bool HasRecommended(uint64 titleId);
+	// turns the recommended packs/presets for this console on and the known-bad ones off, saves; returns what changed
+	std::vector<std::string> ApplyRecommended(uint64 titleId);
+	// puts back the packs as they were before the last ApplyRecommended of this game (until Cemu closes)
+	bool CanUndoRecommended(uint64 titleId);
+	void UndoRecommended(uint64 titleId);
 }

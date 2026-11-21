@@ -885,6 +885,34 @@ namespace
 			return;
 		}
 		ImGui::TextDisabled("Applied when the game starts. Resolution packs render the game at a higher resolution (e.g. 3840x2160 for 4K).");
+		// #937 one click: the curated packs/presets for this game and console, the list of changes stays until another game is picked
+		static uint64 s_recommendTitle = 0;
+		static std::vector<std::string> s_recommendChanges;
+		if (s_recommendTitle != game.titleId)
+		{
+			s_recommendTitle = game.titleId;
+			s_recommendChanges.clear();
+		}
+		if (HostGraphicPacks::HasRecommended(game.titleId))
+		{
+			if (ImGui::Button(_TR("Use recommended")))
+			{
+				s_recommendChanges = HostGraphicPacks::ApplyRecommended(game.titleId);
+				if (s_recommendChanges.empty())
+					s_recommendChanges.emplace_back(_TR("Already set as recommended."));
+			}
+			if (HostGraphicPacks::CanUndoRecommended(game.titleId))
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(_TR("Undo")))
+				{
+					HostGraphicPacks::UndoRecommended(game.titleId);
+					s_recommendChanges = { _TR("Put back as before.") };
+				}
+			}
+			for (const std::string& change : s_recommendChanges)
+				ImGui::BulletText("%s", change.c_str());
+		}
 		if (ImGui::BeginChild("##packs", ImVec2(0.0f, 0.0f), true))
 		{
 			for (size_t i = 0; i < packs.size(); i++)
