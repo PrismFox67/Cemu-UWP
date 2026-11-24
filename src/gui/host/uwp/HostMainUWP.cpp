@@ -35,6 +35,7 @@
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Web.Http.h>
 #include <winrt/Windows.Web.Http.Headers.h>
+#include <winrt/Windows.Management.Deployment.h>
 
 using namespace winrt;
 using namespace winrt::Windows::ApplicationModel;
@@ -503,6 +504,49 @@ bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std:
 	catch (const winrt::hresult_error& e)
 	{
 		error = fmt::format("{} (0x{:08x})", winrt::to_string(e.message()), (uint32)e.code().value);
+		return false;
+	}
+}
+
+// #947 EXPERIMENTAL: needs the packageManagement restricted capability. ForceApplicationShutdown lets the installer
+// close this app to replace its files; the data folders (LocalState) belong to the package family and stay
+bool HostPlatform::InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error)
+{
+	using namespace winrt::Windows::Management::Deployment;
+	auto toUri = [](const fs::path& path) {
+		return Uri(winrt::hstring(L"file:///" + path.generic_wstring()));
+	};
+	try
+	{
+		PackageManager manager;
+		std::vector<Uri> deps;
+		for (const auto& dep : dependencies)
+			deps.push_back(toUri(dep));
+		cemuLog_log(LogType::Force, "Updater: AddPackageAsync({}, {} dependencies, ForceApplicationShutdown)", _pathToUtf8(package), deps.size());
+		auto operation = manager.AddPackageAsync(toUri(package), winrt::single_threaded_vector(std::move(deps)), DeploymentOptions::ForceApplicationShutdown);
+		int lastPercent = -1;
+		operation.Progress([&lastPercent](auto const&, DeploymentProgress const& progress) {
+			const int percent = (int)progress.percentage;
+			if (percent / 10 != lastPercent / 10)
+			{
+				lastPercent = percent;
+				cemuLog_log(LogType::Force, "Updater: install progress {}% (state {})", percent, (int)progress.state);
+			}
+		});
+		DeploymentResult result = operation.get();
+		const HRESULT hr = result.ExtendedErrorCode();
+		cemuLog_log(LogType::Force, "Updater: AddPackageAsync done, status {}, HRESULT 0x{:08x}, '{}'", (int)operation.Status(), (uint32)hr, winrt::to_string(result.ErrorText()));
+		if (operation.Status() != AsyncStatus::Completed || FAILED(hr))
+		{
+			error = fmt::format("{} (0x{:08x})", winrt::to_string(result.ErrorText()), (uint32)hr);
+			return false;
+		}
+		return true;
+	}
+	catch (const winrt::hresult_error& e)
+	{
+		error = fmt::format("{} (0x{:08x})", winrt::to_string(e.message()), (uint32)e.code().value);
+		cemuLog_log(LogType::Force, "Updater: PackageManager threw {}", error);
 		return false;
 	}
 }

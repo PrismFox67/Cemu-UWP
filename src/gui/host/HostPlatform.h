@@ -37,6 +37,11 @@ namespace HostPlatform
 	// received and total byte count (total is 0 if unknown). On failure returns false and describes the problem in error
 	bool HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress = {});
 
+	// #947: installs an msix as an update of the running package (dependencies: framework packages like VCLibs).
+	// Blocks, call it from a worker thread. On success the installer usually closes the app before this returns.
+	// False with the reason (and HRESULT) in error if the platform can't or refused
+	bool InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error);
+
 	// memory the app uses and the most it may use (UWP/Xbox: the app's memory budget, 0 if there is no fixed limit)
 	void GetMemoryUsage(uint64& usage, uint64& limit);
 }

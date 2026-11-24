@@ -442,6 +442,11 @@ namespace
 		{
 			ImGui::TextColored(ImVec4(0.55f, 0.85f, 1.0f, 1.0f), "A newer build is available: %s", newer.c_str());
 			ImGui::TextDisabled("Download cemu-uwp-x64.zip from %s   (View hides this)", HostTools::GetDownloadUrl());
+			// #947 EXPERIMENTAL
+			ImGui::BeginDisabled(HostTools::IsBusy());
+			if (ImGui::SmallButton(_TR("Update now (experimental)")))
+				HostTools::StartUpdate();
+			ImGui::EndDisabled();
 			ImGui::SameLine();
 			if (ImGui::SmallButton(_TR("Hide")))
 				s_updateDismissed = true;
@@ -2185,6 +2190,13 @@ namespace
 	void _DrawAboutTab()
 	{
 		ImGui::TextUnformatted(BUILD_VERSION_WITH_NAME_STRING);
+		// #947 EXPERIMENTAL test build: installs the newest ci-latest package over this one
+		ImGui::BeginDisabled(HostTools::IsBusy());
+		if (ImGui::Button(_TR("Update to the newest build (experimental)")))
+			HostTools::StartUpdate();
+		ImGui::EndDisabled();
+		if (HostTools::IsBusy())
+			ImGui::TextDisabled("%s", HostTools::GetBusyText().c_str());
 		ImGui::TextWrapped(_TR("Cemu UWP by PrismFox67 (github.com/PrismFox67/Cemu-UWP)"));
 		ImGui::TextWrapped("Frontend: %s, renderer: Direct3D 12", HostPlatform::GetName());
 		ImGui::Spacing();

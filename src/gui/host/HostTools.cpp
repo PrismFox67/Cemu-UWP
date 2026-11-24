@@ -8,6 +8,8 @@
 #include "util/helpers/helpers.h"
 
 #include <rapidjson/document.h>
+#include <openssl/sha.h>
+#include <zip.h>
 
 #include <atomic>
 #include <functional>
@@ -883,5 +885,204 @@ void HostTools::StartImportSave(uint64 titleId, fs::path from)
 			return;
 		cemuLog_log(LogType::Force, "Host: save of {:016x} imported from {}", titleId, _pathToUtf8(from));
 		HostUI::PushMessage("Save imported", "Done. The save you had before is kept in CemuBackups/auto as 'replaced-<time>'.");
+	});
+}
+
+// #947 EXPERIMENTAL in-app updater
+namespace
+{
+	constexpr const char* kUpdateAsset = "cemu-uwp-x64.zip";
+
+	std::string _Sha256Hex(const std::vector<uint8>& data)
+	{
+		uint8 md[SHA256_DIGEST_LENGTH];
+		SHA256(data.data(), data.size(), md);
+		std::string hex;
+		for (uint8 b : md)
+			hex += fmt::format("{:02x}", b);
+		return hex;
+	}
+
+	// unpacks every file of the zip below target, false (and error) on the first failure
+	bool _ExtractZip(const std::vector<uint8>& zipData, const fs::path& target, std::string& error)
+	{
+		zip_error_t zerr;
+		zip_error_init(&zerr);
+		zip_source_t* src = zip_source_buffer_create(zipData.data(), zipData.size(), 0, &zerr);
+		zip_t* za = src ? zip_open_from_source(src, ZIP_RDONLY, &zerr) : nullptr;
+		if (!za)
+		{
+			error = zip_error_strerror(&zerr);
+			if (src)
+				zip_source_free(src);
+			zip_error_fini(&zerr);
+			return false;
+		}
+		bool ok = true;
+		const zip_int64_t count = zip_get_num_entries(za, 0);
+		std::vector<uint8> buffer;
+		for (zip_int64_t i = 0; i < count && ok; i++)
+		{
+			zip_stat_t st;
+			if (zip_stat_index(za, i, 0, &st) != 0 || !(st.valid & ZIP_STAT_NAME) || !(st.valid & ZIP_STAT_SIZE))
+				continue;
+			const std::string name = st.name;
+			if (name.empty() || name.back() == '/' || name.back() == '\\')
+				continue;
+			const fs::path rel = _utf8ToPath(name).lexically_normal();
+			if (rel.empty() || rel.has_root_path() || *rel.begin() == "..")
+			{
+				error = "bad path in the zip: " + name;
+				ok = false;
+				break;
+			}
+			const fs::path out = target / rel;
+			std::error_code ec;
+			fs::create_directories(out.parent_path(), ec);
+			zip_file_t* zf = zip_fopen_index(za, i, 0);
+			if (!zf)
+			{
+				error = "can't read " + name;
+				ok = false;
+				break;
+			}
+			buffer.resize((size_t)st.size);
+			const zip_int64_t read = st.size ? zip_fread(zf, buffer.data(), st.size) : 0;
+			zip_fclose(zf);
+			std::ofstream file(out, std::ios::binary | std::ios::trunc);
+			if (read != (zip_int64_t)st.size || !file.write((const char*)buffer.data(), buffer.size()))
+			{
+				error = "can't write " + _pathToUtf8(out);
+				ok = false;
+			}
+		}
+		zip_close(za);
+		zip_error_fini(&zerr);
+		return ok;
+	}
+}
+
+void HostTools::StartUpdate()
+{
+	_RunTask("Update: asking GitHub...", []() {
+		auto setStatus = [](std::string text) {
+			std::unique_lock _l(s_mutex);
+			s_busyText = std::move(text);
+		};
+		auto fail = [](const std::string& step, const std::string& error) {
+			cemuLog_log(LogType::Force, "Updater: {} failed: {}", step, error);
+			HostUI::PushMessage("Update failed", fmt::format("{} failed:\n{}\n\nDownload {} from {} on a PC instead.", step, error, kUpdateAsset, kDownloadUrl));
+		};
+		cemuLog_log(LogType::Force, "Updater: start, this build is {}", BUILD_VERSION_STRING);
+		std::vector<uint8> data;
+		std::string error;
+		if (!HostPlatform::HttpGet(fmt::format("https://api.github.com/repos/{}/releases/tags/ci-latest", kRepo), data, error))
+			return fail("Asking GitHub for the release", error);
+		rapidjson::Document doc;
+		doc.Parse((const char*)data.data(), data.size());
+		if (doc.HasParseError() || !doc.IsObject() || !doc.HasMember("assets") || !doc["assets"].IsArray())
+			return fail("Reading the release", "unexpected answer");
+		const std::string build = doc.HasMember("name") && doc["name"].IsString() ? doc["name"].GetString() : "ci-latest";
+		std::string url, digest;
+		uint64 size = 0;
+		for (const auto& asset : doc["assets"].GetArray())
+		{
+			if (!asset.IsObject() || !asset.HasMember("name") || !asset["name"].IsString() || std::string(asset["name"].GetString()) != kUpdateAsset)
+				continue;
+			if (asset.HasMember("browser_download_url") && asset["browser_download_url"].IsString())
+				url = asset["browser_download_url"].GetString();
+			if (asset.HasMember("size") && asset["size"].IsUint64())
+				size = asset["size"].GetUint64();
+			// "sha256:<hex>", GitHub adds it to assets uploaded since mid 2025
+			if (asset.HasMember("digest") && asset["digest"].IsString())
+				digest = asset["digest"].GetString();
+		}
+		if (url.empty())
+			return fail("Finding the package", fmt::format("{} isn't in the release", kUpdateAsset));
+		cemuLog_log(LogType::Force, "Updater: {} = {} ({} bytes, digest '{}')", build, url, size, digest);
+
+		auto lastShown = std::chrono::steady_clock::now();
+		const bool downloaded = HostPlatform::HttpGet(url, data, error, [&](uint64 received, uint64 total) {
+			const auto now = std::chrono::steady_clock::now();
+			if (now - lastShown < std::chrono::milliseconds(250))
+				return;
+			lastShown = now;
+			if (total == 0)
+				total = size;
+			setStatus(total ? fmt::format("Update: downloading {}% ({} / {} MB)...", received * 100 / total, received >> 20, total >> 20)
+				: fmt::format("Update: downloading {} MB...", received >> 20));
+		});
+		if (!downloaded)
+			return fail("Download", error);
+		cemuLog_log(LogType::Force, "Updater: downloaded {} bytes", data.size());
+		if (size != 0 && data.size() != size)
+			return fail("Download", fmt::format("got {} bytes, the release says {}", data.size(), size));
+		setStatus("Update: checking...");
+		const std::string sha = _Sha256Hex(data);
+		if (digest.rfind("sha256:", 0) == 0)
+		{
+			if (digest.substr(7) != sha)
+				return fail("Checking the download", fmt::format("SHA-256 {} doesn't match {}", sha, digest));
+			cemuLog_log(LogType::Force, "Updater: SHA-256 matches ({})", sha);
+		}
+		else
+			cemuLog_log(LogType::Force, "Updater: the release has no digest, size checked only (SHA-256 {})", sha);
+
+		setStatus("Update: unpacking...");
+		std::error_code ec;
+		fs::path folder = fs::temp_directory_path(ec);
+		folder = ec ? ActiveSettings::GetUserDataPath("CemuUpdate") : folder / "CemuUpdate";
+		fs::remove_all(folder, ec);
+		if (!_ExtractZip(data, folder, error))
+			return fail("Unpacking", error);
+		data.clear();
+		data.shrink_to_fit();
+		fs::path package;
+		std::vector<fs::path> dependencies;
+		for (auto it = fs::recursive_directory_iterator(folder, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+		{
+			std::string ext = _pathToUtf8(it->path().extension());
+			std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)std::tolower((unsigned char)c); });
+			const std::string rel = _pathToUtf8(it->path().lexically_relative(folder));
+			if ((ext == ".msix" || ext == ".appx") && rel.find("Dependencies") != std::string::npos)
+			{
+				if (rel.find("x64") != std::string::npos)
+					dependencies.push_back(it->path());
+			}
+			else if (ext == ".msix" && package.empty())
+				package = it->path();
+		}
+		if (package.empty())
+			return fail("Unpacking", "no .msix in the zip");
+		cemuLog_log(LogType::Force, "Updater: package {} + {} dependency package(s) in {}", _pathToUtf8(package.filename()), dependencies.size(), _pathToUtf8(folder));
+
+		// a copy on the USB drive first: the fallback if the install is refused, nothing has to be downloaded again
+		fs::path usbCopy;
+		const fs::path root = HostTools::GetExportRoot();
+		if (!root.empty())
+		{
+			setStatus("Update: copying the package to the USB drive...");
+			const fs::path target = root / "CemuUpdate";
+			fs::remove_all(target, ec);
+			if (_CopyTree(folder, target))
+				usbCopy = target;
+			cemuLog_log(LogType::Force, "Updater: copy to {} {}", _pathToUtf8(target), usbCopy.empty() ? "failed" : "done");
+		}
+
+		setStatus("Update: installing (Cemu closes when it's done)...");
+		cemuLog_log(LogType::Force, "Updater: installing {}", _pathToUtf8(package));
+		if (HostPlatform::InstallPackageUpdate(package, dependencies, error))
+		{
+			cemuLog_log(LogType::Force, "Updater: install finished");
+			HostUI::PushMessage("Update installed", fmt::format("{} is installed. Close Cemu and start it again.", build));
+			return;
+		}
+		cemuLog_log(LogType::Force, "Updater: install failed: {}", error);
+		const fs::path keptAt = usbCopy.empty() ? folder : usbCopy;
+		HostUI::PushMessage("Update downloaded - install it with the Device Portal",
+			fmt::format("Cemu couldn't install the update itself:\n{}\n\nThe package is in {}.\n{}Open the Xbox Device Portal on a PC, Add, pick {}{}. "
+				"Installed as an update, your settings and saves are kept.",
+				error, _pathToUtf8(keptAt), usbCopy.empty() ? "" : "Plug the USB drive into the PC. ", _pathToUtf8(package.filename()),
+				dependencies.empty() ? "" : " and add the files in Dependencies/x64 as dependencies"));
 	});
 }

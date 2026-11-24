@@ -6,6 +6,9 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-24
+### Updates (EXPERIMENTAL test build only)
+- 'Update now (experimental)' on the update notice and 'Update to the newest build' on the About tab: Cemu downloads the newest build itself, checks it, keeps a copy in CemuUpdate on the USB drive and tries to install it over this one (Cemu closes; settings and saves stay). If the Xbox refuses, the message says how to install the copy from the USB drive with the Device Portal, so no PC download is needed.
+
 ### Skylanders
 - In-game menu Skylander list: LB/RB jump to the first figure of the previous/next game (D-pad still steps one figure).
 - Magic items, traps, adventure packs and Swapper halves are now listed under the right game (Piggy Bank was under Spyro's Adventure instead of Trap Team).

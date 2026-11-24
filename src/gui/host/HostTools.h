@@ -74,4 +74,8 @@ namespace HostTools
 	// the newer build's commit and title, empty if there's none (or the check didn't finish)
 	std::string GetNewerBuild();
 	const char* GetDownloadUrl();
+	// #947 EXPERIMENTAL in-app update: downloads cemu-uwp-x64.zip of ci-latest, checks size and SHA-256, unpacks it and
+	// asks the platform to install the msix as an update (the installer closes the app). If that is refused the package
+	// stays on the USB drive / in TempState and a message explains the Device Portal steps
+	void StartUpdate();
 }

@@ -243,6 +243,13 @@ namespace
 	}
 }
 
+// #947: the desktop test host isn't a package, the PC test covers download, check and unpack
+bool HostPlatform::InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error)
+{
+	error = "the desktop test host isn't a UWP package and can't install one";
+	return false;
+}
+
 bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress)
 {
 	out.clear();
