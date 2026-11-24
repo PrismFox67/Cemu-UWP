@@ -11,6 +11,8 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ### Graphic packs
 - Graphic packs tab: 'Use recommended' for Mario Kart 8, Breath of the Wild, Wind Waker HD, New Super Mario Bros. U, Super Mario 3D World, Splatoon, Xenoblade Chronicles X and Sonic Lost World. It picks a resolution for your console (Series X 1440p, 4K for NSMBU; Series S 1080p, 1440p for NSMBU), turns on helpful workaround packs and turns off packs known to cause trouble on Xbox (BOTW: FPS++, Reshade Compatibility). It lists what it changed; 'Undo' puts everything back (until Cemu is closed).
+### Phone remote
+- Settings > 'Phone remote': turn it on and scan the QR code with a phone on the same network. The page shows the running game and changes VSync, Show FPS, anisotropic filtering, anti-aliasing, sharpening, scaling and the shader compile options live, so the TV isn't covered by a menu. Off by default and off again after every start of Cemu; the address has a random key that changes every time it is turned on. Graphic pack presets aren't on the page yet (they only apply when a game starts).
 
 ## 2026-11-19
 ### Skylanders
@@ -27,6 +29,10 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 - Freeze watch no longer reports a false 'no frame' freeze while the next game is still loading after Exit to game list.
 
 ## 2026-11-16
+### Graphics
+- Settings > Graphics: new **Sharpening: Off / AMD CAS** with a **Sharpness** slider (default Off = picture unchanged). AMD FidelityFX Contrast Adaptive Sharpening makes a game rendered below your screen resolution look crisper; it replaces the upscale filter while on. Graphic packs with their own output shader still take priority.
+- Settings > Graphics: new **Anisotropic filtering** (Game default / 2x / 4x / 8x / 16x) for sharper textures at an angle; it never lowers what the game asks for, and a graphic pack's value still wins. New **Anti-aliasing: Off / FXAA** smooths jagged edges in the final picture (it takes the place of Sharpening while on).
+
 ### Controllers
 - In-game menu: new **Motion sensitivity** (Low / Medium / High) under Motion. With Motion: On the right stick tilts the GamePad; High (the default) is unchanged, Medium and Low tilt less and react gently to small stick moves, for gyro aiming in Splatoon.
 - In-game menu: new **Touch cursor speed** (Slow / Normal / Fast) under Touch cursor. Slow takes about 4 seconds to cross the screen at full tilt, Normal (the default) about 2.
