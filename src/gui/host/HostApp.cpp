@@ -647,12 +647,43 @@ namespace
 
 	// #825: the game a figure came out with, from the variant ID in the dump's first (unencrypted) block: its top four bits are
 	// the year code, 0 Spyro's Adventure ... 5 Imaginators. -1 if the file is too short
+	// #943: magic items, traps, adventure packs and Swapper halves often have variant 0, which made them all 'Spyro's
+	// Adventure' (Piggy Bank). Their figure ID (block 0, 0x10) says the game; ranges from nsyshid's figure list
+	int _SkylanderGameFromId(uint16 id)
+	{
+		struct Range
+		{
+			uint16 first, last;
+			int game;
+		};
+		static const Range kRanges[] = {
+			{ 200, 207, 0 }, // Spyro's Adventure items (Anvil Rain .. Sparx the Dragonfly)
+			{ 208, 209, 1 }, // Giants items (Dragonfire Cannon, Scorpion Striker)
+			{ 210, 220, 3 }, // Trap Team traps
+			{ 230, 233, 3 }, // Trap Team items (Hand of Fate, Piggy Bank, Rocket Ram, Tiki Speaky)
+			{ 300, 303, 0 }, // Spyro's Adventure adventure packs (Dragon's Peak .. Darklight Crypt)
+			{ 304, 305, 1 }, // Giants adventure packs (Volcanic Vault, Mirror of Mystery)
+			{ 306, 308, 3 }, // Trap Team adventure packs (Nightmare Express, Sunscraper Spire, Midnight Museum)
+			{ 1000, 1015, 2 }, // Swap Force Swapper bottom halves
+			{ 2000, 2015, 2 }, // Swap Force Swapper top halves
+			{ 3200, 3204, 2 }, // Swap Force items (Battle Hammer .. UFO Hat)
+			{ 3300, 3303, 2 }, // Swap Force adventure packs (Sheep Wreck Island .. Arkeyan Crossbow)
+		};
+		for (const Range& r : kRanges)
+			if (id >= r.first && id <= r.last)
+				return r.game;
+		return -1;
+	}
+
 	int _SkylanderGame(const fs::path& file)
 	{
 		std::unique_ptr<FileStream> stream(FileStream::openFile2(file, false));
 		uint8 header[0x20];
 		if (!stream || stream->readData(header, sizeof(header)) != sizeof(header))
 			return -1;
+		const int byId = _SkylanderGameFromId((uint16)(header[0x10] | (header[0x11] << 8)));
+		if (byId >= 0)
+			return byId;
 		const uint16 variant = (uint16)(header[0x1C] | (header[0x1D] << 8));
 		return variant >> 12;
 	}
@@ -758,6 +789,31 @@ namespace
 		s_skyIndex = (s_skyIndex + step + count) % count;
 	}
 
+	// #943 LB/RB on the Skylander item: first figure of the previous/next game group (the list is sorted by game)
+	void _JumpSkylanderGame(int step)
+	{
+		std::scoped_lock lock(s_skyMutex);
+		const int count = (int)s_skyFiles.size();
+		if (count == 0 || (int)s_skyGames.size() != count)
+			return;
+		auto game = [&](int i) { return s_skyGames[i].first; };
+		auto firstOfGroup = [&](int i) {
+			for (int n = 0; n < count && game((i + count - 1) % count) == game(i); n++)
+				i = (i + count - 1) % count;
+			return i;
+		};
+		int i = firstOfGroup(s_skyIndex);
+		if (step > 0)
+		{
+			const int current = game(i);
+			for (int n = 0; n < count && game(i) == current; n++)
+				i = (i + 1) % count;
+		}
+		else
+			i = firstOfGroup((i + count - 1) % count);
+		s_skyIndex = i;
+	}
+
 	std::string _SkylanderLabel()
 	{
 		std::scoped_lock lock(s_skyMutex);
@@ -767,7 +823,7 @@ namespace
 		if (!GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue())
 			return "Skylander: restart the game to connect the portal";
 		const char* gameName = s_skyIndex < (int)s_skyGames.size() ? _SkylanderGameName(s_skyGames[s_skyIndex].first) : nullptr;
-		std::string label = gameName ? fmt::format("Skylander: < {} >  ({}, {}/{})", _pathToUtf8(file.stem()), gameName, s_skyIndex + 1, s_skyFiles.size())
+		std::string label = gameName ? fmt::format("Skylander: < {} >  ({}, {}/{}, LB/RB: game)", _pathToUtf8(file.stem()), gameName, s_skyIndex + 1, s_skyFiles.size())
 									 : fmt::format("Skylander: < {} >  ({}/{})", _pathToUtf8(file.stem()), s_skyIndex + 1, s_skyFiles.size());
 		if (const char* kind = s_skyIndex < (int)s_skyKinds.size() ? s_skyKinds[s_skyIndex] : nullptr)
 			label += fmt::format("  [{}]", kind);
@@ -1472,6 +1528,8 @@ namespace
 			_ExecuteMenuItem(s_menuSelection);
 		if (s_menuSelection == kMenuDimFigure && (pressed & (HostGamepad::kLB | HostGamepad::kRB)))
 			_JumpDimLetter((pressed & HostGamepad::kLB) ? -1 : 1);
+		if (s_menuSelection == kMenuSkylander && (pressed & (HostGamepad::kLB | HostGamepad::kRB)))
+			_JumpSkylanderGame((pressed & HostGamepad::kLB) ? -1 : 1);
 	}
 }
 
@@ -1614,6 +1672,22 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 				cemuLog_log(LogType::Force, "Save import test: found {}", entry.label);
 			if (!list.empty())
 				HostTools::StartImportSave(titleId, list.front().path);
+		}
+	}
+	// CEMU_HOST_TEST_SKYLANDERS=1: logs the sorted Skylander list with its game groups and where RB/LB jump to (#943 PC test)
+	if (std::getenv("CEMU_HOST_TEST_SKYLANDERS"))
+	{
+		_RefreshSkylanderFiles();
+		{
+			std::scoped_lock lock(s_skyMutex);
+			for (size_t i = 0; i < s_skyFiles.size(); i++)
+				cemuLog_log(LogType::Force, "Skylander test: {} {} ({})", i, _pathToUtf8(s_skyFiles[i].stem()), _SkylanderGameName(s_skyGames[i].first) ? _SkylanderGameName(s_skyGames[i].first) : "unknown");
+		}
+		for (int step : { 1, 1, 1, -1, -1 })
+		{
+			_JumpSkylanderGame(step);
+			std::scoped_lock lock(s_skyMutex);
+			cemuLog_log(LogType::Force, "Skylander test: {} -> {}", step > 0 ? "RB" : "LB", s_skyIndex);
 		}
 	}
 	// CEMU_HOST_TEST_REMOTE=1: turn the phone remote on at start and log its address (#936 PC test)
@@ -1948,6 +2022,8 @@ void HostApp::OnKey(uint32 virtualKey, bool down)
 				_ExecuteMenuItem(s_menuSelection);
 			else if ((virtualKey == VK_PRIOR || virtualKey == VK_NEXT) && s_menuSelection == kMenuDimFigure)
 				_JumpDimLetter(virtualKey == VK_PRIOR ? -1 : 1);
+			else if ((virtualKey == VK_PRIOR || virtualKey == VK_NEXT) && s_menuSelection == kMenuSkylander)
+				_JumpSkylanderGame(virtualKey == VK_PRIOR ? -1 : 1);
 			else if (virtualKey == VK_ESCAPE)
 				s_menuOpen = false;
 		}
