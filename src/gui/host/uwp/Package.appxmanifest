@@ -61,5 +61,7 @@
     <!-- access to game folders outside the app's own storage (needs to be allowed in Windows' privacy settings) -->
     <rescap:Capability Name="broadFileSystemAccess" />
     <rescap:Capability Name="expandedResources" />
+    <!-- #947 EXPERIMENTAL in-app updater (PackageManager.AddPackageAsync) -->
+    <rescap:Capability Name="packageManagement" />
   </Capabilities>
 </Package>

@@ -1702,6 +1702,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 		_ToggleSkylander();
 		_ToggleSkylander();
 	}
+	// CEMU_HOST_TEST_UPDATE=1: run the #947 in-app update at start (PC: download, SHA-256, unpack, USB copy; install is refused)
+	if (std::getenv("CEMU_HOST_TEST_UPDATE"))
+		HostTools::StartUpdate();
 	// CEMU_HOST_TEST_REMOTE=1: turn the phone remote on at start and log its address (#936 PC test)
 	if (std::getenv("CEMU_HOST_TEST_REMOTE") && HostRemote::Start())
 		cemuLog_log(LogType::Force, "Phone remote test: {}", HostRemote::GetUrl());
