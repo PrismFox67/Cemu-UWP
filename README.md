@@ -32,9 +32,9 @@ Games players have tested on Xbox Series X|S; the **[compatibility list](https:/
 has the resolution, FPS and notes for each one.
 - **Perfect:** Mario Tennis: Ultra Smash, New Super Mario Bros. U
 - **Playable:** Mario Kart 8, Pokkén Tournament, Super Smash Bros. for Wii U, The Legend of Zelda: Breath of the Wild
-  (Magnesis and Stasis work; dark terrain patches), The Legend of Zelda: Wind Waker HD
+  (Magnesis and Stasis work; dark terrain patches), The Legend of Zelda: Wind Waker HD, Splatoon
 - **Issues:** Donkey Kong Country: Tropical Freeze and Zelda: Twilight Princess HD (shadows), Sonic Lost World (crashes
-  in some stages), Super Mario 3D World (graphical bugs), Splatoon
+  in some stages), Super Mario 3D World (graphical bugs)
 - **Broken:** Need for Speed: Most Wanted U (closes after the intro video), Mario Kart DS (Wii U Virtual Console)
 
 Tried a game that isn't listed? Tell us how it went with the bug report form in the
