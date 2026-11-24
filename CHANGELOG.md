@@ -5,6 +5,11 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-24
+### Skylanders
+- In-game menu Skylander list: LB/RB jump to the first figure of the previous/next game (D-pad still steps one figure).
+- Magic items, traps, adventure packs and Swapper halves are now listed under the right game (Piggy Bank was under Spyro's Adventure instead of Trap Team).
+
 ## 2026-11-21
 ### Saves
 - Settings > Save manager: 'Export save to USB' copies a game's save to CemuSaves/<game> (<title id>) on the USB drive (the export before it is kept as '... previous'). 'Import save from USB' lists those exports, saves from desktop Cemu (mlc01/usr/save/... or Cemu/mlc01/usr/save/... on the drive) and the 'Back up saves' folders; pick one and press again to confirm. The current save is always backed up first (CemuBackups/auto, 'replaced-<time>'); if that backup isn't possible the import stops and nothing changes.

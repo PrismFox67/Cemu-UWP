@@ -17,6 +17,7 @@ Status: **Perfect** (no known issues) · **Playable** (small issues) · **Issues
 | Need for Speed: Most Wanted U | ? | Broken | Closes right after the intro video, when gameplay starts ([issue #3](https://github.com/PrismFox67/Cemu-UWP/issues/3)). | GuilhermeLCv | 2026-10-21 |
 | New Super Mario Bros. U | 1440p 60 | Perfect | | MagnusBRA | before 39c5467 |
 | Pokkén Tournament | 1440p 60 | Playable | Naming keyboard couldn't be used with a controller; fixed in 0f235bd, retest. | MagnusBRA | before 39c5467 |
+| Skylanders: Giants | ? | ? | Boots to the title screen; more testing pending. Figures: in-game menu **Skylander**. | The Primadonna (Discord) | 2026-11-19 |
 | Skylanders: Spyro's Adventure | ? | Issues | Works decently (English patch), graphical glitches on character models. Figures: in-game menu **Skylander**. | The Primadonna (Discord) | 2026-11-09 |
 | Sonic Lost World | ? | Issues | Title screen crash fixed in 664e165; crashes during some stages on Series S ([issue #7](https://github.com/PrismFox67/Cemu-UWP/issues/7)). | gabrielvalerio701-lang | ? |
 | Splatoon | ? | Playable | Ink shows and sticks (tutorial ramp climbable) on Series X since 0.1.246. Earlier "doesn't work properly" reports ([issue #2](https://github.com/PrismFox67/Cemu-UWP/issues/2)) predate the ink fixes. | VinFer | 0.1.246 |
