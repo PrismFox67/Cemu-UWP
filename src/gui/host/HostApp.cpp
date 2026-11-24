@@ -1689,6 +1689,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 			std::scoped_lock lock(s_skyMutex);
 			cemuLog_log(LogType::Force, "Skylander test: {} -> {}", step > 0 ? "RB" : "LB", s_skyIndex);
 		}
+		// #948: place the selected figure and take it off again (logs id, variant, header CRC, used blocks)
+		_ToggleSkylander();
+		_ToggleSkylander();
 	}
 	// CEMU_HOST_TEST_REMOTE=1: turn the phone remote on at start and log its address (#936 PC test)
 	if (std::getenv("CEMU_HOST_TEST_REMOTE") && HostRemote::Start())
