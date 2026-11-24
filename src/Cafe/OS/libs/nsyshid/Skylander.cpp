@@ -1,6 +1,8 @@
 #include "Skylander.h"
 
 #include <random>
+#include <atomic>
+#include <algorithm>
 
 #include "nsyshid.h"
 #include "Backend.h"
@@ -692,6 +694,14 @@ namespace nsyshid
 		return true;
 	}
 
+	// #948 diagnostics: the first block reads/writes of the game, to see what it does with a figure it rejects
+	static void _LogBlockAccess(char command, uint8 skyNum, uint8 block, bool present)
+	{
+		static std::atomic<uint32> s_logged = 0;
+		if (s_logged.fetch_add(1) < 64)
+			cemuLog_log(LogType::Force, "Skylanders portal: {} slot {} block {}{}", command == 'Q' ? "read" : "write", skyNum, block, present ? "" : " (no figure there)");
+	}
+
 	void SkylanderUSB::ControlTransfer(uint8* buf, uint32 length)
 	{
 		std::array<uint8, 64> interruptResponse = {};
@@ -734,10 +744,12 @@ namespace nsyshid
 			const uint8 skyNum = buf[1] & 0xF;
 			const uint8 block = buf[2];
 			g_skyportal.QueryBlock(skyNum, block, interruptResponse.data());
+			_LogBlockAccess('Q', skyNum, block, (interruptResponse[1] & 0x10) != 0);
 			break;
 		}
 		case 'R':
 		{
+			cemuLog_log(LogType::Force, "Skylanders portal: reset/ready query");
 			interruptResponse = {buf[0], 0x02, 0x1b};
 			break;
 		}
@@ -752,6 +764,7 @@ namespace nsyshid
 			const uint8 skyNum = buf[1] & 0xF;
 			const uint8 block = buf[2];
 			g_skyportal.WriteBlock(skyNum, block, &buf[3], interruptResponse.data());
+			_LogBlockAccess('W', skyNum, block, (interruptResponse[1] & 0x10) != 0);
 			break;
 		}
 		default:
@@ -887,6 +900,22 @@ namespace nsyshid
 			skylander.queuedStatus.push(Skylander::ADDED);
 			skylander.queuedStatus.push(Skylander::READY);
 			skylander.lastId = skySerial;
+			// #948: what the game gets: figure id + variant (high byte: game/year code), the header CRC the game checks,
+			// and how many of the 64 blocks after the header hold data (0 = never used / blank figure)
+			uint16 id, variant, storedCrc;
+			memcpy(&id, buf + 0x10, 2);
+			memcpy(&variant, buf + 0x1C, 2);
+			memcpy(&storedCrc, buf + 0x1E, 2);
+			const uint16 crc = SkylanderCRC16(0xFFFF, buf, 0x1E);
+			int used = 0;
+			for (int b = 2; b < 64; b++)
+			{
+				if ((b % 4) == 3)
+					continue; // sector trailers
+				used += std::any_of(buf + b * 16, buf + b * 16 + 16, [](uint8 v) { return v != 0; }) ? 1 : 0;
+			}
+			cemuLog_log(LogType::Force, "Skylanders portal: slot {} figure id {} variant 0x{:04x} ({}), serial {:08x}, header CRC {} (0x{:04x}), {} data blocks used",
+				foundSlot, id, variant, FindSkylander(id, variant), skySerial, crc == storedCrc ? "ok" : "WRONG", storedCrc, used);
 		}
 		return foundSlot;
 	}
