@@ -8,7 +8,7 @@ On a Series X it runs **Mario Kart 8 at 1440p or 4K, locked at 60 FPS**, with 4 
 **[compatibility list](https://github.com/PrismFox67/Cemu-UWP/blob/d3d12-backend/docs/COMPATIBILITY.md)**.
 
 ### Download
-![Xbox app downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FPrismFox67%2FCemu-UWP%2Freleases%2Fdownload%2Fdownload-stats%2Ftotals.json&query=%24.xbox&label=Xbox%20app%20downloads&color=107c10&cacheSeconds=300)
+![Xbox app downloads](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fgithub.com%2FPrismFox67%2FCemu-UWP%2Freleases%2Fdownload%2Fdownload-stats%2Ftotals.json&query=%24.xbox&label=Xbox%20app%20downloads&color=107c10&cacheSeconds=3600)
 (all builds since 10/19/2026; the number is kept across builds, GitHub's own counter resets on every new build)
 
 Everything is on the **[ci-latest pre-release](https://github.com/PrismFox67/Cemu-UWP/releases/tag/ci-latest)**, rebuilt
@@ -165,6 +165,16 @@ On Windows, Cemu is available both as an installer and in a portable format, whe
 The native macOS build is currently purely experimental and should not be considered stable or ready for issue-free gameplay. There are also known issues with degraded performance due to the use of MoltenVK and Rosetta for ARM Macs. We appreciate your patience while we improve Cemu for macOS.
 
 Pre-2.0 releases can be found on Cemu's [changelog page](https://cemu.info/changelog.html).
+
+## Privacy
+The app collects no personal data. It only checks GitHub for updates and downloads box art and graphic packs, and the phone remote stays on your
+local network. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## Legal
+Cemu-UWP is not affiliated with or endorsed by Nintendo, Microsoft or the Cemu team. Wii U is a trademark of Nintendo.
+No games, keys, firmware or other copyrighted Nintendo files are included or provided; use only games you have dumped
+from your own console. Dev Mode apps are installed at your own risk; the software is provided "as is", without
+warranty (see the license).
 
 ## Build Instructions
 
