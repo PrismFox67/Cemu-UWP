@@ -520,6 +520,10 @@ struct CemuConfig
 	sint32 audio_api = 0;
 	sint32 audio_delay = 2;
 	AudioChannels tv_channels = kStereo, pad_channels = kStereo, input_channels = kMono;
+	// #964 Xbox frontend 'Audio output': 0 Stereo, 1 Surround (5.1 game mix), 2 Headphones (stereo game mix, output
+	// format chosen by the device: for headsets / spatial sound where a forced format is silent)
+	enum { kAudioOutStereo = 0, kAudioOutSurround = 1, kAudioOutHeadphones = 2 };
+	sint32 audio_output_mode = kAudioOutStereo;
 	sint32 tv_volume = 50, pad_volume = 0, input_volume = 50, portal_volume = 50;
 	std::wstring tv_device{ L"default" }, pad_device, input_device, portal_device;
 

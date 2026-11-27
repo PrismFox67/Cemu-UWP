@@ -1686,14 +1686,18 @@ namespace
 		ImGui::SeparatorText(_TR("Audio"));
 		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
 		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
-		const char* channelNames[] = { "Mono", _TR("Stereo"), "5.1 surround" };
-		int channels = std::clamp<int>(config.tv_channels, 0, 2);
+		// #964 one setting: Stereo / Surround (5.1 game mix) / Headphones (stereo mix in the output's own format)
+		const char* outputNames[] = { _TR("Stereo"), _TR("Surround (5.1)"), _TR("Headphones") };
+		int output = std::clamp<int>(config.audio_output_mode, CemuConfig::kAudioOutStereo, CemuConfig::kAudioOutHeadphones);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
-		if (ImGui::Combo(_TR("Sound output (applies when a game starts)"), &channels, channelNames, 3))
+		if (ImGui::Combo(_TR("Audio output (applies when a game starts)"), &output, outputNames, 3))
 		{
-			config.tv_channels = (AudioChannels)channels;
+			config.audio_output_mode = output;
+			config.tv_channels = output == CemuConfig::kAudioOutSurround ? kSurround : kStereo;
+			cemuLog_log(LogType::Force, "Audio: output set to {}", outputNames[output]);
 			changed = true;
 		}
+		ImGui::TextDisabled("%s", _TR("Headphones: try this if games have no sound"));
 		int volume = std::clamp<int>(config.tv_volume, 0, 100);
 		ImGui::SetNextItemWidth(400.0f * s_scale);
 		if (ImGui::SliderInt(_TR("Volume"), &volume, 0, 100, "%d%%"))

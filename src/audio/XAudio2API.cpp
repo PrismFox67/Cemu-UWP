@@ -11,6 +11,7 @@
 
 #include "XAudio2API.h"
 #include "util/helpers/helpers.h"
+#include "config/CemuConfig.h"
 
 #ifndef CEMU_UWP
 #include <WbemCli.h>
@@ -50,7 +51,10 @@ XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channel
 
 
 	IXAudio2MasteringVoice* mastering_voice;
-	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, channels, samplerate, 0, m_device_id.empty() ? nullptr : m_device_id.c_str()))))
+	// #962/#964 'Headphones': the device picks the mastering channel count and rate (as the launcher music does), XAudio2
+	// mixes and resamples our source voice. Forcing 6 ch / 48 kHz onto headset / spatial-sound outputs was silent on Xbox
+	const bool deviceFormat = GetConfig().audio_output_mode == CemuConfig::kAudioOutHeadphones;
+	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, deviceFormat ? XAUDIO2_DEFAULT_CHANNELS : channels, deviceFormat ? XAUDIO2_DEFAULT_SAMPLERATE : samplerate, 0, m_device_id.empty() ? nullptr : m_device_id.c_str()))))
 		throw std::runtime_error(fmt::format("can't create xaudio mastering voice (hres: {:#x})", hres));
 
 	m_mastering_voice.reset(mastering_voice);
@@ -60,7 +64,8 @@ XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channel
 		mastering_voice->GetChannelMask(&deviceMask);
 		XAUDIO2_VOICE_DETAILS details{};
 		mastering_voice->GetVoiceDetails(&details);
-		cemuLog_log(LogType::Force, "XAudio2: {} channel output at {} Hz (device speaker mask 0x{:x})", details.InputChannels, details.InputSampleRate, (uint32)deviceMask);
+		cemuLog_log(LogType::Force, "XAudio2: {} channel output at {} Hz (device speaker mask 0x{:x}, {}), source {} ch at {} Hz", details.InputChannels, details.InputSampleRate, (uint32)deviceMask,
+			deviceFormat ? "device format" : "forced format", channels, samplerate);
 	}
 
 	m_wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;

@@ -230,6 +230,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	pad_channels = audio.get("PadChannels", kStereo);
 	input_channels = audio.get("InputChannels", kMono);
 	tv_volume = audio.get("TVVolume", 20);
+	// not set yet: taken from the old TV channels setting (mono/stereo -> Stereo, 5.1 -> Surround)
+	audio_output_mode = std::clamp<sint32>(audio.get("OutputMode", tv_channels == kSurround ? kAudioOutSurround : kAudioOutStereo), kAudioOutStereo, kAudioOutHeadphones);
 	pad_volume = audio.get("PadVolume", 0);
 	input_volume = audio.get("InputVolume", 20);
 	portal_volume = audio.get("PortalVolume", 20);
@@ -458,6 +460,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	audio.set("PadChannels", pad_channels);
 	audio.set("InputChannels", input_channels);
 	audio.set("TVVolume", tv_volume);
+	audio.set("OutputMode", audio_output_mode);
 	audio.set("PadVolume", pad_volume);
 	audio.set("InputVolume", input_volume);
 	audio.set("PortalVolume", portal_volume);

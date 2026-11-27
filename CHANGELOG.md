@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-27
+### Audio
+- Settings > Audio has one 'Audio output' setting: Stereo, Surround (5.1) or Headphones. Headphones lets the console pick the output format; try it if games have no sound on a headset or with spatial sound (launcher music worked, game audio was silent). Your old setting carries over (5.1 -> Surround, otherwise Stereo).
+
 ## 2026-11-26
 ### Docs
 - New privacy page (docs/PRIVACY.md) listing everything the app connects to, plus Privacy and Legal sections in the README.

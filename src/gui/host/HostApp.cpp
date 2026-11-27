@@ -266,9 +266,11 @@ namespace
 			config.async_compile = true;
 			config.vsync = 1;
 			// a console's output: full volume, 5.1 (XAudio2 downmixes for stereo devices)
-			config.tv_channels = kSurround;
+			config.audio_output_mode = CemuConfig::kAudioOutSurround;
 			config.tv_volume = 100;
 		}
+		// #964 the one 'Audio output' setting decides the game mix
+		config.tv_channels = config.audio_output_mode == CemuConfig::kAudioOutSurround ? kSurround : kStereo;
 		// XAudio2 is the audio API that exists everywhere this frontend runs (Windows, UWP, Xbox)
 		if (!IAudioAPI::IsAudioAPIAvailable((IAudioAPI::AudioAPI)config.audio_api) && IAudioAPI::IsAudioAPIAvailable(IAudioAPI::XAudio2))
 			config.audio_api = IAudioAPI::XAudio2;
