@@ -9,6 +9,7 @@
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
 #include "gui/host/HostCompanion.h"
+#include "gui/host/HostOnline.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "gui/host/LauncherRenderer.h"
@@ -1700,6 +1701,20 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	// CEMU_HOST_TEST_COMPANION=<phone ip>: turn the phone companion (#954) on at start, tools/companion_test.py plays the app
 	if (const char* ip = std::getenv("CEMU_HOST_TEST_COMPANION"))
 		HostCompanion::Start(ip);
+	// CEMU_HOST_TEST_ONLINE=1[,pretendo|offline]: log the online status, import <export root>/CemuOnline (#956 PC test)
+	if (const char* online = std::getenv("CEMU_HOST_TEST_ONLINE"))
+	{
+		const auto st = HostOnline::GetStatus();
+		cemuLog_log(LogType::Force, "Online test: before import otp.bin {}, seeprom.bin {}, {} certificate files missing", st.otp, st.seeprom, st.missingCertificates);
+		cemuLog_log(LogType::Force, "Online test: {}", HostOnline::ImportFromUsb());
+		for (const auto& a : HostOnline::GetAccounts())
+			cemuLog_log(LogType::Force, "Online test: account {:08x} '{}' online={}", a.persistentId, a.miiName, a.onlineAccount);
+		if (strstr(online, "pretendo"))
+			HostOnline::SetService(2);
+		else if (strstr(online, "offline"))
+			HostOnline::SetService(0);
+		cemuLog_log(LogType::Force, "Online test: service {}", HostOnline::GetService());
+	}
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;

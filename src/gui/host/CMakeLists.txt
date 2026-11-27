@@ -21,6 +21,8 @@ add_library(CemuHostFrontend
 	HostSounds.cpp
 	HostSounds.h
 	HostPlatform.h
+	HostOnline.cpp
+	HostOnline.h
 	HostRemote.cpp
 	HostRemote.h
 	thirdparty/qrcodegen.cpp
