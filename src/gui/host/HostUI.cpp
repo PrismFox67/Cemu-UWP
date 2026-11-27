@@ -11,11 +11,7 @@
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
 #include "gui/host/HostCompanion.h"
-<<<<<<< HEAD
-=======
-#include "gui/host/HostOnline.h"
 #include "gui/host/HostStats.h"
->>>>>>> 57488d5b (Xbox frontend (#958, EXPERIMENTAL test branch): opt-in anonymous play stats)
 #include "gui/host/thirdparty/qrcodegen.hpp"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -1746,56 +1742,6 @@ namespace
 				ImGui::TextWrapped("%s", _TR("Anyone on your network can see your game list while this is on. Turn it off when you're done."));
 		}
 
-<<<<<<< HEAD
-=======
-		ImGui::SeparatorText(_TR("Online play (experimental)"));
-		{
-			// #956: Pretendo with the files dumped from your own Wii U. Status is re-read every 2 s, not every frame
-			static HostOnline::Status s_status;
-			static std::vector<HostOnline::AccountInfo> s_accounts;
-			static double s_nextRead = 0.0;
-			static std::string s_importResult;
-			if (ImGui::GetTime() >= s_nextRead)
-			{
-				s_nextRead = ImGui::GetTime() + 2.0;
-				s_status = HostOnline::GetStatus();
-				s_accounts = HostOnline::GetAccounts();
-			}
-			ImGui::TextWrapped("otp.bin: %s   seeprom.bin: %s   certificate files missing: %d", s_status.otp.c_str(), s_status.seeprom.c_str(), (int)s_status.missingCertificates);
-			if (!HostOnline::IsReady(s_status))
-				ImGui::TextWrapped("%s", fmt::format("Dump these from your own Wii U (see docs/ONLINE.md). otp.bin and seeprom.bin go in {}, the certificates in {}/sys/title/0005001b/10054000. "
-					"Or put them on the USB drive in CemuOnline/ and use the button below.", s_status.otpPath, s_status.mlcPath).c_str());
-			if (ImGui::Button(_TR("Find online files on USB (CemuOnline folder)")))
-			{
-				s_importResult = HostOnline::ImportFromUsb();
-				s_nextRead = 0.0;
-			}
-			if (!s_importResult.empty())
-				ImGui::TextWrapped("%s", s_importResult.c_str());
-			const uint32 active = HostOnline::GetActiveAccount();
-			std::string activeLabel = fmt::format("{:08x}", active);
-			for (const auto& a : s_accounts)
-				if (a.persistentId == active)
-					activeLabel = fmt::format("{} ({:08x}){}", a.miiName, a.persistentId, a.onlineAccount ? "" : " - no online account linked");
-			ImGui::SetNextItemWidth(500.0f * s_scale);
-			if (ImGui::BeginCombo(_TR("Account"), activeLabel.c_str()))
-			{
-				for (const auto& a : s_accounts)
-					if (ImGui::Selectable(fmt::format("{} ({:08x}){}", a.miiName, a.persistentId, a.onlineAccount ? "" : " - offline only").c_str(), a.persistentId == active))
-						HostOnline::SetActiveAccount(a.persistentId);
-				ImGui::EndCombo();
-			}
-			const bool hasCustom = !HostOnline::GetCustomUrl().empty();
-			const char* serviceNames[] = { "Offline", "Pretendo", "Custom (network_services.xml)" };
-			const int serviceIds[] = { 0, 2, 3 };
-			const int service = HostOnline::GetService();
-			int index = service == 2 ? 1 : (service == 3 && hasCustom) ? 2 : 0;
-			ImGui::SetNextItemWidth(500.0f * s_scale);
-			if (ImGui::Combo(_TR("Network service"), &index, serviceNames, hasCustom ? 3 : 2))
-				HostOnline::SetService(serviceIds[index]);
-			ImGui::TextWrapped("%s", _TR("Takes effect the next time a game starts. Nintendo's own servers are closed, so they aren't offered."));
-		}
-
 		ImGui::SeparatorText(_TR("Privacy"));
 		if (!HostStats::IsAvailable())
 			ImGui::TextWrapped("%s", _TR("Anonymous play stats: not active in this build."));
@@ -1813,7 +1759,6 @@ namespace
 		}
 		ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
 
->>>>>>> 57488d5b (Xbox frontend (#958, EXPERIMENTAL test branch): opt-in anonymous play stats)
 		ImGui::SeparatorText(_TR("Audio"));
 		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
 		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
