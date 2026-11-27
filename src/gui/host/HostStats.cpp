@@ -11,9 +11,8 @@
 
 namespace HostStats
 {
-	// set once the worker is deployed (Tools/stats-worker in the private swarm repo). Until then the feature is dormant
-	// unless settings.xml has <StatsEndpoint>
-	constexpr const char* kStatsEndpoint = "";
+	// the deployed stats worker; settings.xml <StatsEndpoint> overrides it (PC tests against a local server)
+	constexpr const char* kStatsEndpoint = "https://cemu-uwp-stats.cemu-uwp.workers.dev";
 
 	std::mutex s_mutex;
 	std::condition_variable s_wake;
