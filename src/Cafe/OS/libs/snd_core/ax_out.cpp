@@ -186,6 +186,20 @@ namespace snd_core
 		{
 			if(g_tvAudio)
 				g_tvAudio->FeedBlock(tempTVChannelData);
+			// #955: does the game produce sound at all? Peak level of what reached the output, after ~12 s, 1, 3 and 6 min
+			{
+				static uint64 s_fedBlocks = 0;
+				static sint32 s_peak = 0;
+				for (sint32 i = 0; i < AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP * (sint32)channels; ++i)
+					s_peak = std::max<sint32>(s_peak, std::abs((sint32)tempTVChannelData[i]));
+				s_fedBlocks++;
+				if (s_fedBlocks == 1000 || s_fedBlocks == 5000 || s_fedBlocks == 15000 || s_fedBlocks == 30000)
+				{
+					cemuLog_log(LogType::Force, "Audio: {} TV blocks so far, {} channels, peak level {} of 32767{}{}", s_fedBlocks, channels, s_peak,
+						g_tvAudio ? "" : ", NO output device", s_peak == 0 ? " (the game sent only silence)" : "");
+					s_peak = 0;
+				}
+			}
 
 			tempAudioBlockCounter = 0;
 		}
