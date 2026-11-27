@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-26
+### Phone companion (test build)
+- Settings > 'Phone companion (DanP app)': enter the IP of the phone running DanP's companion app and turn it on. The app then shows your game list with icons and box art, follows the game highlighted on the TV, can move the selection with its arrow keys and can start a game. No video streaming. Off by default and not remembered; the app can't send a password, so anyone on your home network can see the game list while it's on.
+
 ## 2026-11-24
 ### Skylanders
 - In-game menu Skylander list: LB/RB jump to the first figure of the previous/next game (D-pad still steps one figure).

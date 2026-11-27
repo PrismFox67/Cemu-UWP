@@ -4,6 +4,8 @@
 add_library(CemuHostFrontend
 	HostApp.cpp
 	HostApp.h
+	HostCompanion.cpp
+	HostCompanion.h
 	HostControllers.cpp
 	HostControllers.h
 	HostGamepad.cpp

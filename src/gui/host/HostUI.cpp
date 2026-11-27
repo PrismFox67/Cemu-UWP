@@ -10,6 +10,7 @@
 #include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
+#include "gui/host/HostCompanion.h"
 #include "gui/host/thirdparty/qrcodegen.hpp"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -222,6 +223,11 @@ namespace
 		HostIcons::Request(titleIds);
 		s_games = std::move(games);
 		s_selectedGame = std::clamp(s_selectedGame, 0, std::max(0, (int)s_games.size() - 1));
+		// #954 the phone companion app lists the same games
+		std::vector<HostCompanion::Entry> catalogue;
+		for (const GameEntry& e : s_games)
+			catalogue.push_back({ e.titleId, e.name, _RegionName(e.region), _pathToUtf8(e.path.filename()), e.version });
+		HostCompanion::SetCatalogue(std::move(catalogue));
 	}
 
 	void _AddGamePath(const fs::path& path)
@@ -576,6 +582,30 @@ namespace
 					s_selectedGame--;
 				if (_CarouselKey(ImGuiKey_GamepadDpadRight, ImGuiKey_GamepadLStickRight, ImGuiKey_RightArrow) && s_selectedGame < count - 1)
 					s_selectedGame++;
+			}
+			// #954 phone companion: arrow keys, highlighted game and launch requests from the app
+			if (HostCompanion::IsRunning())
+			{
+				const uint32 nav = HostCompanion::TakeNav();
+				if (noPopup && (nav & (HostCompanion::kNavLeft | HostCompanion::kNavUp)) && s_selectedGame > 0)
+					s_selectedGame--;
+				if (noPopup && (nav & (HostCompanion::kNavRight | HostCompanion::kNavDown)) && s_selectedGame < count - 1)
+					s_selectedGame++;
+				auto indexOf = [](uint64 titleId) {
+					for (int i = 0; i < (int)s_games.size(); i++)
+						if (s_games[i].titleId == titleId)
+							return i;
+					return -1;
+				};
+				if (const auto sel = HostCompanion::TakeSelection(); sel && indexOf(*sel) >= 0)
+					s_selectedGame = indexOf(*sel);
+				if (const auto req = HostCompanion::TakeLaunch(); req && indexOf(*req) >= 0)
+				{
+					s_selectedGame = indexOf(*req);
+					launch = s_games[s_selectedGame].path;
+					cemuLog_log(LogType::Force, "Companion: launching {}", s_games[s_selectedGame].name);
+				}
+				HostCompanion::SetSelection(s_games[s_selectedGame].titleId);
 			}
 			if (noPopup)
 			{
@@ -1681,6 +1711,31 @@ namespace
 				ImGui::TextUnformatted(url.c_str());
 				ImGui::TextWrapped("%s", _TR("Anyone on your network with this address can change these settings. Turn it off when you're done; the address changes every time."));
 			}
+		}
+
+		ImGui::SeparatorText(_TR("Phone companion (DanP app)"));
+		{
+			// #954: DanP's companion app shows this game list with box art and starts games. The app can't send a
+			// password, so this is off by default, not remembered, and only answers that phone and the local network
+			static char s_companionIp[64]{};
+			if (!s_companionIp[0])
+				strncpy(s_companionIp, HostControllers::GetMotionServer(0).c_str(), sizeof(s_companionIp) - 1);
+			bool companion = HostCompanion::IsRunning();
+			if (!companion)
+				_TextField("##companionip", "Phone IP (the app's DSU server)", s_companionIp, sizeof(s_companionIp));
+			if (ImGui::Checkbox(_TR("Phone companion (DanP app)"), &companion))
+			{
+				const std::string ip = boost::trim_copy(std::string(s_companionIp));
+				if (companion && !ip.empty())
+					HostCompanion::Start(ip);
+				else
+					HostCompanion::Stop();
+			}
+			const std::string status = HostCompanion::GetStatus();
+			if (!status.empty())
+				ImGui::TextWrapped("%s", status.c_str());
+			if (companion)
+				ImGui::TextWrapped("%s", _TR("Anyone on your network can see your game list while this is on. Turn it off when you're done."));
 		}
 
 		ImGui::SeparatorText(_TR("Audio"));
