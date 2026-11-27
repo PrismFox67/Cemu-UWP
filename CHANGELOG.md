@@ -7,6 +7,7 @@ Xbox package of each build has a higher version (`0.1.<build>.0`), and the launc
 
 ## 2026-11-27
 ### Audio
+- Fixed: no game sound at all on some consoles. If the saved audio device was empty or no longer exists, Cemu now uses the default output instead of playing nothing.
 - Settings > Audio has one 'Audio output' setting: Stereo, Surround (5.1) or Headphones. Headphones lets the console pick the output format; try it if games have no sound on a headset or with spatial sound (launcher music worked, game audio was silent). Your old setting carries over (5.1 -> Surround, otherwise Stereo).
 
 ## 2026-11-26
