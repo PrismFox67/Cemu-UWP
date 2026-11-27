@@ -269,6 +269,13 @@ namespace
 			config.audio_output_mode = CemuConfig::kAudioOutSurround;
 			config.tv_volume = 100;
 		}
+		// #965 this frontend has no device picker, so an empty TV device (= sound off in desktop Cemu) is never a choice:
+		// a settings.xml without <TVDevice> loaded as '' and games were silent. Use the default output
+		if (config.tv_device.empty())
+		{
+			config.tv_device = L"default";
+			cemuLog_log(LogType::Force, "Audio: TV device was empty, set to the default output");
+		}
 		// #964 the one 'Audio output' setting decides the game mix
 		config.tv_channels = config.audio_output_mode == CemuConfig::kAudioOutSurround ? kSurround : kStereo;
 		// XAudio2 is the audio API that exists everywhere this frontend runs (Windows, UWP, Xbox)

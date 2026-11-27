@@ -9,6 +9,7 @@
 #endif
 #endif
 #include "config/CemuConfig.h"
+#include <boost/nowide/convert.hpp>
 #if HAS_CUBEB
 #include "CubebAPI.h"
 #endif
@@ -128,6 +129,13 @@ AudioAPIPtr IAudioAPI::CreateDeviceFromConfig(AudioType type, sint32 rate, sint3
 		const auto it = std::find_if(devices.begin(), devices.end(), [&selectedDevice](const auto& d) { return d->GetIdentifier() == selectedDevice; });
 		if (it != devices.end())
 			device_description = *it;
+		// #965 saved device not there (unplugged, other console): use the default output rather than no sound
+		if (!device_description && !devices.empty())
+		{
+			const auto def = std::find_if(devices.begin(), devices.end(), [](const auto& d) { return d->GetIdentifier() == L"default"; });
+			device_description = def != devices.end() ? *def : devices.front();
+			cemuLog_log(LogType::Force, "Audio: device '{}' not found, using '{}'", boost::nowide::narrow(selectedDevice), boost::nowide::narrow(device_description->GetIdentifier()));
+		}
 	}
 	if (!device_description)
 		throw std::runtime_error("failed to find selected device while trying to create audio device");
