@@ -860,6 +860,13 @@ namespace snd_core
 		AXVPBInternal_t* internalVoice = firstVoice;
 		cemu_assert_debug(sndGeneric.initParam.frameLength == 0);
 		float tmpSampleBuffer[AX_SAMPLES_MAX];
+		// #955 diagnostics: how many voices the game plays (logged with the TV peak level in ax_out.cpp)
+		extern std::atomic<uint32> g_axDiagMaxVoices;
+		uint32 voiceCount = 0;
+		for (AXVPBInternal_t* v = firstVoice; v; v = v->nextToProcess.GetPtr())
+			voiceCount++;
+		if (voiceCount > g_axDiagMaxVoices.load(std::memory_order_relaxed))
+			g_axDiagMaxVoices.store(voiceCount, std::memory_order_relaxed);
 		while (internalVoice)
 		{
 			AXVoiceMix_DecodeSamples(internalVoice, tmpSampleBuffer, sampleCount);

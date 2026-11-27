@@ -151,6 +151,7 @@ namespace snd_core
 
 	#define AX_FRAMES_PER_GROUP		(4)
 
+	std::atomic<uint32> g_axDiagMaxVoices{ 0 };
 	sint16 tempTVChannelData[AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT * AX_FRAMES_PER_GROUP] = {};
 	sint32 tempAudioBlockCounter = 0;
 
@@ -195,7 +196,8 @@ namespace snd_core
 				s_fedBlocks++;
 				if (s_fedBlocks == 1000 || s_fedBlocks == 5000 || s_fedBlocks == 15000 || s_fedBlocks == 30000)
 				{
-					cemuLog_log(LogType::Force, "Audio: {} TV blocks so far, {} channels, peak level {} of 32767{}{}", s_fedBlocks, channels, s_peak,
+					cemuLog_log(LogType::Force, "Audio: {} TV blocks so far, {} channels, peak level {} of 32767, up to {} voices playing, renderer {} kHz, frame length {}{}{}", s_fedBlocks, channels, s_peak,
+						g_axDiagMaxVoices.exchange(0), sndGeneric.initParam.rendererFreq == AX_RENDERER_FREQ_48KHZ ? 48 : 32, (uint32)sndGeneric.initParam.frameLength,
 						g_tvAudio ? "" : ", NO output device", s_peak == 0 ? " (the game sent only silence)" : "");
 					s_peak = 0;
 				}
