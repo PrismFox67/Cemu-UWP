@@ -36,6 +36,8 @@ namespace HostPlatform
 	// downloads a URL (https, follows redirects) into memory. Blocks, call it from a worker thread. progress gets the
 	// received and total byte count (total is 0 if unknown). On failure returns false and describes the problem in error
 	bool HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress = {});
+	// #958: POST a small JSON body, gives up after timeoutMs. True on a 2xx answer
+	bool HttpPostJson(const std::string& url, const std::string& body, std::string& error, uint32 timeoutMs = 5000);
 
 	// memory the app uses and the most it may use (UWP/Xbox: the app's memory budget, 0 if there is no fixed limit)
 	void GetMemoryUsage(uint64& usage, uint64& limit);

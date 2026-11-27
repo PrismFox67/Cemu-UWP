@@ -9,6 +9,7 @@
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
 #include "gui/host/HostCompanion.h"
+#include "gui/host/HostStats.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "gui/host/LauncherRenderer.h"
@@ -1709,6 +1710,10 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	// CEMU_HOST_TEST_COMPANION=<phone ip>: turn the phone companion (#954) on at start, tools/companion_test.py plays the app
 	if (const char* ip = std::getenv("CEMU_HOST_TEST_COMPANION"))
 		HostCompanion::Start(ip);
+	// #958: CEMU_HOST_TEST_STATS=yes|no answers the consent prompt (PC test with StatsEndpoint in settings.xml)
+	if (const char* stats = std::getenv("CEMU_HOST_TEST_STATS"))
+		HostStats::SetConsent(std::string(stats) == "yes");
+	HostStats::Start();
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;
@@ -1899,6 +1904,7 @@ void HostApp::Shutdown()
 	HostIcons::Stop();
 	HostRemote::Stop();
 	HostCompanion::Stop();
+	HostStats::Stop();
 	HostMusic::Shutdown();
 	HostSounds::Shutdown();
 	s_launcher.reset();

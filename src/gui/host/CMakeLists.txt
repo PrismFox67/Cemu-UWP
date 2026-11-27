@@ -19,6 +19,8 @@ add_library(CemuHostFrontend
 	HostMusicDecoder.cpp
 	HostMusicDecoder.h
 	HostSounds.cpp
+	HostStats.cpp
+	HostStats.h
 	HostSounds.h
 	HostPlatform.h
 	HostRemote.cpp

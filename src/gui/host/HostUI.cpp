@@ -11,6 +11,11 @@
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
 #include "gui/host/HostCompanion.h"
+<<<<<<< HEAD
+=======
+#include "gui/host/HostOnline.h"
+#include "gui/host/HostStats.h"
+>>>>>>> 57488d5b (Xbox frontend (#958, EXPERIMENTAL test branch): opt-in anonymous play stats)
 #include "gui/host/thirdparty/qrcodegen.hpp"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -666,7 +671,10 @@ namespace
 			// one line: the title (brighter, shortened with an ellipsis so the line never wraps), then region, ID, version
 			{
 				ImFont* font = ImGui::GetFont();
-				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+				std::string players; // #958 counts from the stats server, hidden when zero or unreachable
+				if (const auto c = HostStats::GetCounts(game.titleId))
+					players = c->now ? fmt::format("   {} playing now", c->now) : fmt::format("   {} this week", c->week);
+				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}{}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count, players);
 				const float detailsW = font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, details.c_str()).x;
 				const float maxTitleW = std::max(area.x * 0.95f - detailsW, area.x * 0.3f);
 				std::string title = game.name;
@@ -1738,6 +1746,74 @@ namespace
 				ImGui::TextWrapped("%s", _TR("Anyone on your network can see your game list while this is on. Turn it off when you're done."));
 		}
 
+<<<<<<< HEAD
+=======
+		ImGui::SeparatorText(_TR("Online play (experimental)"));
+		{
+			// #956: Pretendo with the files dumped from your own Wii U. Status is re-read every 2 s, not every frame
+			static HostOnline::Status s_status;
+			static std::vector<HostOnline::AccountInfo> s_accounts;
+			static double s_nextRead = 0.0;
+			static std::string s_importResult;
+			if (ImGui::GetTime() >= s_nextRead)
+			{
+				s_nextRead = ImGui::GetTime() + 2.0;
+				s_status = HostOnline::GetStatus();
+				s_accounts = HostOnline::GetAccounts();
+			}
+			ImGui::TextWrapped("otp.bin: %s   seeprom.bin: %s   certificate files missing: %d", s_status.otp.c_str(), s_status.seeprom.c_str(), (int)s_status.missingCertificates);
+			if (!HostOnline::IsReady(s_status))
+				ImGui::TextWrapped("%s", fmt::format("Dump these from your own Wii U (see docs/ONLINE.md). otp.bin and seeprom.bin go in {}, the certificates in {}/sys/title/0005001b/10054000. "
+					"Or put them on the USB drive in CemuOnline/ and use the button below.", s_status.otpPath, s_status.mlcPath).c_str());
+			if (ImGui::Button(_TR("Find online files on USB (CemuOnline folder)")))
+			{
+				s_importResult = HostOnline::ImportFromUsb();
+				s_nextRead = 0.0;
+			}
+			if (!s_importResult.empty())
+				ImGui::TextWrapped("%s", s_importResult.c_str());
+			const uint32 active = HostOnline::GetActiveAccount();
+			std::string activeLabel = fmt::format("{:08x}", active);
+			for (const auto& a : s_accounts)
+				if (a.persistentId == active)
+					activeLabel = fmt::format("{} ({:08x}){}", a.miiName, a.persistentId, a.onlineAccount ? "" : " - no online account linked");
+			ImGui::SetNextItemWidth(500.0f * s_scale);
+			if (ImGui::BeginCombo(_TR("Account"), activeLabel.c_str()))
+			{
+				for (const auto& a : s_accounts)
+					if (ImGui::Selectable(fmt::format("{} ({:08x}){}", a.miiName, a.persistentId, a.onlineAccount ? "" : " - offline only").c_str(), a.persistentId == active))
+						HostOnline::SetActiveAccount(a.persistentId);
+				ImGui::EndCombo();
+			}
+			const bool hasCustom = !HostOnline::GetCustomUrl().empty();
+			const char* serviceNames[] = { "Offline", "Pretendo", "Custom (network_services.xml)" };
+			const int serviceIds[] = { 0, 2, 3 };
+			const int service = HostOnline::GetService();
+			int index = service == 2 ? 1 : (service == 3 && hasCustom) ? 2 : 0;
+			ImGui::SetNextItemWidth(500.0f * s_scale);
+			if (ImGui::Combo(_TR("Network service"), &index, serviceNames, hasCustom ? 3 : 2))
+				HostOnline::SetService(serviceIds[index]);
+			ImGui::TextWrapped("%s", _TR("Takes effect the next time a game starts. Nintendo's own servers are closed, so they aren't offered."));
+		}
+
+		ImGui::SeparatorText(_TR("Privacy"));
+		if (!HostStats::IsAvailable())
+			ImGui::TextWrapped("%s", _TR("Anonymous play stats: not active in this build."));
+		else
+		{
+			bool share = HostStats::IsEnabled();
+			if (ImGui::Checkbox(_TR("Share anonymous play stats (random ID, title ID, Cemu version, console type)"), &share))
+				HostStats::SetConsent(share);
+			if (share)
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(fmt::format("{} ({}...)", _TR("Delete my stats and reset ID"), HostStats::GetIdPrefix()).c_str()))
+					HostStats::ResetId();
+			}
+		}
+		ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
+
+>>>>>>> 57488d5b (Xbox frontend (#958, EXPERIMENTAL test branch): opt-in anonymous play stats)
 		ImGui::SeparatorText(_TR("Audio"));
 		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
 		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
@@ -2665,6 +2741,37 @@ std::optional<fs::path> HostUI::DrawLauncher()
 						std::unique_lock _l2(s_mutex);
 						if (!s_messages.empty())
 							s_messages.erase(s_messages.begin());
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+			}
+			// #958 asked once (settings.xml remembers the answer across updates), A on the focused 'No' by default
+			else if (HostStats::IsAvailable() && HostStats::NeedsConsentPrompt())
+			{
+				_l.unlock();
+				if (!ImGui::IsPopupOpen("##stats"))
+					ImGui::OpenPopup("##stats");
+				ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.6f, 0.0f));
+				if (ImGui::BeginPopupModal("##stats", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::PushFont(s_fontLarge);
+					ImGui::TextUnformatted(_TR("Share anonymous play stats?"));
+					ImGui::PopFont();
+					ImGui::TextWrapped("%s", _TR("Helps show how many people play each game. Only a random ID, the game's title ID, Cemu version and console type are sent; no names, accounts or IP logging. You can change this in Settings > Privacy."));
+					ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
+					ImGui::Spacing();
+					if (ImGui::Button(_TR("Yes, share")))
+					{
+						HostStats::SetConsent(true);
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::SameLine();
+					if (ImGui::IsWindowAppearing())
+						ImGui::SetKeyboardFocusHere();
+					if (ImGui::Button(_TR("No")) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+					{
+						HostStats::SetConsent(false);
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::EndPopup();
