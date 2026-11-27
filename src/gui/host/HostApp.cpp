@@ -8,6 +8,7 @@
 #include "gui/host/HostSounds.h"
 #include "gui/host/HostTools.h"
 #include "gui/host/HostRemote.h"
+#include "gui/host/HostCompanion.h"
 #include "gui/host/HostGraphicPacks.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "gui/host/LauncherRenderer.h"
@@ -1696,6 +1697,9 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	// CEMU_HOST_TEST_REMOTE=1: turn the phone remote on at start and log its address (#936 PC test)
 	if (std::getenv("CEMU_HOST_TEST_REMOTE") && HostRemote::Start())
 		cemuLog_log(LogType::Force, "Phone remote test: {}", HostRemote::GetUrl());
+	// CEMU_HOST_TEST_COMPANION=<phone ip>: turn the phone companion (#954) on at start, tools/companion_test.py plays the app
+	if (const char* ip = std::getenv("CEMU_HOST_TEST_COMPANION"))
+		HostCompanion::Start(ip);
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
 		char* value = nullptr;
@@ -1885,6 +1889,7 @@ void HostApp::Shutdown()
 	HostTools::MarkGameStopped();
 	HostIcons::Stop();
 	HostRemote::Stop();
+	HostCompanion::Stop();
 	HostMusic::Shutdown();
 	HostSounds::Shutdown();
 	s_launcher.reset();
