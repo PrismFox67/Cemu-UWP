@@ -50,7 +50,10 @@ XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channel
 
 
 	IXAudio2MasteringVoice* mastering_voice;
-	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, channels, samplerate, 0, m_device_id.empty() ? nullptr : m_device_id.c_str()))))
+	// #962: let the device pick the mastering channel count and rate (as the launcher music does, which plays
+	// with Windows Sonic / Dolby Atmos for Headphones on); XAudio2 up/downmixes and resamples our source voice.
+	// Forcing 6 ch / 48 kHz onto a spatial-sound endpoint gave silent game audio on Xbox.
+	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, XAUDIO2_DEFAULT_CHANNELS, XAUDIO2_DEFAULT_SAMPLERATE, 0, m_device_id.empty() ? nullptr : m_device_id.c_str()))))
 		throw std::runtime_error(fmt::format("can't create xaudio mastering voice (hres: {:#x})", hres));
 
 	m_mastering_voice.reset(mastering_voice);
