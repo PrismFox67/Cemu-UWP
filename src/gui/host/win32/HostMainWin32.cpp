@@ -243,6 +243,12 @@ namespace
 	}
 }
 
+uint32 HostPlatform::GetPackageBuild()
+{
+	const char* fake = std::getenv("CEMU_HOST_TEST_PACKAGE_BUILD");
+	return fake ? (uint32)std::strtoul(fake, nullptr, 10) : 0;
+}
+
 // #947: the desktop test host isn't a package, the PC test covers download, check and unpack
 bool HostPlatform::InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error)
 {

@@ -41,6 +41,8 @@ namespace HostPlatform
 	// Blocks, call it from a worker thread. On success the installer usually closes the app before this returns.
 	// False with the reason (and HRESULT) in error if the platform can't or refused
 	bool InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error);
+	// #966 build number N of the installed package version 0.1.N.0, 0 if unknown (desktop host: CEMU_HOST_TEST_PACKAGE_BUILD)
+	uint32 GetPackageBuild();
 
 	// memory the app uses and the most it may use (UWP/Xbox: the app's memory budget, 0 if there is no fixed limit)
 	void GetMemoryUsage(uint64& usage, uint64& limit);

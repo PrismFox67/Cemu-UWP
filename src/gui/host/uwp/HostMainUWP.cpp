@@ -508,6 +508,18 @@ bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std:
 	}
 }
 
+uint32 HostPlatform::GetPackageBuild()
+{
+	try
+	{
+		return Package::Current().Id().Version().Build;
+	}
+	catch (...)
+	{
+		return 0;
+	}
+}
+
 // #947 EXPERIMENTAL: needs the packageManagement restricted capability. ForceApplicationShutdown lets the installer
 // close this app to replace its files; the data folders (LocalState) belong to the package family and stay
 bool HostPlatform::InstallPackageUpdate(const fs::path& package, const std::vector<fs::path>& dependencies, std::string& error)
@@ -538,7 +550,10 @@ bool HostPlatform::InstallPackageUpdate(const fs::path& package, const std::vect
 		cemuLog_log(LogType::Force, "Updater: AddPackageAsync done, status {}, HRESULT 0x{:08x}, '{}'", (int)operation.Status(), (uint32)hr, winrt::to_string(result.ErrorText()));
 		if (operation.Status() != AsyncStatus::Completed || FAILED(hr))
 		{
-			error = fmt::format("{} (0x{:08x})", winrt::to_string(result.ErrorText()), (uint32)hr);
+			if ((uint32)hr == 0x80073d06) // ERROR_INSTALL_PACKAGE_DOWNGRADE
+				error = fmt::format("The downloaded build isn't newer than the installed one, nothing to update (0x{:08x})", (uint32)hr);
+			else
+				error = fmt::format("{} (0x{:08x})", winrt::to_string(result.ErrorText()), (uint32)hr);
 			return false;
 		}
 		return true;

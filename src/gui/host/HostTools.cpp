@@ -538,6 +538,8 @@ std::string HostTools::GetBusyText()
 	return s_busyText;
 }
 
+namespace { uint32 _ReleasePackageBuild(const rapidjson::Document& doc); } // #966, below with the updater
+
 void HostTools::StartUpdateCheck()
 {
 	std::thread([]() {
@@ -559,6 +561,7 @@ void HostTools::StartUpdateCheck()
 		const size_t at = title.find("@ ");
 		if (at == std::string::npos)
 			return;
+		const uint32 remoteBuild = _ReleasePackageBuild(doc);
 		std::string latest = title.substr(at + 2);
 		latest = latest.substr(0, latest.find_first_of(") "));
 		if (latest.empty() || own.empty() || own.rfind(latest, 0) == 0 || latest.rfind(own, 0) == 0)
@@ -576,6 +579,14 @@ void HostTools::StartUpdateCheck()
 		cemuLog_log(LogType::Force, "Host: build {} is {} commit(s) ahead of this one ({})", latest, ahead, own);
 		if (ahead <= 0)
 			return;
+		// #966 a test build isn't on d3d12-backend, so the compare says 'ahead' even for an older ci-latest: the package
+		// version (0.1.<CI run>) decides when both are known
+		const uint32 ownBuild = HostPlatform::GetPackageBuild();
+		if (ownBuild && remoteBuild && remoteBuild <= ownBuild)
+		{
+			cemuLog_log(LogType::Force, "Host: ci-latest package 0.1.{} isn't newer than this one (0.1.{}), no update offered", remoteBuild, ownBuild);
+			return;
+		}
 		std::unique_lock _l(s_mutex);
 		s_newerBuild = fmt::format("{} ({} change{} since this build)", latest, ahead, ahead == 1 ? "" : "s");
 	}).detach();
@@ -893,6 +904,16 @@ namespace
 {
 	constexpr const char* kUpdateAsset = "cemu-uwp-x64.zip";
 
+	// #966 N from '... (Xbox package 0.1.N.0) ...' in the ci-latest release text, 0 if not there
+	uint32 _ReleasePackageBuild(const rapidjson::Document& doc)
+	{
+		if (!doc.HasMember("body") || !doc["body"].IsString())
+			return 0;
+		const std::string body = doc["body"].GetString();
+		const size_t at = body.find("Xbox package 0.1.");
+		return at == std::string::npos ? 0 : (uint32)std::strtoul(body.c_str() + at + 17, nullptr, 10);
+	}
+
 	std::string _Sha256Hex(const std::vector<uint8>& data)
 	{
 		uint8 md[SHA256_DIGEST_LENGTH];
@@ -936,6 +957,12 @@ namespace
 				ok = false;
 				break;
 			}
+			// #966 debug symbols aren't needed to install, and writing the .appxsym failed on Xbox ('Run as Game' temp)
+			std::string ext = _pathToUtf8(rel.extension());
+			std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return (char)std::tolower((unsigned char)c); });
+			if (ext == ".appxsym" || ext == ".pdb")
+				continue;
+			const bool needed = ext == ".msix" || ext == ".appx" || ext == ".msixbundle" || ext == ".appxbundle" || ext == ".cer";
 			const fs::path out = target / rel;
 			std::error_code ec;
 			fs::create_directories(out.parent_path(), ec);
@@ -952,8 +979,12 @@ namespace
 			std::ofstream file(out, std::ios::binary | std::ios::trunc);
 			if (read != (zip_int64_t)st.size || !file.write((const char*)buffer.data(), buffer.size()))
 			{
-				error = "can't write " + _pathToUtf8(out);
-				ok = false;
+				cemuLog_log(LogType::Force, "Updater: can't write {} ({})", _pathToUtf8(out), needed ? "needed, stopping" : "not needed, skipped");
+				if (needed)
+				{
+					error = "can't write " + _pathToUtf8(out);
+					ok = false;
+				}
 			}
 		}
 		zip_close(za);
@@ -983,6 +1014,13 @@ void HostTools::StartUpdate()
 		if (doc.HasParseError() || !doc.IsObject() || !doc.HasMember("assets") || !doc["assets"].IsArray())
 			return fail("Reading the release", "unexpected answer");
 		const std::string build = doc.HasMember("name") && doc["name"].IsString() ? doc["name"].GetString() : "ci-latest";
+		const uint32 remoteBuild = _ReleasePackageBuild(doc), ownBuild = HostPlatform::GetPackageBuild();
+		cemuLog_log(LogType::Force, "Updater: installed package 0.1.{}, ci-latest package 0.1.{}", ownBuild, remoteBuild);
+		if (ownBuild && remoteBuild && remoteBuild <= ownBuild)
+		{
+			HostUI::PushMessage("No update", fmt::format("The installed build (0.1.{}) is the same as or newer than ci-latest (0.1.{}).", ownBuild, remoteBuild));
+			return;
+		}
 		std::string url, digest;
 		uint64 size = 0;
 		for (const auto& asset : doc["assets"].GetArray())
