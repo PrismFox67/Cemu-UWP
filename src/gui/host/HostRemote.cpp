@@ -221,7 +221,19 @@ load();setInterval(()=>{if(!document.querySelector('input[type=range]:active'))l
 	{
 		s_acceptor->async_accept([](boost::system::error_code ec, tcp::socket socket) {
 			if (ec)
+			{
+				if (ec != asio::error::operation_aborted)
+					cemuLog_log(LogType::Force, "Phone remote: accept failed: {}", ec.message());
 				return; // stopped
+			}
+			{
+				// #955: show in the log whether a phone reached us at all
+				static int s_logged = 0;
+				boost::system::error_code ec2;
+				const auto remote = socket.remote_endpoint(ec2);
+				if (s_logged < 20 && !ec2)
+					s_logged++, cemuLog_log(LogType::Force, "Phone remote: connection from {}", remote.address().to_string());
+			}
 			_Serve(socket);
 			_Accept();
 		});
@@ -269,7 +281,7 @@ load();setInterval(()=>{if(!document.querySelector('input[type=range]:active'))l
 		}
 		_Accept();
 		s_thread = std::thread([] { s_io->run(); });
-		cemuLog_log(LogType::Force, "Phone remote: listening on port {}", kPort);
+		cemuLog_log(LogType::Force, "Phone remote: listening on 0.0.0.0:{}, QR shows {}:{}", kPort, _LocalIp(), kPort);
 		return true;
 	}
 

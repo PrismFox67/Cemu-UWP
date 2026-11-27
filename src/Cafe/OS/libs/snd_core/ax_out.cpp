@@ -4,6 +4,7 @@
 #include "audio/IAudioAPI.h"
 //#include "ax.h"
 #include "config/CemuConfig.h"
+#include <boost/nowide/convert.hpp>
 
 namespace snd_core
 {
@@ -405,6 +406,10 @@ namespace snd_core
 			try
 			{
 				g_tvAudio = IAudioAPI::CreateDeviceFromConfig(IAudioAPI::AudioType::TV, 48000, snd_core::AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, 16);
+				// #955: say what the game's sound goes to (a game without sound left no trace in the log)
+				const auto& cfg = GetConfig();
+				cemuLog_log(LogType::Force, "Audio: TV output {} (api {}, device '{}', {} channels, volume {}%)", g_tvAudio ? "created" : "NOT created (no device selected)",
+					(int)cfg.audio_api, boost::nowide::narrow(cfg.tv_device), CemuConfig::AudioChannelsToNChannels(cfg.tv_channels), (int)cfg.tv_volume);
 			}
 			catch (std::runtime_error& ex)
 			{
