@@ -1,7 +1,7 @@
 # Privacy
 
 Cemu-UWP is a free, open-source hobby project. It has no accounts, no ads, no payments and no analytics.
-**The current release does not collect or send any personal data to us.** Test builds with the optional play stats send the anonymous data listed below, only if you opt in. This page lists everything the app
+**The current release does not collect or send any personal data to us.** Test builds with play stats send the anonymous data listed below; it is on by default and you can turn it off in Settings → Privacy. This page lists everything the app
 does over the network so you can check it.
 
 ## What the app connects to
@@ -15,13 +15,16 @@ does over the network so you can check it.
 These requests are ordinary web downloads: the site you download from sees your IP address, like any website
 visit. We don't run any server that receives data from the app.
 
-## Anonymous play stats (test builds, opt-in)
-Asked once, the first time the launcher opens on a build that has it. Your answer is stored in `settings.xml`
-(`stats_consent`) and kept across updates; if you say No you are not asked again. Change it any time in
-Settings → Privacy. You are only asked again if the list below changes.
+## Anonymous play stats (test builds, on by default)
+Anonymous play counts are **on by default** as a condition of downloading these builds. The first time the launcher
+opens on a build that has them, a short notice says so; any button closes it and it is not shown again unless the
+list below changes. Nothing is sent before you have seen that notice.
 
-When it's **on**, the app sends this to our stats server, once when the launcher opens and every 5 minutes while a
-game runs:
+**Turning it off:** Settings → Privacy → untick 'Share anonymous play stats'. The choice is stored in `settings.xml`
+(`stats_consent`) and kept across updates. Turning it off also deletes everything stored for your ID (see below).
+If you answered No in an earlier test build that asked, it stays off.
+
+When it's **on**, the app sends this to our stats server every 5 minutes while the launcher is open or a game runs:
 
 | field | example | what it is |
 |---|---|---|
@@ -38,8 +41,8 @@ without IDs.
 current ID and starts a new one. Turning stats off also deletes everything stored for your ID. Daily totals older
 than 90 days no longer contain IDs, so they can't be linked to you.
 
-Everyone, with stats on or off, may download the per-game totals ("12 playing now", "40 this week") shown in the
-game list. That request carries no ID.
+Everyone, with stats on or off, may download the totals shown in the app ("12 people online" in About, "3 playing
+now" under a game in the list). That request carries no ID.
 
 ## What stays on your console
 Settings, logs, saves, box-art cache, `keys.txt` and controller profiles stay in the app's own storage on your
@@ -47,9 +50,8 @@ console or USB drive. Logs are only shared if **you** attach them to a GitHub is
 contain keys; remove anything you don't want to share before posting.
 
 ## Future features
-Planned optional features (anonymous play counts, online play through Pretendo) will be **off until you opt in**,
-and this page will be updated, with the exact data listed, before any build that has them is released.
-Opting out will always be possible in Settings, and anonymous data you sent can be deleted from the app.
+This page will be updated, with the exact data listed, before any build that sends something new is released.
+Turning stats off will always be possible in Settings, and anonymous data you sent can be deleted from the app.
 
 ## Contact
 Questions or deletion requests: open an issue at https://github.com/PrismFox67/Cemu-UWP/issues.

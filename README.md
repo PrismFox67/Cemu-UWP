@@ -168,7 +168,7 @@ Pre-2.0 releases can be found on Cemu's [changelog page](https://cemu.info/chang
 
 ## Privacy
 The app collects no personal data. It only checks GitHub for updates and downloads box art and graphic packs, and the phone remote stays on your
-local network. Test builds with the optional, opt-in anonymous play stats send only a random ID, the game's title ID, the Cemu version and the console type, and can delete them from Settings. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+local network. Test builds send anonymous play stats (a random ID, the game's title ID, the Cemu version and the console type): on by default, opt out in Settings → Privacy, which also deletes them. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Legal
 Cemu-UWP is not affiliated with or endorsed by Nintendo, Microsoft or the Cemu team. Wii U is a trademark of Nintendo.

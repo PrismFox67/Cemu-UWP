@@ -671,9 +671,9 @@ namespace
 			// one line: the title (brighter, shortened with an ellipsis so the line never wraps), then region, ID, version
 			{
 				ImFont* font = ImGui::GetFont();
-				std::string players; // #958 counts from the stats server, hidden when zero or unreachable
+				std::string players; // #958/#963 counts from the stats server, hidden when zero or unreachable
 				if (const auto c = HostStats::GetCounts(game.titleId))
-					players = c->now ? fmt::format("   {} playing now", c->now) : fmt::format("   {} this week", c->week);
+					players = fmt::format("   {} playing now", c->now);
 				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}{}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count, players);
 				const float detailsW = font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, details.c_str()).x;
 				const float maxTitleW = std::max(area.x * 0.95f - detailsW, area.x * 0.3f);
@@ -2322,6 +2322,8 @@ namespace
 		ImGui::TextUnformatted(BUILD_VERSION_WITH_NAME_STRING);
 		ImGui::TextWrapped(_TR("Cemu UWP by PrismFox67 (github.com/PrismFox67/Cemu-UWP)"));
 		ImGui::TextWrapped("Frontend: %s, renderer: Direct3D 12", HostPlatform::GetName());
+		if (const uint32 online = HostStats::GetOnline()) // #963 from the stats server, hidden when 0 or unreachable
+			ImGui::TextDisabled("%s", fmt::format("{} {} online", online, online == 1 ? "person" : "people").c_str());
 		ImGui::Spacing();
 		ImGui::TextWrapped("Controls");
 		ImGui::BulletText("D-pad / left stick: move, A: select, B: back");
@@ -2746,36 +2748,30 @@ std::optional<fs::path> HostUI::DrawLauncher()
 					ImGui::EndPopup();
 				}
 			}
-			// #958 asked once (settings.xml remembers the answer across updates), A on the focused 'No' by default
-			else if (HostStats::IsAvailable() && HostStats::NeedsConsentPrompt())
+			// #963 one-time, non-blocking notice (stats are on by default): a small panel at the bottom, any button
+			// (pad, key or click) dismisses it and still does what it normally does
+			else if (HostStats::IsAvailable() && HostStats::NeedsNotice())
 			{
 				_l.unlock();
-				if (!ImGui::IsPopupOpen("##stats"))
-					ImGui::OpenPopup("##stats");
-				ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.6f, 0.0f));
-				if (ImGui::BeginPopupModal("##stats", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+				const float width = viewport->WorkSize.x * 0.5f;
+				ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + (viewport->WorkSize.x - width) * 0.5f, viewport->WorkPos.y + viewport->WorkSize.y * 0.78f), ImGuiCond_Always);
+				ImGui::SetNextWindowSize(ImVec2(width, 0.0f));
+				ImGui::SetNextWindowBgAlpha(0.92f);
+				if (ImGui::Begin("##statsnotice", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings))
 				{
-					ImGui::PushFont(s_fontLarge);
-					ImGui::TextUnformatted(_TR("Share anonymous play stats?"));
-					ImGui::PopFont();
-					ImGui::TextWrapped("%s", _TR("Helps show how many people play each game. Only a random ID, the game's title ID, Cemu version and console type are sent; no names, accounts or IP logging. You can change this in Settings > Privacy."));
-					ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
-					ImGui::Spacing();
-					if (ImGui::Button(_TR("Yes, share")))
-					{
-						HostStats::SetConsent(true);
-						ImGui::CloseCurrentPopup();
-					}
-					ImGui::SameLine();
-					if (ImGui::IsWindowAppearing())
-						ImGui::SetKeyboardFocusHere();
-					if (ImGui::Button(_TR("No")) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
-					{
-						HostStats::SetConsent(false);
-						ImGui::CloseCurrentPopup();
-					}
-					ImGui::EndPopup();
+					ImGui::TextWrapped("%s", _TR("Cemu shares anonymous play counts (random ID, game, version, console). Turn off in Settings > Privacy."));
+					ImGui::TextDisabled("%s", HostStats::kPrivacyUrl);
 				}
+				ImGui::End();
+				bool pressed = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+				for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END && !pressed; k++)
+				{
+					if ((k >= ImGuiKey_GamepadLStickLeft && k <= ImGuiKey_GamepadRStickDown) || (k >= ImGuiKey_MouseLeft && k <= ImGuiKey_MouseWheelY))
+						continue; // stick drift and mouse moves aren't presses
+					pressed = ImGui::IsKeyPressed((ImGuiKey)k, false);
+				}
+				if (pressed)
+					HostStats::DismissNotice();
 			}
 		}
 	}

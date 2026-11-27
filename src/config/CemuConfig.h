@@ -453,7 +453,7 @@ struct CemuConfig
 	// #958 Xbox frontend opt-in play stats: consent asked once ("" = not asked, "yes", "no"), re-asked only when the
 	// version of what is collected goes up; random install id (32 hex) while consent is yes; endpoint override
 	ConfigValue<std::string> stats_consent{};
-	ConfigValue<int> stats_consent_version{ 0 };
+	ConfigValue<int> stats_notice_version{ 0 };
 	ConfigValue<std::string> stats_iid{};
 	ConfigValue<std::string> stats_endpoint{};
 

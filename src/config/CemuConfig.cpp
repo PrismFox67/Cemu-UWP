@@ -36,7 +36,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	host_ui_language = parser.get("host_ui_language", "");
 	host_keys_path = parser.get("host_keys_path", "");
 	stats_consent = parser.get("stats_consent", "");
-	stats_consent_version = parser.get("stats_consent_version", 0);
+	stats_notice_version = parser.get("stats_notice_version", 0);
 	stats_iid = parser.get("stats_iid", "");
 	stats_endpoint = parser.get("StatsEndpoint", "");
 	host_data_path = parser.get("host_data_path", "");
@@ -344,7 +344,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set("host_ui_language", host_ui_language.GetValue().c_str());
 	config.set("host_keys_path", host_keys_path.GetValue().c_str());
 	config.set("stats_consent", stats_consent.GetValue().c_str());
-	config.set("stats_consent_version", stats_consent_version.GetValue());
+	config.set("stats_notice_version", stats_notice_version.GetValue());
 	config.set("stats_iid", stats_iid.GetValue().c_str());
 	if (!stats_endpoint.GetValue().empty())
 		config.set("StatsEndpoint", stats_endpoint.GetValue().c_str());

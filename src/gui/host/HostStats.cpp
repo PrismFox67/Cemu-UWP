@@ -19,6 +19,7 @@ namespace HostStats
 	std::thread s_thread;
 	bool s_running = false;
 	std::unordered_map<uint64, Counts> s_counts;
+	uint32 s_online = 0;
 
 	std::string _Endpoint()
 	{
@@ -64,26 +65,39 @@ namespace HostStats
 		return !_Endpoint().empty();
 	}
 
-	bool NeedsConsentPrompt()
+	// stats_consent: "" (default) or "yes" = on, "no" = turned off (in Settings or by an earlier test build's prompt)
+	bool _IsOff()
 	{
-		const auto& c = GetConfig();
-		const std::string consent = c.stats_consent.GetValue();
-		if (consent == "no")
-			return false;
-		return consent != "yes" || c.stats_consent_version.GetValue() < kConsentVersion;
+		return GetConfig().stats_consent.GetValue() == "no";
+	}
+
+	bool NeedsNotice()
+	{
+		return !_IsOff() && GetConfig().stats_notice_version.GetValue() < kNoticeVersion;
+	}
+
+	void DismissNotice()
+	{
+		auto& c = GetConfig();
+		c.stats_notice_version = kNoticeVersion;
+		if (!_IsOff() && c.stats_iid.GetValue().size() != 32)
+			c.stats_iid = _NewId();
+		GetConfigHandle().Save();
+		cemuLog_log(LogType::Force, "Stats: notice dismissed, sharing {}", IsEnabled() ? fmt::format("on, id {}...", GetIdPrefix()) : std::string("off"));
+		s_wake.notify_all();
 	}
 
 	bool IsEnabled()
 	{
 		const auto& c = GetConfig();
-		return c.stats_consent.GetValue() == "yes" && c.stats_consent_version.GetValue() >= kConsentVersion && c.stats_iid.GetValue().size() == 32;
+		return !_IsOff() && c.stats_notice_version.GetValue() >= kNoticeVersion && c.stats_iid.GetValue().size() == 32;
 	}
 
 	void SetConsent(bool yes)
 	{
 		auto& c = GetConfig();
 		c.stats_consent = std::string(yes ? "yes" : "no");
-		c.stats_consent_version = kConsentVersion;
+		c.stats_notice_version = kNoticeVersion; // chosen in Settings: no notice needed any more
 		if (yes && c.stats_iid.GetValue().size() != 32)
 			c.stats_iid = _NewId();
 		if (!yes)
@@ -99,7 +113,7 @@ namespace HostStats
 	void ResetId()
 	{
 		auto& c = GetConfig();
-		if (c.stats_consent.GetValue() != "yes")
+		if (!IsEnabled())
 			return;
 		_Forget(c.stats_iid.GetValue());
 		c.stats_iid = _NewId();
@@ -144,6 +158,7 @@ namespace HostStats
 		if (doc.HasParseError() || !doc.IsObject())
 			return;
 		std::unordered_map<uint64, Counts> counts;
+		const uint32 online = doc.HasMember("online") && doc["online"].IsUint() ? doc["online"].GetUint() : 0;
 		for (auto it = doc.MemberBegin(); it != doc.MemberEnd(); ++it)
 		{
 			if (!it->value.IsObject() || !it->value.HasMember("now") || !it->value.HasMember("week") || !it->value["now"].IsUint() || !it->value["week"].IsUint())
@@ -154,6 +169,7 @@ namespace HostStats
 		}
 		std::lock_guard lock(s_mutex);
 		s_counts = std::move(counts);
+		s_online = online;
 	}
 
 	void _Loop()
@@ -161,8 +177,8 @@ namespace HostStats
 		SetThreadName("HostStats");
 		using clock = std::chrono::steady_clock;
 		constexpr auto kInterval = std::chrono::minutes(5);
-		bool launcherSent = false;
-		uint64 lastTitle = 0;
+		bool wasEnabled = false;
+		uint64 lastTitle = ~0ull;
 		auto nextHeartbeat = clock::now();
 		auto nextCounts = clock::now();
 		std::unique_lock lock(s_mutex);
@@ -171,20 +187,16 @@ namespace HostStats
 			lock.unlock();
 			const uint64 title = CafeSystem::IsTitleRunning() ? (uint64)CafeSystem::GetForegroundTitleId() : 0;
 			const auto now = clock::now();
-			if (!launcherSent && IsEnabled())
-			{
-				launcherSent = true;
-				_SendHeartbeat(0);
-			}
-			if (title != lastTitle)
+			if (title != lastTitle || IsEnabled() != wasEnabled)
 			{
 				lastTitle = title;
-				nextHeartbeat = now; // a game just started: count it right away
+				wasEnabled = IsEnabled();
+				nextHeartbeat = now; // a game just started / the launcher is back / sharing just turned on: count it right away
 			}
-			if (title && now >= nextHeartbeat)
+			if (now >= nextHeartbeat)
 			{
 				nextHeartbeat = now + kInterval;
-				_SendHeartbeat(title);
+				_SendHeartbeat(title); // 0 = on the launcher, still counts as online
 			}
 			if (!title && now >= nextCounts) // the game list only shows on the launcher
 			{
@@ -228,8 +240,14 @@ namespace HostStats
 	{
 		std::lock_guard lock(s_mutex);
 		const auto it = s_counts.find(titleId);
-		if (it == s_counts.end() || (it->second.now == 0 && it->second.week == 0))
+		if (it == s_counts.end() || it->second.now == 0)
 			return std::nullopt;
 		return it->second;
+	}
+
+	uint32 GetOnline()
+	{
+		std::lock_guard lock(s_mutex);
+		return s_online;
 	}
 }

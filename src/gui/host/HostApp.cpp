@@ -1710,9 +1710,15 @@ bool HostApp::Initialize(const InitOptions& options, std::string& errorOut)
 	// CEMU_HOST_TEST_COMPANION=<phone ip>: turn the phone companion (#954) on at start, tools/companion_test.py plays the app
 	if (const char* ip = std::getenv("CEMU_HOST_TEST_COMPANION"))
 		HostCompanion::Start(ip);
-	// #958: CEMU_HOST_TEST_STATS=yes|no answers the consent prompt (PC test with StatsEndpoint in settings.xml)
+	// #958/#963: CEMU_HOST_TEST_STATS=notice dismisses the first-start notice, yes|no is the Settings toggle
+	// (PC test with StatsEndpoint in settings.xml)
 	if (const char* stats = std::getenv("CEMU_HOST_TEST_STATS"))
-		HostStats::SetConsent(std::string(stats) == "yes");
+	{
+		if (std::string(stats) == "notice")
+			HostStats::DismissNotice();
+		else
+			HostStats::SetConsent(std::string(stats) == "yes");
+	}
 	HostStats::Start();
 	// CEMU_HOST_TEST_RESTORE_SAVE=<title id hex>: as if 'Restore last save backup' was used for that game (#925 PC test)
 	{
