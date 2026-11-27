@@ -166,6 +166,9 @@ The native macOS build is currently purely experimental and should not be consid
 
 Pre-2.0 releases can be found on Cemu's [changelog page](https://cemu.info/changelog.html).
 
+## Privacy
+Nothing is collected unless you opt in. The optional anonymous play stats send only a random ID, the game's title ID, the Cemu version and the console type. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## Build Instructions
 
 To compile Cemu yourself on Windows, Linux or macOS, view [BUILD.md](/BUILD.md).

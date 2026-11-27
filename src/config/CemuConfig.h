@@ -450,6 +450,12 @@ struct CemuConfig
 	ConfigValue<int> host_touch_cursor_speed{ 1 }; // #905 Xbox frontend: right-stick touch cursor, 0 slow (~4 s across), 1 normal (~2 s), 2 fast (~1 s)
 	ConfigValue<std::string> host_keys_path{}; // Xbox frontend: a keys.txt (or a folder with one) imported at every start
 	ConfigValue<std::string> host_ui_language{}; // Xbox frontend texts: "" follows the console language, else "en", "pt", "es"
+	// #958 Xbox frontend opt-in play stats: consent asked once ("" = not asked, "yes", "no"), re-asked only when the
+	// version of what is collected goes up; random install id (32 hex) while consent is yes; endpoint override
+	ConfigValue<std::string> stats_consent{};
+	ConfigValue<int> stats_consent_version{ 0 };
+	ConfigValue<std::string> stats_iid{};
+	ConfigValue<std::string> stats_endpoint{};
 
 	// graphics
 	ConfigValue<GraphicAPI> graphic_api{ kDefaultGraphicsAPI };

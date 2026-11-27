@@ -464,6 +464,36 @@ void HostPlatform::GetMemoryUsage(uint64& usage, uint64& limit)
 
 // WinRT's HttpClient instead of curl: it uses the system's certificate store and proxy settings, which curl+OpenSSL
 // can't reach from inside the UWP sandbox
+bool HostPlatform::HttpPostJson(const std::string& url, const std::string& body, std::string& error, uint32 timeoutMs)
+{
+	using namespace winrt::Windows::Web::Http;
+	try
+	{
+		HttpClient client;
+		client.DefaultRequestHeaders().UserAgent().TryParseAdd(L"Cemu-UWP/1.0");
+		HttpStringContent content(winrt::to_hstring(body), winrt::Windows::Storage::Streams::UnicodeEncoding::Utf8, L"application/json");
+		auto op = client.PostAsync(Uri(winrt::to_hstring(std::string_view(url))), content);
+		if (op.wait_for(std::chrono::milliseconds(timeoutMs)) != winrt::Windows::Foundation::AsyncStatus::Completed)
+		{
+			op.Cancel();
+			error = "timeout";
+			return false;
+		}
+		HttpResponseMessage response = op.GetResults();
+		if (!response.IsSuccessStatusCode())
+		{
+			error = fmt::format("HTTP {}", (int)response.StatusCode());
+			return false;
+		}
+		return true;
+	}
+	catch (const winrt::hresult_error& e)
+	{
+		error = fmt::format("{} (0x{:08x})", winrt::to_string(e.message()), (uint32)e.code().value);
+		return false;
+	}
+}
+
 bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std::string& error, const std::function<void(uint64 received, uint64 total)>& progress)
 {
 	using namespace winrt::Windows::Web::Http;

@@ -12,6 +12,7 @@
 #include "gui/host/HostRemote.h"
 #include "gui/host/HostCompanion.h"
 #include "gui/host/HostOnline.h"
+#include "gui/host/HostStats.h"
 #include "gui/host/thirdparty/qrcodegen.hpp"
 #include "gui/host/HostTitleInstaller.h"
 #include "gui/host/HostTheme.h"
@@ -667,7 +668,10 @@ namespace
 			// one line: the title (brighter, shortened with an ellipsis so the line never wraps), then region, ID, version
 			{
 				ImFont* font = ImGui::GetFont();
-				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count);
+				std::string players; // #958 counts from the stats server, hidden when zero or unreachable
+				if (const auto c = HostStats::GetCounts(game.titleId))
+					players = c->now ? fmt::format("   {} playing now", c->now) : fmt::format("   {} this week", c->week);
+				const std::string details = fmt::format("   {}   {:016x}   v{}{}{}   {} / {}{}", _RegionName(game.region), game.titleId, game.version, game.hasUpdate ? " (update)" : "", game.hasDLC ? " + DLC" : "", s_selectedGame + 1, count, players);
 				const float detailsW = font->CalcTextSizeA(infoFontSize, FLT_MAX, 0.0f, details.c_str()).x;
 				const float maxTitleW = std::max(area.x * 0.95f - detailsW, area.x * 0.3f);
 				std::string title = game.name;
@@ -1787,6 +1791,23 @@ namespace
 			ImGui::TextWrapped("%s", _TR("Takes effect the next time a game starts. Nintendo's own servers are closed, so they aren't offered."));
 		}
 
+		ImGui::SeparatorText(_TR("Privacy"));
+		if (!HostStats::IsAvailable())
+			ImGui::TextWrapped("%s", _TR("Anonymous play stats: not active in this build."));
+		else
+		{
+			bool share = HostStats::IsEnabled();
+			if (ImGui::Checkbox(_TR("Share anonymous play stats (random ID, title ID, Cemu version, console type)"), &share))
+				HostStats::SetConsent(share);
+			if (share)
+			{
+				ImGui::SameLine();
+				if (ImGui::Button(fmt::format("{} ({}...)", _TR("Reset my ID"), HostStats::GetIdPrefix()).c_str()))
+					HostStats::ResetId();
+			}
+		}
+		ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
+
 		ImGui::SeparatorText(_TR("Audio"));
 		// games are told what the console outputs and mix for it (Mario Kart 8 mixes 5.1). On Xbox the console's own
 		// audio setting decides what reaches the TV or receiver, a stereo setup gets a downmix
@@ -2710,6 +2731,37 @@ std::optional<fs::path> HostUI::DrawLauncher()
 						std::unique_lock _l2(s_mutex);
 						if (!s_messages.empty())
 							s_messages.erase(s_messages.begin());
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+			}
+			// #958 asked once (settings.xml remembers the answer across updates), A on the focused 'No' by default
+			else if (HostStats::IsAvailable() && HostStats::NeedsConsentPrompt())
+			{
+				_l.unlock();
+				if (!ImGui::IsPopupOpen("##stats"))
+					ImGui::OpenPopup("##stats");
+				ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.6f, 0.0f));
+				if (ImGui::BeginPopupModal("##stats", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::PushFont(s_fontLarge);
+					ImGui::TextUnformatted(_TR("Share anonymous play stats?"));
+					ImGui::PopFont();
+					ImGui::TextWrapped("%s", _TR("Helps show how many people play each game. Only a random ID, the game's title ID, Cemu version and console type are sent; no names, accounts or IP logging. You can change this in Settings > Privacy."));
+					ImGui::TextWrapped("%s", HostStats::kPrivacyUrl);
+					ImGui::Spacing();
+					if (ImGui::Button(_TR("Yes, share")))
+					{
+						HostStats::SetConsent(true);
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::SameLine();
+					if (ImGui::IsWindowAppearing())
+						ImGui::SetKeyboardFocusHere();
+					if (ImGui::Button(_TR("No")) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+					{
+						HostStats::SetConsent(false);
 						ImGui::CloseCurrentPopup();
 					}
 					ImGui::EndPopup();

@@ -6,6 +6,8 @@ entries of this file plus every commit since the previous build, so you can see 
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
 ## 2026-11-26
+### Play stats (test build, opt-in)
+- The launcher asks once whether to share anonymous play stats (random ID, title ID, Cemu version, console type; see docs/PRIVACY.md). Your answer is kept across updates; Settings > Privacy turns it on/off and resets the ID. The game list shows how many people play a game now / this week. Not active until the stats server is set up.
 ### Online play (test build)
 - Settings > 'Online play (experimental)': status of otp.bin, seeprom.bin and the certificate files, 'Find online files on USB' copies them and your account from <USB>/CemuOnline (see docs/ONLINE.md), account picker and network service (Offline / Pretendo / Custom). Uses files dumped from your own Wii U; nothing is uploaded or logged.
 ### Phone companion (test build)

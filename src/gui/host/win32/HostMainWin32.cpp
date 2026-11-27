@@ -275,6 +275,40 @@ bool HostPlatform::HttpGet(const std::string& url, std::vector<uint8>& out, std:
 	return true;
 }
 
+bool HostPlatform::HttpPostJson(const std::string& url, const std::string& body, std::string& error, uint32 timeoutMs)
+{
+	CURL* curl = curl_easy_init();
+	if (!curl)
+	{
+		error = "curl_easy_init failed";
+		return false;
+	}
+	std::vector<uint8> response;
+	HttpGetState state{ &response, nullptr };
+	curl_slist* headers = curl_slist_append(nullptr, "Content-Type: application/json");
+	curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.size());
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _HttpGetWrite);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &state);
+	curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, (long)timeoutMs);
+	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+	curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+	curl_easy_setopt(curl, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NATIVE_CA);
+	curl_easy_setopt(curl, CURLOPT_USERAGENT, "Cemu-UWP/1.0");
+	const CURLcode res = curl_easy_perform(curl);
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(curl);
+	if (res != CURLE_OK)
+	{
+		error = curl_easy_strerror(res);
+		return false;
+	}
+	return true;
+}
+
 void WindowSystem::Create()
 {
 	SetThreadName("UIThread");
