@@ -15,6 +15,13 @@ does over the network so you can check it.
 These requests are ordinary web downloads: the site you download from sees your IP address, like any website
 visit. We don't run any server that receives data from the app.
 
+## Online play through Pretendo (test builds, off by default)
+Only if you set Settings → Online play → Network service to Pretendo (or your own server). Your `otp.bin`,
+`seeprom.bin`, account files and certificates stay on your console; Cemu copies them from your USB drive only when
+you press 'Find online files on USB'. When a game goes online, the login and game traffic go to the Pretendo Network
+servers, a third party with its own privacy policy (see https://pretendo.network). We receive nothing. Cemu never
+logs or shows the contents of these files.
+
 ## What stays on your console
 Settings, logs, saves, box-art cache, `keys.txt` and controller profiles stay in the app's own storage on your
 console or USB drive. Logs are only shared if **you** attach them to a GitHub issue or Discord message. Logs don't
