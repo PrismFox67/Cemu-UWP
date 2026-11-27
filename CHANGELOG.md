@@ -5,6 +5,10 @@ What changed in this fork, newest first, written for players. Every push to `d3d
 entries of this file plus every commit since the previous build, so you can see what's new since you last looked. The
 Xbox package of each build has a higher version (`0.1.<build>.0`), and the launcher says when a newer build is available.
 
+## 2026-11-26
+### Docs
+- New privacy page (docs/PRIVACY.md) listing everything the app connects to, plus Privacy and Legal sections in the README.
+
 ## 2026-11-24
 ### Skylanders
 - In-game menu Skylander list: LB/RB jump to the first figure of the previous/next game (D-pad still steps one figure).

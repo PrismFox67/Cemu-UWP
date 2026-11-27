@@ -166,6 +166,16 @@ The native macOS build is currently purely experimental and should not be consid
 
 Pre-2.0 releases can be found on Cemu's [changelog page](https://cemu.info/changelog.html).
 
+## Privacy
+The app collects no personal data. It only checks GitHub for updates and downloads box art and graphic packs, and the phone remote stays on your
+local network. Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
+## Legal
+Cemu-UWP is not affiliated with or endorsed by Nintendo, Microsoft or the Cemu team. Wii U is a trademark of Nintendo.
+No games, keys, firmware or other copyrighted Nintendo files are included or provided; use only games you have dumped
+from your own console. Dev Mode apps are installed at your own risk; the software is provided "as is", without
+warranty (see the license).
+
 ## Build Instructions
 
 To compile Cemu yourself on Windows, Linux or macOS, view [BUILD.md](/BUILD.md).
